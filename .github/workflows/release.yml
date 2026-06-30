@@ -1,0 +1,31 @@
+# Drop this into a plugin repo as .github/workflows/release.yml.
+# Tagging `vX.Y.Z` builds every target, hashes them, assembles manifest.json, and publishes
+# all of it as assets on the vX.Y.Z release. Your registry/<id>.json `manifest_url` then points
+# at https://github.com/<owner>/<repo>/releases/latest/download/manifest.json.
+#
+# Prerequisite: your build.zig.zon must pin the Fizzy SDK by URL+hash (not a local `path`):
+#
+#     .fizzy = .{
+#         .url = "https://github.com/fizzyedit/fizzy/archive/<commit>.tar.gz",
+#         .hash = "<zig-package-hash>",
+#     },
+#
+# Bump `fizzy-sdk-version` / `abi-fingerprint` below only when you rebuild against a new SDK
+# (read them from fizzy's src/sdk/version.zig: sdk_version + recorded_abi_fingerprint).
+name: Release
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    uses: fizzyedit/plugin-build-action/.github/workflows/build.yml@v1
+    permissions:
+      contents: write
+    with:
+      id: pixi
+      version: "0.1.0"
+      fizzy-sdk-version: "0.7.0"
+      abi-fingerprint: "0x1bb54eb7506cbd78"
+      min-sdk-version: "0.7.0"
+      zig-version: "0.16.0"
