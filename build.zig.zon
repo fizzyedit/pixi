@@ -1,6 +1,6 @@
 .{
     .name = .pixi,
-    .version = "0.1.3",
+    .version = "0.1.4",
     .minimum_zig_version = "0.16.0",
     .paths = .{
         "build.zig",
@@ -13,8 +13,8 @@
     .fingerprint = 0xdef5a52dbae70684,
     .dependencies = .{
         .fizzy = .{
-            .url = "https://github.com/fizzyedit/fizzy/archive/db4d1cf0b73baa83d74706bf4c3827dc743d02c4.tar.gz",
-            .hash = "fizzy-0.0.20-c46aVnW-MQA1W_Zx9L5W_ywx_uWe7DH2SIMDxO6eS4_w",
+            .url = "https://github.com/fizzyedit/fizzy/archive/698a61fdafcb6932787f25a43ebf3d2a18a48668.tar.gz",
+            .hash = "fizzy-0.0.20-c46aVlzfMQCZriBHZSnN6gwKOSV_RBT2TwILwK8w-BfB",
         },
         .assetpack = .{
             .url = "https://github.com/foxnne/assetpack/archive/ac7592f3f5988857840d0df4610e1e1fad690e2e.tar.gz",

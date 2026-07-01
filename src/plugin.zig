@@ -29,10 +29,13 @@ const NewFile = @import("dialogs/NewFile.zig");
 const DocHandle = sdk.DocHandle;
 const Internal = internal.internal;
 
+/// Version forwarded from `build.zig.zon` via the build-injected options module — bump it there.
+const plugin_options = @import("fizzy_plugin_options");
+
 pub const manifest = sdk.PluginManifest{
     .id = "pixi",
     .name = "pixi",
-    .version = .{ .major = 0, .minor = 1, .patch = 1 },
+    .version = plugin_options.version,
 };
 
 /// Stable contribution ids (plugin-namespaced) referenced across modules.

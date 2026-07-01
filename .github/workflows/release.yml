@@ -12,8 +12,14 @@
 #         .hash = "<zig-package-hash>",
 #     },
 #
-# Bump `fizzy-sdk-version` / `abi-fingerprint` below only when you rebuild against a new SDK
-# (read them from fizzy's src/sdk/version.zig: sdk_version + recorded_abi_fingerprint).
+# Bump `fizzy-sdk-version` / `abi-fingerprint` below only when you rebuild against a new SDK.
+# `fizzy-sdk-version` is `sdk_version` in fizzy's src/sdk/version.zig. `abi-fingerprint` is the
+# host's RUNTIME `dylib.abi_fingerprint` for the SHIPPED host's mode (ReleaseFast — fizzy's
+# release CI packages `-Doptimize=ReleaseFast`), which this workflow also builds in. It is NOT
+# `recorded_sdk_shape_fingerprint` (that is the mode/target-invariant CI-lock hash, a different
+# value). The build workflow dlopens the built binary and fails if its exported fingerprint
+# doesn't match this value, so a wrong number is caught at CI time instead of shipping a plugin
+# no host can load.
 name: Release
 on:
   push:
@@ -40,6 +46,6 @@ jobs:
       id: pixi
       version: ${{ needs.version.outputs.version }}
       fizzy-sdk-version: "0.7.0"
-      abi-fingerprint: "0x1bb54eb7506cbd78"
+      abi-fingerprint: "0x9f75e41ec2f5c17f"
       min-sdk-version: "0.7.0"
       zig-version: "0.16.0"

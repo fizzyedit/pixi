@@ -12,6 +12,9 @@ pub fn build(b: *std.Build) void {
 
     const lib = fizzy.plugin.create(b, .{
         .name = "pixi",
+        // Single source of truth for the release version: forwarded into `manifest.version`
+        // through the injected `fizzy_plugin_options` module. Bump it in `build.zig.zon`.
+        .version = @import("build.zig.zon").version,
         .target = target,
         .optimize = optimize,
         .root_source_file = b.path("root.zig"),
