@@ -1,7 +1,9 @@
 # Drop this into a plugin repo as .github/workflows/release.yml.
 # Tagging `vX.Y.Z` builds every target, hashes them, assembles manifest.json, and publishes
-# all of it as assets on the vX.Y.Z release. Your registry/<id>.json `manifest_url` then points
-# at https://github.com/<owner>/<repo>/releases/latest/download/manifest.json.
+# all of it as assets on the vX.Y.Z release. The pushed tag is the SINGLE source of truth for
+# the version — there is no version string to edit in this file.
+# Your registry/<id>.json `manifest_url` then points at
+# https://github.com/<owner>/<repo>/releases/latest/download/manifest.json.
 #
 # Prerequisite: your build.zig.zon must pin the Fizzy SDK by URL+hash (not a local `path`):
 #
@@ -18,13 +20,25 @@ on:
     tags: ["v*"]
 
 jobs:
+  # Derive the release version from the pushed tag (v0.1.2 → 0.1.2). Because the reusable
+  # build workflow keys the release tag off this value (`tag_name: v<version>`), sourcing it
+  # from the tag guarantees the built release can never drift from the tag that triggered it.
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - id: v
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: version
     uses: fizzyedit/plugin-build-action/.github/workflows/build.yml@v1
     permissions:
       contents: write
     with:
       id: pixi
-      version: "0.1.0"
+      version: ${{ needs.version.outputs.version }}
       fizzy-sdk-version: "0.7.0"
       abi-fingerprint: "0x1bb54eb7506cbd78"
       min-sdk-version: "0.7.0"
