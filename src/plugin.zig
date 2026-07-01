@@ -32,7 +32,7 @@ const Internal = internal.internal;
 pub const manifest = sdk.PluginManifest{
     .id = "pixi",
     .name = "pixi",
-    .version = .{ .major = 0, .minor = 1, .patch = 0 },
+    .version = .{ .major = 0, .minor = 1, .patch = 1 },
 };
 
 /// Stable contribution ids (plugin-namespaced) referenced across modules.
