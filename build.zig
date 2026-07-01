@@ -1,13 +1,7 @@
 //! Standalone build for the pixi plugin — the canonical third-party shape.
 //! `cd src/plugins/pixi && zig build` produces `pixi.<dylib|dll|so>`. Pixi has vendored C
 //! deps (stbi, msf_gif, zip) and a packed `assets` module, so its `build.zig` attaches a few
-//! extra modules onto the `fizzy.plugin.create` lib — exactly how any third-party plugin with
-//! native deps would.
-//!
-//! `zstbi`/`msf_gif` are built with the shared `fizzy.plugin.addCModule` helper (the same one a
-//! third-party C plugin uses), so the build logic isn't duplicated — only the plugin-relative
-//! paths are supplied here. `zip` is wired inline (its `zip.zig` module + C compiled into this
-//! dylib); it isn't shared with fizzy's own build graph, so there's no two-modules collision.
+//! extra modules onto the `fizzy.plugin.create` lib
 const std = @import("std");
 const fizzy = @import("fizzy");
 const assetpack = @import("assetpack");
