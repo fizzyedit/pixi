@@ -13,8 +13,8 @@
     .fingerprint = 0xdef5a52dbae70684,
     .dependencies = .{
         .fizzy = .{
-            .url = "https://github.com/fizzyedit/fizzy/archive/28234f2650f9a1715cdd86c1cd660a5dd83f9b3e.tar.gz",
-            .hash = "fizzy-0.0.20-c46aVuBrMQDHu00_mWsseUCIuZ3wKW_B0LyuLOGcPuNY",
+            .url = "https://github.com/fizzyedit/fizzy/archive/18713b7d570e55291961d54dde06c4bc07004282.tar.gz",
+            .hash = "fizzy-0.0.20-c46aVgeLMQDbCYzTDJWyxjsA-Cb3AL7Ky5Pzb5R2CRZE",
         },
         .assetpack = .{
             .url = "https://github.com/foxnne/assetpack/archive/ac7592f3f5988857840d0df4610e1e1fad690e2e.tar.gz",
