@@ -1,6 +1,6 @@
 .{
     .name = .pixi,
-    .version = "0.1.5",
+    .version = "0.1.6",
     .minimum_zig_version = "0.16.0",
     .paths = .{
         "build.zig",

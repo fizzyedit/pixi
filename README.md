@@ -25,6 +25,22 @@ Pixel art editing plugin for fizzy
 
 If this runs successfully, you should have a built plugin in your fizzy configuration plugins location.
 
+## Releasing
+
+Tag a release to publish it — the version comes from the tag, nothing to edit by hand:
+
+```sh
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+This triggers `.github/workflows/release.yml`, which builds all 6 targets and publishes them
+plus a `manifest.json` as release assets, via the reusable
+[`fizzyedit/plugin-build-action`](https://github.com/fizzyedit/plugin-build-action) workflow.
+Fizzy's [`fizzyedit/plugins`](https://github.com/fizzyedit/plugins) registry then picks up the
+new release automatically (no PR needed after the first one). See fizzy's
+[`docs/PLUGINS.md`](https://github.com/fizzyedit/fizzy/blob/main/docs/PLUGINS.md) §6 for the
+full mechanics, and §5 for what `fizzy-sdk-version`/`abi-fingerprint` in the release workflow mean.
+
 ## Credits
 - [David Vanderson](https://github.com/david-vanderson) for all the help and [DVUI](https://github.com/david-vanderson/dvui).
 - [emidoots](https://github.com/emidoots) for all the help and [mach](https://github.com/hexops/mach).
