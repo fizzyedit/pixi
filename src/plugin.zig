@@ -34,7 +34,7 @@ const plugin_options = @import("fizzy_plugin_options");
 
 pub const manifest = sdk.PluginManifest{
     .id = "pixi",
-    .name = "pixi",
+    .name = "Pixi",
     .version = plugin_options.version,
 };
 
@@ -48,7 +48,7 @@ var plugin: sdk.Plugin = .{
     .state = undefined,
     .vtable = &vtable,
     .id = "pixi",
-    .display_name = "pixi",
+    .display_name = "Pixi",
 };
 
 const vtable: sdk.Plugin.VTable = .{
@@ -380,7 +380,7 @@ pub fn register(host: *sdk.Host) !void {
     try host.registerSettingsSection(.{
         .id = "internal.settings",
         .owner = &plugin,
-        .title = "pixi",
+        .title = "Pixi",
         .draw = PixelArtSettings.draw,
     });
 
