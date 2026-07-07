@@ -65,7 +65,8 @@ pinned_palettes: bool = false,
 /// Split ratio between the layers list and the palette in the tools sidebar.
 layers_ratio: f32 = 0.5,
 
-/// The open project's `.fizproject` pack config, or null when no project folder is open.
+/// The open project's `.pixiproject` (or legacy `.fizproject`) pack config, or null when
+/// no project folder is open.
 project: ?Project = null,
 
 sprite_clipboard: ?SpriteClipboard = null,
@@ -108,14 +109,15 @@ pub fn init(allocator: std.mem.Allocator, host: *sdk.Host) !State {
     st.colors.file_tree_palette = Palette.loadFromBytes(allocator, "fizzy.hex", assets.files.palettes.@"fizzy.hex") catch null;
     st.colors.palette = Palette.loadFromBytes(allocator, "fizzy.hex", assets.files.palettes.@"fizzy.hex") catch null;
     st.ui_atlas = .{
-        .sprites = try core.Atlas.loadSpritesFromBytes(allocator, assets.files.@"fizzy.atlas"),
-        .source = try core.image.fromImageFileBytes("fizzy.png", assets.files.@"fizzy.png", .ptr),
+        .sprites = try core.Atlas.loadSpritesFromBytes(allocator, assets.files.@"pixi.atlas"),
+        .source = try core.image.fromImageFileBytes("pixi.png", assets.files.@"pixi.png", .ptr),
     };
     return st;
 }
 
-/// Write `.fizproject` while the shell `host` and project folder are still live.
-/// Called from `AppDeinit` before `editor.deinit`.
+/// Write the project file (`.pixiproject`, or `.fizproject` if that's what was loaded) while
+/// the shell `host` and project folder are still live. Called from `AppDeinit` before
+/// `editor.deinit`.
 pub fn persistProject(st: *State) void {
     if (comptime builtin.target.cpu.arch == .wasm32) return;
     if (st.project) |*project| {
@@ -125,7 +127,8 @@ pub fn persistProject(st: *State) void {
     }
 }
 
-/// Load `.fizproject` for the shell's currently-open project folder.
+/// Load the project file (`.pixiproject`, falling back to legacy `.fizproject`) for the
+/// shell's currently-open project folder.
 pub fn reloadProjectForFolder(st: *State, allocator: std.mem.Allocator) void {
     st.project = Project.load(allocator) catch null;
 }

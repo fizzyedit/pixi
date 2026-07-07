@@ -421,7 +421,8 @@ pub fn fromPath(path: []const u8) !?pixi_mod.internal.File {
     return error.InvalidExtension;
 }
 
-/// `.fiz` is the current native extension; `.pixi` is kept for legacy file load support.
+/// `.pixi` is pixi's native extension; `.fiz` is kept as a fallback for files created
+/// while pixi shipped as part of the whole fizzy app rather than as a plugin.
 pub fn isFizzyExtension(ext: []const u8) bool {
     return std.mem.eql(u8, ext, ".fiz") or std.mem.eql(u8, ext, ".pixi");
 }
@@ -2928,7 +2929,8 @@ pub fn saveZip(self: *File, window: *dvui.Window) !void {
     // use the same code path so there's a single zip-writing function.
     var snap = try SaveSnapshot.fromFileOnGuiThread(self, runtime.allocator());
     defer snap.deinit(runtime.allocator());
-    try writeSnapshotToZip(self.id, window, &snap);
+    try writeSnapshotToZip(window, &snap);
+    self.history.bookmark = 0;
 }
 
 /// Layer pixel bytes + metadata copied from `*File` on the GUI thread before a
@@ -2993,9 +2995,17 @@ pub const SaveQueue = struct {
         snap: *SaveSnapshot,
     };
 
+    /// Outcome of a finished job, handed off to the GUI thread instead of the
+    /// worker touching `docs.files` itself (see `saveQueueWorker` for why).
+    pub const Completion = struct {
+        file_id: u64,
+        saved: bool,
+    };
+
     mutex: std.Io.Mutex = .init,
     cond: std.Io.Condition = .init,
     queue: std.ArrayListUnmanaged(Job) = .empty,
+    completed: std.ArrayListUnmanaged(Completion) = .empty,
     shutdown: bool = false,
     worker: ?std.Thread = null,
 
@@ -3074,41 +3084,62 @@ fn saveQueueWorker() void {
         const job = save_queue.queue.orderedRemove(0);
         save_queue.mutex.unlock(dvui.io);
 
-        // The snapshot owns everything the writer needs. For the post-write
-        // `setSaving(false)` and `history.bookmark = 0` we MUST re-lookup the
-        // file pointer at the moment of use — `editor.open_files` is an
-        // AutoArrayHashMap with inline values, and any concurrent `orderedRemove`
-        // shifts later entries down. A pointer captured here at dequeue time
-        // becomes stale (silently aliasing a different file) as soon as the GUI
-        // thread closes any earlier file from the in-flight set.
-        defer {
-            job.snap.deinit(runtime.allocator());
-            runtime.allocator().destroy(job.snap);
-            if (runtime.state().docs.fileById(job.file_id)) |f| f.setSaving(false);
-            dvui.refresh(job.window, @src(), null);
-        }
-        writeSnapshotToZip(job.file_id, job.window, job.snap) catch |err| {
+        // `docs.files` is an unsynchronized `AutoArrayHashMapUnmanaged` that the
+        // GUI thread mutates on every doc open/close (`registerOpenDocument`'s
+        // `put`, `unregisterDocument`'s `swapRemove`). Touching it from this
+        // worker thread — even just to look up `*File` by id — races those
+        // mutations. Report the outcome by id instead and let the GUI thread
+        // (which already owns every `docs.files` mutation) apply it.
+        var saved = true;
+        writeSnapshotToZip(job.window, job.snap) catch |err| {
             dvui.log.err("Async save failed: {s}", .{@errorName(err)});
+            saved = false;
         };
+        job.snap.deinit(runtime.allocator());
+        runtime.allocator().destroy(job.snap);
+
+        save_queue.mutex.lockUncancelable(dvui.io);
+        save_queue.completed.append(runtime.allocator(), .{ .file_id = job.file_id, .saved = saved }) catch |err| {
+            dvui.log.err("Failed to record save completion: {s}", .{@errorName(err)});
+        };
+        save_queue.mutex.unlock(dvui.io);
+        dvui.refresh(job.window, @src(), null);
     }
 }
 
-/// Shared zip-writing logic. Reads ONLY from `snap`, never `self.*` collection
-/// fields. `self` is used for the post-save `history.bookmark = 0` update.
+/// GUI-thread-only: apply outcomes `saveQueueWorker` recorded for finished
+/// jobs. Must run on the same thread that owns `docs.files` mutations
+/// (`registerOpenDocument`/`unregisterDocument`) since this is the only place
+/// the save queue's completions touch that map.
+pub fn drainCompletedSaves(docs: *pixi_mod.Docs) void {
+    if (comptime @import("builtin").target.cpu.arch == .wasm32) return;
+    save_queue.mutex.lockUncancelable(dvui.io);
+    var completed = save_queue.completed;
+    save_queue.completed = .empty;
+    save_queue.mutex.unlock(dvui.io);
+    defer completed.deinit(runtime.allocator());
+
+    for (completed.items) |c| {
+        const f = docs.fileById(c.file_id) orelse continue;
+        f.setSaving(false);
+        if (c.saved) f.history.bookmark = 0;
+    }
+}
+
+/// Shared zip-writing logic. Reads ONLY from `snap`, never `self.*` or
+/// `docs.files` — this runs on the save-queue worker thread when invoked via
+/// `saveAsync`, which must not touch `docs.files` (see `saveQueueWorker`).
+/// Callers apply any post-save `*File` state themselves: `saveZip` (GUI
+/// thread, holds `self` already) sets `history.bookmark` directly;
+/// `saveQueueWorker` routes it through `drainCompletedSaves` instead.
 ///
-/// This runs on a worker thread when invoked via `saveAsync`/`saveZipFromSnapshot`.
 /// Anything that mutates dvui state (toasts, window arena allocations, etc.) MUST
 /// stay off this path — concurrent workers calling into `dvui.toastAdd` race on
 /// the toast subsystem's mutex against the GUI thread's per-frame toast iteration,
 /// and the contention can wedge one of them indefinitely (observed in multi-doc
 /// save-all-quit). The save-complete toast is duplicate feedback — the dialog
 /// closing + tab disappearing already signals completion — so we skip it.
-/// Async-path entry takes `file_id` and re-looks up the file at the END (for
-/// `history.bookmark` reset). The snapshot owns its own bytes so the actual
-/// zip write doesn't need any access to the live file. Re-lookup is critical
-/// because `open_files` shifts inline values on remove and any pointer captured
-/// upfront would silently alias a different file by the time we write.
-fn writeSnapshotToZip(file_id: u64, window: *dvui.Window, snap: *const SaveSnapshot) !void {
+fn writeSnapshotToZip(window: *dvui.Window, snap: *const SaveSnapshot) !void {
     _ = window;
     const zip_file = zip.zip_open(snap.null_terminated_path.ptr, zip.ZIP_DEFAULT_COMPRESSION_LEVEL, 'w');
 
@@ -3116,8 +3147,6 @@ fn writeSnapshotToZip(file_id: u64, window: *dvui.Window, snap: *const SaveSnaps
         try writeSnapshotEntriesToZip(z, snap);
         zip.zip_close(z);
     }
-
-    if (runtime.state().docs.fileById(file_id)) |f| f.history.bookmark = 0;
 }
 
 fn zipEntryOk(rc: c_int) !void {
@@ -3173,7 +3202,7 @@ pub fn saveToDownload(self: *File, window: *dvui.Window) !void {
         defer snap.deinit(runtime.allocator());
         const bytes = try writeSnapshotToZipBytes(&snap, runtime.allocator());
         defer runtime.allocator().free(bytes);
-        try @import("../web_file_io.zig").downloadBytesWithExtension(basename, ".fiz", bytes);
+        try @import("../web_file_io.zig").downloadBytesWithExtension(basename, ".pixi", bytes);
     } else if (std.mem.eql(u8, ext, ".png")) {
         const bytes = try flattenedImageBytes(self, window, .png);
         defer runtime.allocator().free(bytes);
@@ -3250,14 +3279,14 @@ pub fn saveAsFizzy(self: *File, new_path: []const u8, window: *dvui.Window) !voi
     runtime.allocator().free(old_path[0..old_path.len]);
 }
 
-/// Default filename (with `.fiz`) for a Save As dialog, derived from the current path.
+/// Default filename (with `.pixi`) for a Save As dialog, derived from the current path.
 pub fn defaultSaveAsFilename(allocator: std.mem.Allocator, current_path: []const u8) ![]u8 {
     const base = std.fs.path.basename(current_path);
     const stem: []const u8 = if (std.mem.lastIndexOf(u8, base, ".")) |i| base[0..i] else base;
     if (stem.len == 0) {
-        return try std.fmt.allocPrint(allocator, "{s}", .{"untitled.fiz"});
+        return try std.fmt.allocPrint(allocator, "{s}", .{"untitled.pixi"});
     }
-    return try std.fmt.allocPrint(allocator, "{s}.fiz", .{stem});
+    return try std.fmt.allocPrint(allocator, "{s}.pixi", .{stem});
 }
 
 fn deinitAllUserLayers(self: *File) void {

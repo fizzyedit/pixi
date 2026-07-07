@@ -74,6 +74,8 @@ pub fn resetDocumentSaveUIState(st: *State, doc: DocHandle) void {
 }
 
 pub fn tickOpenDocuments(st: *State) bool {
+    Internal.File.drainCompletedSaves(&st.docs);
+
     var needs_save_status_anim_tick = false;
     for (st.docs.files.values()) |*file| {
         file.tickSaveDoneFlash();

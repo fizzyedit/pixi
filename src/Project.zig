@@ -9,6 +9,12 @@ const Project = @This();
 pub var parsed: ?std.json.Parsed(Project) = null;
 pub var read: ?[]u8 = null;
 
+/// Name of the project file backing the currently loaded project. Defaults to the
+/// `.pixiproject` name pixi (the plugin) owns; `load` switches this to the legacy
+/// `.fizproject` name when that's the only one present in the folder, so `save` round-trips
+/// to the same file instead of leaving a stray duplicate behind.
+pub var filename: []const u8 = ".pixiproject";
+
 /// Path for the final packed texture to save
 packed_image_output: ?[]const u8 = null,
 
@@ -24,9 +30,22 @@ pack_on_save: bool = false,
 pub fn load(allocator: std.mem.Allocator) !?Project {
     if (comptime builtin.target.cpu.arch == .wasm32) return null;
     if (runtime.state().host.folder()) |folder| {
-        const file = try std.fs.path.join(runtime.state().host.arena(), &.{ folder, ".fizproject" });
+        filename = ".pixiproject";
+        var file = try std.fs.path.join(runtime.state().host.arena(), &.{ folder, filename });
+        var maybe_r = pixi_mod.fs.read(allocator, dvui.io, file) catch null;
 
-        if (pixi_mod.fs.read(allocator, dvui.io, file) catch null) |r| {
+        if (maybe_r == null) {
+            // No `.pixiproject` in this folder — fall back to the legacy `.fizproject` name.
+            filename = ".fizproject";
+            file = try std.fs.path.join(runtime.state().host.arena(), &.{ folder, filename });
+            maybe_r = pixi_mod.fs.read(allocator, dvui.io, file) catch null;
+            if (maybe_r == null) {
+                // Neither exists — a freshly-created project defaults to `.pixiproject`.
+                filename = ".pixiproject";
+            }
+        }
+
+        if (maybe_r) |r| {
             read = r;
 
             const options = std.json.ParseOptions{ .duplicate_field_behavior = .use_first, .ignore_unknown_fields = true };
@@ -62,7 +81,7 @@ pub fn load(allocator: std.mem.Allocator) !?Project {
 pub fn save(project: *Project) !void {
     if (comptime builtin.target.cpu.arch == .wasm32) return;
     if (runtime.state().host.folder()) |folder| {
-        const file = try std.fs.path.join(runtime.allocator(), &.{ folder, ".fizproject" });
+        const file = try std.fs.path.join(runtime.allocator(), &.{ folder, filename });
         defer runtime.allocator().free(file);
         const options = std.json.Stringify.Options{};
 

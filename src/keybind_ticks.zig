@@ -75,6 +75,28 @@ pub fn tick() !void {
                 if (ke.matchBind("selection") and ke.action == .down) {
                     runtime.state().tools.set(.selection);
                 }
+
+                // Transform / Grid Layout are pixel-art-only concepts — the shell doesn't know
+                // their keybind names, only whichever plugin owns the focused document does.
+                if (ke.matchBind("transform") and ke.action == .down) {
+                    if (runtime.state().host.activeDoc()) |doc| {
+                        if (doc.owner == pixi_mod.plugin.pluginPtr()) {
+                            runtime.state().host.runCommand("pixi.transform") catch |err| {
+                                dvui.log.err("Transform command failed: {s}", .{@errorName(err)});
+                            };
+                        }
+                    }
+                }
+
+                if (ke.matchBind("grid_layout") and ke.action == .down) {
+                    if (runtime.state().host.activeDoc()) |doc| {
+                        if (doc.owner == pixi_mod.plugin.pluginPtr()) {
+                            runtime.state().host.runCommand("pixi.gridLayout") catch |err| {
+                                dvui.log.err("Grid layout command failed: {s}", .{@errorName(err)});
+                            };
+                        }
+                    }
+                }
             },
             else => {},
         }

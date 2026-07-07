@@ -25,7 +25,7 @@ pub fn draw() !void {
             });
             defer tl.deinit();
 
-            const project_path = std.fs.path.join(dvui.currentWindow().lifo(), &.{ folder, ".fizproject" }) catch {
+            const project_path = std.fs.path.join(dvui.currentWindow().lifo(), &.{ folder, pixi_mod.Project.filename }) catch {
                 dvui.log.err("Failed to join project path", .{});
                 return;
             };

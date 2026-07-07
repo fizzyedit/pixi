@@ -15,9 +15,6 @@ pub const plugin_id = "pixi";
 
 pub const InputScheme = enum { auto, mouse, trackpad };
 
-/// Resolved zoom/pan control style after applying `auto` (`dvui.mouseType`).
-pub const ResolvedPanZoomScheme = enum { mouse, trackpad };
-
 /// How sprite-cell transparency (checkerboard) is tinted behind the canvas.
 pub const TransparencyEffect = enum {
     /// Uniform default tone only (no hue gradient).
@@ -28,7 +25,8 @@ pub const TransparencyEffect = enum {
     animation,
 };
 
-/// Zoom/pan control scheme (`auto` picks mouse vs trackpad from `dvui.mouseType()` after scroll events).
+/// Deprecated: canvas control scheme now lives in the shell (`Settings.input_scheme` in fizzy).
+/// Kept so older per-plugin settings blobs still parse.
 input_scheme: InputScheme = .auto,
 
 /// Whether or not to show rulers on each canvas.
@@ -57,19 +55,6 @@ checker_color_odd: [4]u8 = .{ 175, 175, 175, 255 },
 
 /// Checkerboard / transparency tint behind sprites (grid cells).
 transparency_effect: TransparencyEffect = .none,
-
-pub fn resolvedPanZoomScheme(settings: *const PixelArtSettings, host: *sdk.Host) ResolvedPanZoomScheme {
-    return switch (settings.input_scheme) {
-        .auto => switch (dvui.mouseType()) {
-            // Runtime platform detection so macOS web users get the trackpad default.
-            .unknown => if (host.isMacOS()) .trackpad else .mouse,
-            .mouse => .mouse,
-            .trackpad => .trackpad,
-        },
-        .mouse => .mouse,
-        .trackpad => .trackpad,
-    };
-}
 
 /// Load from the host's per-plugin store, or defaults if absent/unparsable. Unknown keys
 /// are ignored, so the one-time legacy-migration blob (which still carries shell fields)
@@ -156,57 +141,5 @@ pub fn draw(_: ?*anyopaque) !void {
         if (dvui.checkbox(@src(), &pa.settings.scrolling_cards, "Show sprite cover-flow cards", .{ .expand = .none })) {
             pa.settings.save(pa.host);
         }
-    }
-
-    {
-        var box = dvui.groupBox(@src(), "Controls", .{ .expand = .horizontal });
-        defer box.deinit();
-
-        var dropdown: dvui.DropdownWidget = undefined;
-        dropdown.init(@src(), .{ .label = "Control scheme" }, .{
-            .expand = .horizontal,
-            .corner_radius = dvui.Rect.all(1000),
-        });
-        defer dropdown.deinit();
-
-        var hbox = dvui.box(@src(), .{ .dir = .horizontal }, .{
-            .expand = .vertical,
-            .gravity_x = 1.0,
-        });
-
-        const label_text: []const u8 = switch (pa.settings.input_scheme) {
-            .auto => switch (dvui.mouseType()) {
-                // Pre-classification (no scroll events seen yet) — drop the parenthetical.
-                .unknown => "Auto",
-                .mouse, .trackpad => |hint| try std.fmt.allocPrint(dvui.currentWindow().lifo(), "Auto ({s})", .{@tagName(hint)}),
-            },
-            .mouse => "Mouse",
-            .trackpad => "Trackpad",
-        };
-        dvui.label(@src(), "{s}", .{label_text}, .{ .margin = .all(0), .padding = .all(0) });
-
-        dvui.icon(@src(), "dropdown_triangle", dvui.entypo.triangle_down, .{}, .{ .gravity_y = 0.5 });
-
-        hbox.deinit();
-
-        if (dropdown.dropped()) {
-            if (dropdown.addChoiceLabel("Auto")) {
-                pa.settings.input_scheme = .auto;
-                pa.settings.save(pa.host);
-                dvui.refresh(null, @src(), vbox.data().id);
-            }
-            if (dropdown.addChoiceLabel("Mouse")) {
-                pa.settings.input_scheme = .mouse;
-                pa.settings.save(pa.host);
-                dvui.refresh(null, @src(), vbox.data().id);
-            }
-            if (dropdown.addChoiceLabel("Trackpad")) {
-                pa.settings.input_scheme = .trackpad;
-                pa.settings.save(pa.host);
-                dvui.refresh(null, @src(), vbox.data().id);
-            }
-        }
-
-        _ = dvui.spacer(@src(), .{ .min_size_content = .{ .w = 10, .h = 10 } });
     }
 }

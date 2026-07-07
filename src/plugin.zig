@@ -115,30 +115,58 @@ fn docFile(doc: DocHandle) *Internal.File {
     return runtime.state().docs.fileById(doc.id).?;
 }
 
-/// Priority for opening `ext` (lower wins). pixi owns its native `.fiz`/`.pixi`
+/// Priority for opening `ext` (lower wins). pixi owns its native `.pixi`/`.fiz`
 /// and flat-image `.png`/`.jpg`/`.jpeg`; native formats win over flat images when
 /// some future plugin also claims an image type.
 fn fileTypePriority(_: *anyopaque, ext: []const u8) ?u8 {
     if (Internal.File.isFizzyExtension(ext)) return 0;
-    if (Internal.File.isFlatImageExtension(ext)) return 10;
+    if (Internal.File.isFlatImageExtension(ext)) return 90;
     return null;
 }
 
-/// Draw the file-tree icon for the file types pixi owns (its `.fiz`/`.pixi` documents and flat
-/// images). Returns false for anything else so the workbench falls back to a generic icon.
+/// Doubles the atlas sprites' native pixel size for icon drawing — the raw `misc.pixi` art reads
+/// too small at 1:1 next to the file tree's other (vector, resolution-independent) icons.
+const file_icon_sprite_scale: f32 = 2.0;
+
+/// Draw the file-tree icon for the file types pixi owns: its own `ui_atlas` sprites for
+/// `.fiz` (the `fiz` animation in `assets/src/misc.pixi`) and `.pixi` (the `pixi` animation),
+/// drawn at `file_icon_sprite_scale` so the pixel art stays crisp (integer-scaled) but readable,
+/// plus a generic vector icon for flat images. Returns false for anything else so the workbench
+/// falls back to a generic icon.
 fn drawFileIcon(_: ?*anyopaque, ext: []const u8, _: []const u8, color: dvui.Color) bool {
-    const icon = if (Internal.File.isFizzyExtension(ext))
-        dvui.entypo.brush
-    else if (Internal.File.isFlatImageExtension(ext))
-        dvui.entypo.image
-    else
-        return false;
-    dvui.icon(@src(), "PixiFileIcon", icon, .{ .stroke_color = color, .fill_color = color }, .{
+    const ui_atlas = runtime.uiAtlas();
+    if (std.mem.eql(u8, ext, ".fiz")) {
+        _ = ui_atlas.sprites[internal.atlas.sprites.fiz_default].draw(@src(), ui_atlas.source, file_icon_sprite_scale, .{
+            .gravity_y = 0.5,
+            .padding = dvui.Rect.all(3),
+        });
+        return true;
+    }
+    if (std.mem.eql(u8, ext, ".pixi")) {
+        _ = ui_atlas.sprites[internal.atlas.sprites.pixi_default].draw(@src(), ui_atlas.source, file_icon_sprite_scale, .{
+            .gravity_y = 0.5,
+            .padding = dvui.Rect.all(3),
+        });
+        return true;
+    }
+    if (Internal.File.isFlatImageExtension(ext)) {
+        dvui.icon(@src(), "PixiFileIcon", dvui.entypo.image, .{ .stroke_color = color, .fill_color = color }, .{
+            .gravity_y = 0.5,
+            .padding = dvui.Rect.all(3),
+            .background = false,
+        });
+        return true;
+    }
+    return false;
+}
+
+fn drawPluginIcon(_: ?*anyopaque) void {
+    const ui_atlas = runtime.uiAtlas();
+    _ = ui_atlas.sprites[internal.atlas.sprites.pixi_default].draw(@src(), ui_atlas.source, 5.0, .{
+        .gravity_x = 0.5,
         .gravity_y = 0.5,
-        .padding = dvui.Rect.all(3),
-        .background = false,
+        .padding = dvui.Rect.all(2),
     });
-    return true;
 }
 
 /// Load `path` into the plugin-owned `*Internal.File` at `out_doc`. Runs on the shell's
@@ -348,6 +376,7 @@ pub fn register(host: *sdk.Host) !void {
     try host.registerPlugin(&plugin);
     try host.registerFileRowFillColor(.{ .owner = &plugin, .color = &fileRowFillColor });
     try host.registerFileIcon(.{ .owner = &plugin, .draw = drawFileIcon });
+    try host.registerPluginIcon(.{ .owner = &plugin, .draw = drawPluginIcon });
     try host.registerSidebarView(.{
         .id = view_tools,
         .owner = &plugin,
@@ -389,7 +418,7 @@ pub fn register(host: *sdk.Host) !void {
     // `transform`/`copy`/`paste` are *not* commands — they are `Plugin.VTable` hooks the shell
     // dispatches to the focused document's owner.)
     try host.registerCommand(.{
-        .id = "internal.gridLayout",
+        .id = "pixi.gridLayout",
         .owner = &plugin,
         .title = "Grid Layout…",
         .run = gridLayoutCommand,
@@ -403,13 +432,91 @@ pub fn register(host: *sdk.Host) !void {
     });
 
     // Editing verbs the shell's Edit menu / keybinds dispatch to per active-doc owner
-    // (`<owner_id>.<action>`). These are pixel-art's answers; another editor registers its own.
-    try host.registerCommand(.{ .id = "internal.copy", .owner = &plugin, .title = "Copy", .run = pluginCopy });
-    try host.registerCommand(.{ .id = "internal.paste", .owner = &plugin, .title = "Paste", .run = pluginPaste });
-    try host.registerCommand(.{ .id = "internal.transform", .owner = &plugin, .title = "Transform", .run = pluginTransform });
-    try host.registerCommand(.{ .id = "internal.acceptEdit", .owner = &plugin, .title = "Accept Edit", .run = pluginAcceptEdit });
-    try host.registerCommand(.{ .id = "internal.cancelEdit", .owner = &plugin, .title = "Cancel Edit", .run = pluginCancelEdit });
-    try host.registerCommand(.{ .id = "internal.deleteSelection", .owner = &plugin, .title = "Delete Selection", .run = pluginDeleteSelection });
+    // (`<owner_id>.<action>`, i.e. `pixi.<action>` since `plugin.id == "pixi"`). These are
+    // pixel-art's answers; another editor registers its own under its own id.
+    try host.registerCommand(.{ .id = "pixi.copy", .owner = &plugin, .title = "Copy", .run = pluginCopy });
+    try host.registerCommand(.{ .id = "pixi.paste", .owner = &plugin, .title = "Paste", .run = pluginPaste });
+    try host.registerCommand(.{ .id = "pixi.transform", .owner = &plugin, .title = "Transform", .run = pluginTransform });
+    try host.registerCommand(.{ .id = "pixi.acceptEdit", .owner = &plugin, .title = "Accept Edit", .run = pluginAcceptEdit });
+    try host.registerCommand(.{ .id = "pixi.cancelEdit", .owner = &plugin, .title = "Cancel Edit", .run = pluginCancelEdit });
+    try host.registerCommand(.{ .id = "pixi.deleteSelection", .owner = &plugin, .title = "Delete Selection", .run = pluginDeleteSelection });
+
+    // Transform / Grid Layout are pixel-art-only concepts — the shell's Edit menu has no
+    // knowledge of them. Inject both directly into the shell's existing "Edit" menu (in-app +
+    // native), only doing anything while the focused document is one of ours.
+    try host.registerMenuSection(.{
+        .id = "pixi.menu.edit_section",
+        .parent_menu_id = "shell.menu.edit",
+        .owner = &plugin,
+        .draw = drawEditMenuSection,
+    });
+    try host.registerNativeMenuItem(.{
+        .id = "pixi.native.transform",
+        .owner = &plugin,
+        .parent_menu_id = "shell.menu.edit",
+        .title = "Transform",
+        .run = nativeTransform,
+    });
+    try host.registerNativeMenuItem(.{
+        .id = "pixi.native.gridLayout",
+        .owner = &plugin,
+        .parent_menu_id = "shell.menu.edit",
+        .title = "Grid Layout…",
+        .run = nativeGridLayout,
+    });
+}
+
+/// Whether the shell's active document belongs to this plugin — Transform/Grid Layout only
+/// mean anything for a pixi document, so both entry points below no-op otherwise.
+fn activeDocIsOurs() bool {
+    const doc = runtime.state().host.activeDoc() orelse return false;
+    return doc.owner == &plugin;
+}
+
+/// In-app "Edit" menu section (see `Host.registerMenuSection`) — only draws while a pixi
+/// document is focused, so the item disappears entirely rather than sitting there disabled.
+fn drawEditMenuSection(_: ?*anyopaque) anyerror!void {
+    if (!activeDocIsOurs()) return;
+
+    _ = dvui.separator(@src(), .{ .expand = .horizontal });
+    if (editMenuItem(@src(), "Transform", "transform")) {
+        runtime.state().host.runCommand("pixi.transform") catch |err| {
+            dvui.log.err("Transform command failed: {s}", .{@errorName(err)});
+        };
+    }
+    _ = dvui.separator(@src(), .{ .expand = .horizontal });
+    if (editMenuItem(@src(), "Grid Layout…", "grid_layout")) {
+        runtime.state().host.runCommand("pixi.gridLayout") catch |err| {
+            dvui.log.err("Grid layout command failed: {s}", .{@errorName(err)});
+        };
+    }
+}
+
+fn editMenuItem(src: std.builtin.SourceLocation, label_str: []const u8, keybind_name: []const u8) bool {
+    var mi = dvui.menuItem(src, .{}, .{ .expand = .horizontal });
+    defer mi.deinit();
+    const clicked = mi.activeRect() != null;
+    internal.core.dvui.labelWithKeybind(
+        label_str,
+        dvui.currentWindow().keybinds.get(keybind_name) orelse .{},
+        true,
+        .{ .expand = .horizontal },
+        .{ .expand = .horizontal },
+    );
+    return clicked;
+}
+
+/// The native macOS Edit menu is a static bar rebuilt only on plugin load/unload, so these two
+/// items are always present once pixi is loaded — this guard is what actually keeps them inert
+/// for a non-pixi document, matching the in-app menu's behavior.
+fn nativeTransform(_: ?*anyopaque) anyerror!void {
+    if (!activeDocIsOurs()) return;
+    try runtime.state().host.runCommand("pixi.transform");
+}
+
+fn nativeGridLayout(_: ?*anyopaque) anyerror!void {
+    if (!activeDocIsOurs()) return;
+    try runtime.state().host.runCommand("pixi.gridLayout");
 }
 
 /// Stable `*Plugin` for constructing `DocHandle.owner` fields.
@@ -608,7 +715,7 @@ fn requestNewDocumentDialog(_: *anyopaque, parent_path: ?[]const u8, id_extra: u
     NewFile.request(parent_path, id_extra);
 }
 
-/// Command body for `internal.gridLayout` — opens the grid-layout dialog for the active doc.
+/// Command body for `pixi.gridLayout` — opens the grid-layout dialog for the active doc.
 fn gridLayoutCommand(_: *anyopaque) anyerror!void {
     const doc = runtime.state().host.activeDoc() orelse return;
     GridLayout.request(doc.id);
@@ -699,20 +806,16 @@ fn pluginPaste(state: *anyopaque) anyerror!void {
 fn contributeKeybinds(state: *anyopaque, win: *dvui.Window) anyerror!void {
     const st: *State = @ptrCast(@alignCast(state));
     if (st.host.isMacOS()) {
-        try win.keybinds.putNoClobber(win.gpa, "new_file", .{ .key = .n, .command = true });
         try win.keybinds.putNoClobber(win.gpa, "undo", .{ .key = .z, .command = true, .shift = false });
         try win.keybinds.putNoClobber(win.gpa, "redo", .{ .key = .z, .command = true, .shift = true });
-        try win.keybinds.putNoClobber(win.gpa, "zoom", .{ .command = true });
         try win.keybinds.putNoClobber(win.gpa, "sample", .{ .control = true });
         try win.keybinds.putNoClobber(win.gpa, "transform", .{ .command = true, .key = .t });
         try win.keybinds.putNoClobber(win.gpa, "grid_layout", .{ .command = true, .key = .g });
         try win.keybinds.putNoClobber(win.gpa, "export", .{ .command = true, .key = .p });
         try win.keybinds.putNoClobber(win.gpa, "delete_selection_contents", .{ .key = .backspace });
     } else {
-        try win.keybinds.putNoClobber(win.gpa, "new_file", .{ .key = .n, .control = true });
         try win.keybinds.putNoClobber(win.gpa, "undo", .{ .key = .z, .control = true, .shift = false });
         try win.keybinds.putNoClobber(win.gpa, "redo", .{ .key = .z, .control = true, .shift = true });
-        try win.keybinds.putNoClobber(win.gpa, "zoom", .{ .control = true });
         try win.keybinds.putNoClobber(win.gpa, "sample", .{ .alt = true });
         try win.keybinds.putNoClobber(win.gpa, "transform", .{ .control = true, .key = .t });
         try win.keybinds.putNoClobber(win.gpa, "grid_layout", .{ .control = true, .key = .g });

@@ -210,7 +210,7 @@ pub fn callAfter(id: dvui.Id, response: dvui.enums.DialogResponse) anyerror!void
     switch (response) {
         .ok => {
             if (parent_path) |parent| {
-                const new_path = try std.fs.path.join(runtime.allocator(), &.{ parent, "untitled.fiz" });
+                const new_path = try std.fs.path.join(runtime.allocator(), &.{ parent, "untitled.pixi" });
                 defer runtime.allocator().free(new_path);
 
                 const doc = try runtime.state().host.createDocument(new_path, .{
@@ -222,8 +222,10 @@ pub fn callAfter(id: dvui.Id, response: dvui.enums.DialogResponse) anyerror!void
                 const file = runtime.state().docs.fileFrom(doc);
 
                 // Save synchronously so the tree's directory scan sees the new file on the next draw
-                // (saveAsync would finish later and the fly-to / rename row would never match).
-                file.saveAsync() catch {
+                // (saveAsync only submits to the background queue and returns immediately — the
+                // file wouldn't exist on disk yet, so the fly-to / rename row below would never
+                // match and the dialog would never close).
+                file.saveZip(dvui.currentWindow()) catch {
                     dvui.log.err("Failed to save file: {s}", .{new_path});
                     return error.FailedToSaveFile;
                 };

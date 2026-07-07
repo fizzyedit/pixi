@@ -10,7 +10,7 @@ pub const sprites = struct {
     pub const box_selection_default = 4;
     pub const box_selection_add_default = 5;
     pub const box_selection_rem_default = 6;
-    pub const Sprite_7 = 7;
+    pub const dropper_default = 7;
     pub const Sprite_8 = 8;
     pub const Sprite_9 = 9;
     pub const color_selection_default = 10;
@@ -20,7 +20,8 @@ pub const sprites = struct {
     pub const pixel_selection_add_default = 14;
     pub const pixel_selection_rem_default = 15;
     pub const fox_default = 16;
-    pub const logo_default = 17;
+    pub const fiz_default = 17;
+    pub const pixi_default = 18;
 };
 
 // Animations 
@@ -47,6 +48,9 @@ pub const animations = struct {
      pub var box_selection_rem_default = [_]usize {
         sprites.box_selection_rem_default,
     };
+     pub var dropper_default = [_]usize {
+        sprites.dropper_default,
+    };
      pub var color_selection_default = [_]usize {
         sprites.color_selection_default,
     };
@@ -68,7 +72,10 @@ pub const animations = struct {
      pub var fox_default = [_]usize {
         sprites.fox_default,
     };
-     pub var logo_default = [_]usize {
-        sprites.logo_default,
+     pub var fiz_default = [_]usize {
+        sprites.fiz_default,
+    };
+     pub var pixi_default = [_]usize {
+        sprites.pixi_default,
     };
 };

@@ -4,7 +4,7 @@
 //!
 //! The middle is a horizontal strip: intrinsic-width form column on the left (vertical fill),
 //! preview on the right that expands with the window. The preview uses `CanvasWidget` so
-//! panning / zooming honour `Settings.resolvedPanZoomScheme` (`auto` follows DVUI scroll heuristics).
+//! panning / zooming honour the shell canvas control scheme via `CanvasBridge.scheme()`.
 
 const dvui = @import("dvui");
 const std = @import("std");

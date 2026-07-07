@@ -15,7 +15,7 @@ pub fn request(file_id: u64, mode: Mode, from_save_all_quit: bool) void {
     var mutex = pixi_mod.core.dvui.dialog(@src(), .{
         .displayFn = dialog,
         .callafterFn = callAfter,
-        .title = "Save as .fiz or current extension?",
+        .title = "Save as .pixi or current extension?",
         .ok_label = "",
         .cancel_label = "",
         .resizeable = false,
@@ -79,9 +79,9 @@ pub fn dialog(id: dvui.Id) anyerror!bool {
             .background = false,
         });
         tl.addText("File contains data only compatible with the ", .{ .font = dvui.Font.theme(.body) });
-        tl.addText(".fiz", .{ .font = bold_hi, .color_text = hi_fill });
+        tl.addText(".pixi", .{ .font = bold_hi, .color_text = hi_fill });
         tl.addText(" extension. Would you like to save a copy of your file as a ", .{ .font = dvui.Font.theme(.body) });
-        tl.addText(".fiz", .{ .font = bold_hi, .color_text = hi_fill });
+        tl.addText(".pixi", .{ .font = bold_hi, .color_text = hi_fill });
         tl.format(" extension or proceed saving as a {s}?", .{ext_disp}, .{ .font = dvui.Font.theme(.body) });
         tl.deinit();
     }
@@ -94,7 +94,7 @@ pub fn dialog(id: dvui.Id) anyerror!bool {
     var btn_row = dvui.box(@src(), .{ .dir = .horizontal }, .{ .expand = .none, .gravity_x = 0.5 });
     defer btn_row.deinit();
 
-    if (dialogButton(@src(), ".fiz", .highlight, 1, 0)) {
+    if (dialogButton(@src(), ".pixi", .highlight, 1, 0)) {
         try onChooseFizzy(file_id);
     }
     _ = dvui.spacer(@src(), .{ .min_size_content = .{ .w = 10, .h = 1 } });

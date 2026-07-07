@@ -5,9 +5,9 @@ const pixi_mod = @import("../../pixi.zig");
 const runtime = @import("../runtime.zig");
 const CanvasWidget = pixi_mod.core.dvui.CanvasWidget;
 
-/// Map the user's resolved pan/zoom preference onto the canvas's own scheme enum.
+/// Map the shell's resolved pan/zoom preference onto the canvas's own scheme enum.
 pub fn scheme() CanvasWidget.PanZoomScheme {
-    return switch (pixi_mod.Settings.resolvedPanZoomScheme(&runtime.state().settings, runtime.state().host)) {
+    return switch (runtime.state().host.panZoomScheme()) {
         .mouse => .mouse,
         .trackpad => .trackpad,
     };
