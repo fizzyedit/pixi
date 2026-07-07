@@ -1,5 +1,9 @@
-# pixi
-Pixel art editing plugin for fizzy
+<p align="center">  
+  <img width="25%" src="https://github.com/user-attachments/assets/fa4adcf9-6b59-49f9-8dd9-e8851ab0192d">
+  <h3 align=center></h3>
+</p>
+
+**Pixi** is an cross-platform open-source pixel art editor and animation editor written in [Zig](https://github.com/ziglang/zig).
 
 ## Currently supported features
 - [x] Typical pixel art operations. (draw, erase, dropper, bucket, selection, transformation, etc)
