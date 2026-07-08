@@ -39,7 +39,7 @@ jobs:
 
   build:
     needs: version
-    uses: fizzyedit/plugin-build-action/.github/workflows/build.yml@v1
+    uses: fizzyedit/plugin-build-action/.github/workflows/build.yml@v2
     permissions:
       contents: write
     with:
