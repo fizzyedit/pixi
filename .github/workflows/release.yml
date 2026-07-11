@@ -45,7 +45,7 @@ jobs:
     with:
       id: pixi
       version: ${{ needs.version.outputs.version }}
-      fizzy-sdk-version: "0.30.0"
-      abi-fingerprint: "0x2ce9460944f62f55"
-      min-sdk-version: "0.30.0"
+      fizzy-sdk-version: "0.31.0"
+      abi-fingerprint: "0xe178a41f3578f897"
+      min-sdk-version: "0.31.0"
       zig-version: "0.16.0"
