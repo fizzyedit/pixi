@@ -190,7 +190,7 @@ pub fn drawTools() !void {
             .min_size_content = .{ .w = 40, .h = 40 },
             .id_extra = id_extra,
             .background = true,
-            .corner_radius = dvui.Rect.all(1000),
+            .corners = .round(1000),
             .color_fill = if (selected) dvui.themeGet().color(.content, .fill) else .transparent,
             .color_fill_hover = dvui.themeGet().color(.content, .fill).lighten(if (dvui.themeGet().dark) 10.0 else -10.0),
             .box_shadow = if (selected) .{
@@ -271,13 +271,13 @@ pub fn drawLayerControls() !void {
             if (dvui.buttonIcon(@src(), "MergeLayerUp", icons.tvg.lucide.@"arrow-up-to-line", .{}, .{}, .{
                 .expand = .none,
                 .gravity_y = 0.5,
-                .corner_radius = dvui.Rect.all(1000),
+                .corners = .round(1000),
                 .box_shadow = .{
                     .color = .black,
                     .offset = .{ .x = -2.0, .y = 2.0 },
                     .fade = 6.0,
                     .alpha = 0.15,
-                    .corner_radius = dvui.Rect.all(1000),
+                    .corners = .round(1000),
                 },
                 .color_fill = dvui.themeGet().color(.control, .fill),
             })) {
@@ -295,13 +295,13 @@ pub fn drawLayerControls() !void {
             if (dvui.buttonIcon(@src(), "MergeLayerDown", icons.tvg.lucide.@"arrow-down-to-line", .{}, .{}, .{
                 .expand = .none,
                 .gravity_y = 0.5,
-                .corner_radius = dvui.Rect.all(1000),
+                .corners = .round(1000),
                 .box_shadow = .{
                     .color = .black,
                     .offset = .{ .x = -2.0, .y = 2.0 },
                     .fade = 6.0,
                     .alpha = 0.15,
-                    .corner_radius = dvui.Rect.all(1000),
+                    .corners = .round(1000),
                 },
                 .color_fill = dvui.themeGet().color(.control, .fill),
             })) {
@@ -322,13 +322,13 @@ pub fn drawLayerControls() !void {
             .{
                 .expand = .none,
                 .gravity_y = 0.5,
-                .corner_radius = dvui.Rect.all(1000),
+                .corners = .round(1000),
                 .box_shadow = .{
                     .color = .black,
                     .offset = .{ .x = -2.0, .y = 2.0 },
                     .fade = 6.0,
                     .alpha = 0.15,
-                    .corner_radius = dvui.Rect.all(1000),
+                    .corners = .round(1000),
                 },
                 .style = if (file.editor.isolate_layer) .highlight else .control,
             },
@@ -339,13 +339,13 @@ pub fn drawLayerControls() !void {
         if (dvui.buttonIcon(@src(), "AddLayer", icons.tvg.lucide.plus, .{}, .{}, .{
             .expand = .none,
             .gravity_y = 0.5,
-            .corner_radius = dvui.Rect.all(1000),
+            .corners = .round(1000),
             .box_shadow = .{
                 .color = .black,
                 .offset = .{ .x = -2.0, .y = 2.0 },
                 .fade = 6.0,
                 .alpha = 0.15,
-                .corner_radius = dvui.Rect.all(1000),
+                .corners = .round(1000),
             },
             .color_fill = dvui.themeGet().color(.control, .fill),
         })) {
@@ -357,13 +357,13 @@ pub fn drawLayerControls() !void {
         if (dvui.buttonIcon(@src(), "DuplicateLayer", icons.tvg.lucide.@"copy-plus", .{}, .{}, .{
             .expand = .none,
             .gravity_y = 0.5,
-            .corner_radius = dvui.Rect.all(1000),
+            .corners = .round(1000),
             .box_shadow = .{
                 .color = .black,
                 .offset = .{ .x = -2.0, .y = 2.0 },
                 .fade = 6.0,
                 .alpha = 0.15,
-                .corner_radius = dvui.Rect.all(1000),
+                .corners = .round(1000),
             },
             .color_fill = dvui.themeGet().color(.control, .fill),
         })) {
@@ -377,13 +377,13 @@ pub fn drawLayerControls() !void {
                 .style = .err,
                 .expand = .none,
                 .gravity_y = 0.5,
-                .corner_radius = dvui.Rect.all(1000),
+                .corners = .round(1000),
                 .box_shadow = .{
                     .color = .black,
                     .offset = .{ .x = -2.0, .y = 2.0 },
                     .fade = 6.0,
                     .alpha = 0.15,
-                    .corner_radius = dvui.Rect.all(1000),
+                    .corners = .round(1000),
                 },
             })) {
                 file.deleteLayer(file.selected_layer_index) catch {
@@ -412,7 +412,7 @@ pub fn drawLayers(tools: *Tools) !?dvui.Rect.Physical {
         var scroll_area = dvui.scrollArea(@src(), .{ .scroll_info = &file.editor.layers_scroll_info }, .{
             .expand = .both,
             .background = false,
-            .corner_radius = dvui.Rect.all(1000),
+            .corners = .round(1000),
         });
 
         defer scroll_area.deinit();
@@ -527,7 +527,7 @@ pub fn drawLayers(tools: *Tools) !?dvui.Rect.Physical {
         const box = dvui.box(@src(), .{ .dir = .vertical }, .{
             .expand = .horizontal,
             .background = false,
-            .corner_radius = dvui.Rect.all(1000),
+            .corners = .round(1000),
             .margin = dvui.Rect.rect(4, 0, 4, 4),
         });
         defer box.deinit();
@@ -556,7 +556,7 @@ pub fn drawLayers(tools: *Tools) !?dvui.Rect.Physical {
             }, .{
                 .id_extra = @intCast(layer_id),
                 .expand = .horizontal,
-                .corner_radius = dvui.Rect.all(1000),
+                .corners = .round(1000),
                 .background = false,
                 .margin = .all(0),
                 .padding = dvui.Rect.all(1),
@@ -623,7 +623,7 @@ pub fn drawLayers(tools: *Tools) !?dvui.Rect.Physical {
                 .color_fill_hover = .transparent,
                 .margin = dvui.Rect{},
                 .padding = dvui.Rect.all(1),
-                .corner_radius = dvui.Rect.all(8),
+                .corners = .round(8),
                 .box_shadow = null,
             });
             defer hbox.deinit();
@@ -645,7 +645,7 @@ pub fn drawLayers(tools: *Tools) !?dvui.Rect.Physical {
                 .gravity_y = 0.5,
                 .min_size_content = .{ .w = 8.0, .h = 8.0 },
                 .color_fill = color,
-                .corner_radius = dvui.Rect.all(1000),
+                .corners = .round(1000),
                 .margin = dvui.Rect.all(2),
                 .padding = dvui.Rect.all(0),
             });
@@ -765,7 +765,7 @@ pub fn drawLayers(tools: *Tools) !?dvui.Rect.Physical {
                         .expand = .ratio,
                         .min_size_content = .{ .w = 1.0, .h = 11.0 },
                         .id_extra = layer_index,
-                        .corner_radius = dvui.Rect.all(1000),
+                        .corners = .round(1000),
                         .margin = dvui.Rect.all(1),
                     },
                 )) {
@@ -782,7 +782,7 @@ pub fn drawLayers(tools: *Tools) !?dvui.Rect.Physical {
                         .expand = .ratio,
                         .min_size_content = .{ .w = 1.0, .h = 11.0 },
                         .id_extra = layer_index,
-                        .corner_radius = dvui.Rect.all(1000),
+                        .corners = .round(1000),
                         .margin = dvui.Rect.all(1),
                     },
                 )) {
@@ -825,7 +825,7 @@ pub fn drawLayers(tools: *Tools) !?dvui.Rect.Physical {
                         .expand = .ratio,
                         .min_size_content = .{ .w = 1.0, .h = 11.0 },
                         .id_extra = layer_index,
-                        .corner_radius = dvui.Rect.all(1000),
+                        .corners = .round(1000),
                         .margin = dvui.Rect.all(1),
                     },
                 )) {
@@ -842,7 +842,7 @@ pub fn drawLayers(tools: *Tools) !?dvui.Rect.Physical {
                         .expand = .ratio,
                         .min_size_content = .{ .w = 1.0, .h = 11.0 },
                         .id_extra = layer_index,
-                        .corner_radius = dvui.Rect.all(1000),
+                        .corners = .round(1000),
                         .margin = dvui.Rect.all(1),
                     },
                 )) {
@@ -952,7 +952,7 @@ pub fn drawColors() !void {
     const button_opts: dvui.Options = .{
         .expand = .both,
         .background = true,
-        .corner_radius = dvui.Rect.all(8.0),
+        .corners = .round(8.0),
         .color_fill = primary,
         .color_fill_hover = primary,
         .color_fill_press = primary,
@@ -963,7 +963,7 @@ pub fn drawColors() !void {
             .offset = .{ .x = -2.0, .y = 2.0 },
             .fade = 6.0,
             .alpha = 0.15,
-            .corner_radius = dvui.Rect.all(8.0),
+            .corners = .round(8.0),
         },
     };
 
@@ -1029,7 +1029,7 @@ fn drawColorPicker(rect: dvui.Rect.Physical, backing_color: *[4]u8, id_extra: us
         if (dvui.colorPicker(@src(), .{ .alpha = true, .hsv = &color }, .{
             .expand = .horizontal,
             .background = false,
-            .corner_radius = dvui.Rect.all(1000),
+            .corners = .round(1000),
             // Default saturation box is 100×100 and the sliders / hue strip size off of
             // that. Bumping the outer min_size_content to ~2× makes everything inside
             // (the value/saturation pad, the hue strip, the RGB+A sliders, the hex
@@ -1061,13 +1061,13 @@ pub fn drawPaletteControls() !void {
         .expand = .none,
         .gravity_y = 0.5,
         .gravity_x = 1.0,
-        .corner_radius = dvui.Rect.all(1000),
+        .corners = .round(1000),
         .box_shadow = .{
             .color = .black,
             .offset = .{ .x = -2.0, .y = 2.0 },
             .fade = 6.0,
             .alpha = 0.15,
-            .corner_radius = dvui.Rect.all(1000),
+            .corners = .round(1000),
         },
         .rotation = std.math.pi * 0.25,
         .style = if (runtime.state().pinned_palettes) .highlight else .control,
@@ -1094,7 +1094,7 @@ pub fn drawPalettes() !void {
         var dropdown: dvui.DropdownWidget = undefined;
         dropdown.init(@src(), .{ .label = "Palette" }, .{
             .expand = .horizontal,
-            .corner_radius = dvui.Rect.all(1000),
+            .corners = .round(1000),
         });
 
         defer dropdown.deinit();
@@ -1220,7 +1220,7 @@ pub fn drawPalettes() !void {
 
                 defer button_widget.deinit();
 
-                path.addRect(button_widget.data().rectScale().r, .all(1000));
+                path.addRect(button_widget.data().rectScale().r, .round(1000));
 
                 const base_index: u16 = @intCast(triangles.vertexes.items.len);
 
@@ -1529,7 +1529,7 @@ fn processLayerTreePointerEvents(tree: *pixi_mod.core.dvui.TreeWidget, file: *pi
                         const cw = dvui.currentWindow();
                         if (cw.dragging.state != .none) dvui.dragEnd();
                         layerTreeClearGestureKeysOnly(file);
-                        dvui.dragPreStart(me.p, .{ .offset = h.hbox_tl.diff(me.p) });
+                        dvui.dragPreStart(me.button, me.p, .{ .offset = h.hbox_tl.diff(me.p) });
 
                         const mode = pixi_mod.core.dvui.TreeSelection.clickModeFromMod(me.mod);
                         const applied = applyLayerClick(file, h.layer_index, mode);
@@ -1590,9 +1590,9 @@ fn processLayerTreePointerEvents(tree: *pixi_mod.core.dvui.TreeWidget, file: *pi
                         var multi_buf: [128]usize = undefined;
                         const multi_len = buildLayerMultiDragIds(file, hits, multi_buf[0..]);
                         if (multi_len > 1) {
-                            tree.dragStartMulti(branch_usize.?, multi_buf[0..multi_len], me.p, row_size);
+                            tree.dragStartMulti(branch_usize.?, multi_buf[0..multi_len], me.button, me.p, row_size);
                         } else {
-                            tree.dragStart(branch_usize.?, me.p, row_size);
+                            tree.dragStart(branch_usize.?, me.button, me.p, row_size);
                         }
 
                         if (layer_row_gesture) |*g| {

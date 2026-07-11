@@ -245,7 +245,7 @@ pub fn sprite(src: std.builtin.SourceLocation, init_opts: SpriteInitOptions, opt
                         .s = wd.contentRectScale().s,
                     },
                     .uv = uv,
-                    .corner_radius = .all(0),
+                    .corners = .square,
                 };
                 pixi_mod.render.renderReflectionLayerStack(preview_opts, reflection_triangles_layers, reflection_triangles_layers_dimmed) catch |err| {
                     dvui.log.err("Failed to render reflection layer stack: {any}", .{err});
@@ -336,7 +336,7 @@ pub fn sprite(src: std.builtin.SourceLocation, init_opts: SpriteInitOptions, opt
                 .s = wd.contentRectScale().s,
             },
             .uv = uv,
-            .corner_radius = .all(0),
+            .corners = .square,
             .color_mod = fade_white,
             // When skewed, render the layer stack into the same quad as the
             // background so the art tilts like a record on a shelf.
@@ -680,7 +680,7 @@ pub fn renderSprite(source: dvui.ImageSource, s: pixi_mod.core_sprite, data_poin
             .h = @as(f32, @floatFromInt(s.source[3])) * scale,
         },
         .border = dvui.Rect.all(0),
-        .corner_radius = .{ .x = 0, .y = 0 },
+        .corners = .square,
         .padding = .{ .x = 0, .y = 0 },
         .margin = .{ .x = 0, .y = 0 },
         .background = false,

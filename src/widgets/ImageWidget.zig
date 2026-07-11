@@ -81,7 +81,7 @@ pub fn processSample(self: *ImageWidget) void {
                     self.right_mouse_down = true;
                     e.handle(@src(), self.init_options.canvas.scroll_container.data());
                     dvui.captureMouse(self.init_options.canvas.scroll_container.data(), e.num);
-                    dvui.dragPreStart(me.p, .{ .name = "sample_drag" });
+                    dvui.dragPreStart(me.button, me.p, .{ .name = "sample_drag" });
                     self.drag_data_point = current_point;
 
                     self.sample(current_point, me.p);
@@ -237,7 +237,7 @@ pub fn drawSampleMagnifier(canvas: *CanvasWidget, source: dvui.ImageSource, data
     };
     const magnifier_nat = magnifier_phys.toNatural();
 
-    // Corner-radius rect maps {x: TL, y: TR, w: BR, h: BL}. BL is sharp (0) at home so it points at
+    // Corners map {tl, tr, br, bl}. BL is sharp (0) at home so it points at
     // the sample; as the magnifier is pushed away from home, grow BL so the rectangle's edge slides
     // tangent to the sample point — fully circular at `cr_max`.
     const cr_max = magnifier_nat.w / 2;
@@ -245,7 +245,7 @@ pub fn drawSampleMagnifier(canvas: *CanvasWidget, source: dvui.ImageSource, data
     const push_dist_phys = @sqrt(push_x_phys * push_x_phys + push_y_phys * push_y_phys);
     const push_dist_nat = if (win_scale > 0) push_dist_phys / win_scale else push_dist_phys;
     const bl_radius = @min(cr_max, push_dist_nat);
-    const corner_radius = dvui.Rect{ .x = cr_max, .y = cr_max, .w = cr_max, .h = bl_radius };
+    const corners = dvui.CornerRect{ .tl = .round(cr_max), .tr = .round(cr_max), .br = .round(cr_max), .bl = .round(bl_radius) };
 
     const ns = dvui.currentWindow().natural_scale;
     const border_nat = 2.0 / ns;
@@ -258,10 +258,10 @@ pub fn drawSampleMagnifier(canvas: *CanvasWidget, source: dvui.ImageSource, data
         .color_fill = dvui.themeGet().color(.window, .fill),
         .border = dvui.Rect.all(border_nat),
         .color_border = dvui.themeGet().color(.control, .text),
-        .corner_radius = corner_radius,
+        .corners = corners,
         .box_shadow = .{
             .fade = 15.0 / ns,
-            .corner_radius = corner_radius,
+            .corners = corners,
             .alpha = 0.2,
             .offset = .{ .x = 2.0 / ns, .y = 2.0 / ns },
         },
@@ -279,16 +279,16 @@ pub fn drawSampleMagnifier(canvas: *CanvasWidget, source: dvui.ImageSource, data
     var rs = fw.data().borderRectScale();
     rs.r = rs.r.inset(dvui.Rect.Physical.all(2.0 * rs.s));
 
-    const corner_scaled = dvui.Rect{
-        .x = corner_radius.x * rs.s,
-        .y = corner_radius.y * rs.s,
-        .w = corner_radius.w * rs.s,
-        .h = corner_radius.h * rs.s,
+    const corners_scaled = dvui.CornerRect{
+        .tl = .round(corners.tl.rx * rs.s),
+        .tr = .round(corners.tr.rx * rs.s),
+        .br = .round(corners.br.rx * rs.s),
+        .bl = .round(corners.bl.rx * rs.s),
     };
 
     dvui.renderImage(source, rs, .{
         .uv = uv_rect,
-        .corner_radius = corner_scaled,
+        .corners = corners_scaled,
     }) catch {
         std.log.err("Failed to render image", .{});
     };
@@ -356,7 +356,7 @@ pub fn drawImage(self: *ImageWidget) void {
         .border = dvui.Rect.all(0),
         .box_shadow = .{
             .fade = 20 * 1 / self.init_options.canvas.scale,
-            .corner_radius = dvui.Rect.all(2 * 1 / self.init_options.canvas.scale),
+            .corners = .round(2 * 1 / self.init_options.canvas.scale),
             .alpha = if (dvui.themeGet().dark) 0.4 else 0.2,
             .offset = .{
                 .x = 2 * 1 / self.init_options.canvas.scale,

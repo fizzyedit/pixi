@@ -713,7 +713,7 @@ pub fn draw(self: *Sprites) !void {
                     .offset = .{ .x = 0.0, .y = std.math.lerp(5.0, 8.0, focusness) },
                     .fade = std.math.lerp(8.0, 12.0, focusness),
                     .alpha = std.math.lerp(0.2, 0.25, focusness) * cd.opacity,
-                    .corner_radius = dvui.Rect.all(parent_height / 32.0),
+                    .corners = .round(parent_height / 32.0),
                 },
             });
             defer hbox.deinit();
@@ -1078,7 +1078,7 @@ fn handleInput(self: *Sprites, file: anytype, mode: ScrollMode, count: usize, px
                 if (me.button.pointer()) {
                     e.handle(@src(), pane);
                     dvui.captureMouse(pane, e.num);
-                    dvui.dragPreStart(me.p, .{ .name = "coverflow_drag", .cursor = .hand });
+                    dvui.dragPreStart(me.button, me.p, .{ .name = "coverflow_drag", .cursor = .hand });
                     self.moved_since_press = false;
                     self.drag_was_touch = me.button.touch();
                     self.wheel_accum = 0.0;
@@ -1282,7 +1282,7 @@ fn drawRoundButton(
         .expand = .both,
         .min_size_content = .{ .w = size, .h = size },
         .background = true,
-        .corner_radius = dvui.Rect.all(btn_radius),
+        .corners = .round(btn_radius),
         .color_fill = fill,
         .color_fill_hover = fill.lighten(if (dvui.themeGet().dark) 10.0 else -10.0),
         .color_border = .transparent,
@@ -1297,7 +1297,7 @@ fn drawRoundButton(
             .alpha = 0.2,
             .fade = 4,
             .offset = .{ .x = 0, .y = 2 },
-            .corner_radius = dvui.Rect.all(btn_radius),
+            .corners = .round(btn_radius),
         },
     });
     defer btn.deinit();

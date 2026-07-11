@@ -275,7 +275,7 @@ pub fn drawTooltip(_: Tools, tool: Tool, rect: dvui.Rect.Physical, id_extra: u64
         .box_shadow = .{
             .color = .black,
             .shrink = 0,
-            .corner_radius = dvui.Rect.all(8),
+            .corners = .round(8),
             .offset = .{ .x = 0, .y = 2 },
             .fade = 4,
             .alpha = 0.2,
@@ -402,7 +402,7 @@ pub fn drawTooltip(_: Tools, tool: Tool, rect: dvui.Rect.Physical, id_extra: u64
                         .min_size_content = .{ .w = 40, .h = 40 },
                         .id_extra = @intCast(id_extra * 10 + mi + 1),
                         .background = true,
-                        .corner_radius = dvui.Rect.all(1000),
+                        .corners = .round(1000),
                         .color_fill = if (selected) dvui.themeGet().color(.content, .fill) else .transparent,
                         .color_fill_hover = dvui.themeGet().color(.content, .fill).lighten(if (dvui.themeGet().dark) 10.0 else -10.0),
                         .box_shadow = if (selected) .{
@@ -410,7 +410,7 @@ pub fn drawTooltip(_: Tools, tool: Tool, rect: dvui.Rect.Physical, id_extra: u64
                             .offset = .{ .x = -2.5, .y = 2.5 },
                             .fade = 4.0,
                             .alpha = 0.25,
-                            .corner_radius = dvui.Rect.all(1000),
+                            .corners = .round(1000),
                         } else null,
                         .padding = .all(0),
                     });

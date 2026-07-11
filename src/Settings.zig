@@ -93,7 +93,7 @@ pub fn draw(_: ?*anyopaque) !void {
             var dropdown: dvui.DropdownWidget = undefined;
             dropdown.init(@src(), .{ .label = "Transparency effect" }, .{
                 .expand = .horizontal,
-                .corner_radius = dvui.Rect.all(1000),
+                .corners = .round(1000),
             });
             defer dropdown.deinit();
 

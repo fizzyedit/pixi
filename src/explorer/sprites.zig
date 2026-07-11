@@ -513,13 +513,13 @@ pub fn drawAnimationControls(self: *Sprites) !void {
                 .expand = .none,
                 .gravity_y = 0.5,
                 .padding = dvui.Rect.all(4),
-                .corner_radius = dvui.Rect.all(1000),
+                .corners = .round(1000),
                 .box_shadow = .{
                     .color = .black,
                     .offset = .{ .x = -2.0, .y = 2.0 },
                     .fade = 6.0,
                     .alpha = 0.15,
-                    .corner_radius = dvui.Rect.all(1000),
+                    .corners = .round(1000),
                 },
                 .color_fill = dvui.themeGet().color(.control, .fill),
             });
@@ -569,13 +569,13 @@ pub fn drawAnimationControls(self: *Sprites) !void {
                 .expand = .none,
                 .gravity_y = 0.5,
                 .padding = dvui.Rect.all(4),
-                .corner_radius = dvui.Rect.all(1000),
+                .corners = .round(1000),
                 .box_shadow = .{
                     .color = .black,
                     .offset = .{ .x = -2.0, .y = 2.0 },
                     .fade = 6.0,
                     .alpha = 0.15,
-                    .corner_radius = dvui.Rect.all(1000),
+                    .corners = .round(1000),
                 },
                 .color_fill = dvui.themeGet().color(.control, .fill),
             });
@@ -629,13 +629,13 @@ pub fn drawAnimationControls(self: *Sprites) !void {
                 .expand = .none,
                 .gravity_y = 0.5,
                 .padding = dvui.Rect.all(4),
-                .corner_radius = dvui.Rect.all(1000),
+                .corners = .round(1000),
                 .box_shadow = .{
                     .color = .black,
                     .offset = .{ .x = -2.0, .y = 2.0 },
                     .fade = 6.0,
                     .alpha = 0.15,
-                    .corner_radius = dvui.Rect.all(1000),
+                    .corners = .round(1000),
                 },
                 .color_fill = dvui.themeGet().color(.err, .fill),
             });
@@ -815,7 +815,7 @@ pub fn drawAnimations(self: *Sprites) !void {
         const box = dvui.box(@src(), .{ .dir = .vertical }, .{
             .expand = .horizontal,
             .background = false,
-            .corner_radius = dvui.Rect.all(1000),
+            .corners = .round(1000),
             .margin = dvui.Rect.rect(4, 0, 4, 4),
         });
         defer box.deinit();
@@ -841,7 +841,7 @@ pub fn drawAnimations(self: *Sprites) !void {
             }, .{
                 .id_extra = @intCast(anim_id),
                 .expand = .horizontal,
-                .corner_radius = dvui.Rect.all(1000),
+                .corners = .round(1000),
                 .background = false,
                 .margin = .all(0),
                 .padding = dvui.Rect.all(1),
@@ -884,7 +884,7 @@ pub fn drawAnimations(self: *Sprites) !void {
                 .color_fill_hover = .transparent,
                 .margin = .all(0),
                 .padding = dvui.Rect.all(5),
-                .corner_radius = dvui.Rect.all(8),
+                .corners = .round(8),
             });
             defer hbox.deinit();
 
@@ -894,7 +894,7 @@ pub fn drawAnimations(self: *Sprites) !void {
                 .gravity_y = 0.5,
                 .min_size_content = .{ .w = 8.0, .h = 8.0 },
                 .color_fill = color,
-                .corner_radius = dvui.Rect.all(1000),
+                .corners = .round(1000),
                 .margin = dvui.Rect.all(2),
                 .padding = dvui.Rect.all(0),
             });
@@ -1074,13 +1074,13 @@ pub fn drawFrameControls(_: *Sprites) !void {
                 .expand = .none,
                 .gravity_y = 0.5,
                 .padding = dvui.Rect.all(4),
-                .corner_radius = dvui.Rect.all(1000),
+                .corners = .round(1000),
                 .box_shadow = .{
                     .color = .black,
                     .offset = .{ .x = -2.0, .y = 2.0 },
                     .fade = 6.0,
                     .alpha = 0.15,
-                    .corner_radius = dvui.Rect.all(1000),
+                    .corners = .round(1000),
                 },
                 .color_fill = dvui.themeGet().color(.control, .fill),
             });
@@ -1134,13 +1134,13 @@ pub fn drawFrameControls(_: *Sprites) !void {
                     .expand = .none,
                     .gravity_y = 0.5,
                     .padding = dvui.Rect.all(4),
-                    .corner_radius = dvui.Rect.all(1000),
+                    .corners = .round(1000),
                     .box_shadow = .{
                         .color = .black,
                         .offset = .{ .x = -2.0, .y = 2.0 },
                         .fade = 6.0,
                         .alpha = 0.15,
-                        .corner_radius = dvui.Rect.all(1000),
+                        .corners = .round(1000),
                     },
                     .color_fill = dvui.themeGet().color(.control, .fill),
                 });
@@ -1195,13 +1195,13 @@ pub fn drawFrameControls(_: *Sprites) !void {
                 .expand = .none,
                 .gravity_y = 0.5,
                 .padding = dvui.Rect.all(4),
-                .corner_radius = dvui.Rect.all(1000),
+                .corners = .round(1000),
                 .box_shadow = .{
                     .color = .black,
                     .offset = .{ .x = -2.0, .y = 2.0 },
                     .fade = 6.0,
                     .alpha = 0.15,
-                    .corner_radius = dvui.Rect.all(1000),
+                    .corners = .round(1000),
                 },
                 .color_fill = dvui.themeGet().color(.control, .fill),
             });
@@ -1284,13 +1284,13 @@ pub fn drawFrameControls(_: *Sprites) !void {
                 .expand = .none,
                 .gravity_y = 0.5,
                 .padding = dvui.Rect.all(4),
-                .corner_radius = dvui.Rect.all(1000),
+                .corners = .round(1000),
                 .box_shadow = .{
                     .color = .black,
                     .offset = .{ .x = -2.0, .y = 2.0 },
                     .fade = 6.0,
                     .alpha = 0.15,
-                    .corner_radius = dvui.Rect.all(1000),
+                    .corners = .round(1000),
                 },
                 .color_fill = dvui.themeGet().color(.control, .fill),
             });
@@ -1356,13 +1356,13 @@ pub fn drawFrameControls(_: *Sprites) !void {
                 .expand = .none,
                 .gravity_y = 0.5,
                 .padding = dvui.Rect.all(4),
-                .corner_radius = dvui.Rect.all(1000),
+                .corners = .round(1000),
                 .box_shadow = .{
                     .color = .black,
                     .offset = .{ .x = -2.0, .y = 2.0 },
                     .fade = 6.0,
                     .alpha = 0.15,
-                    .corner_radius = dvui.Rect.all(1000),
+                    .corners = .round(1000),
                 },
                 .color_fill = dvui.themeGet().color(.err, .fill).opacity(0.75),
             });
@@ -1454,7 +1454,7 @@ pub fn drawFrames(self: *Sprites) !void {
         var scroll_area = dvui.scrollArea(@src(), .{ .scroll_info = &file.editor.sprites_scroll_info, .horizontal_bar = .hide, .vertical_bar = .auto_overlay }, .{
             .expand = .horizontal,
             .background = false,
-            .corner_radius = dvui.Rect.all(1000),
+            .corners = .round(1000),
         });
 
         defer scroll_area.deinit();
@@ -1592,7 +1592,7 @@ pub fn drawFrames(self: *Sprites) !void {
             const box = dvui.box(@src(), .{ .dir = .vertical }, .{
                 .expand = .horizontal,
                 .background = false,
-                .corner_radius = dvui.Rect.all(1000),
+                .corners = .round(1000),
                 .margin = dvui.Rect.rect(4, 0, 4, 4),
             });
             defer box.deinit();
@@ -1612,7 +1612,7 @@ pub fn drawFrames(self: *Sprites) !void {
                 }, .{
                     .id_extra = @intCast(frame_index),
                     .expand = .horizontal,
-                    .corner_radius = dvui.Rect.all(1000),
+                    .corners = .round(1000),
                     .background = false,
                     .margin = .all(0),
                     .padding = dvui.Rect.all(1),
@@ -1656,7 +1656,7 @@ pub fn drawFrames(self: *Sprites) !void {
                     .color_fill_hover = .transparent,
                     .margin = dvui.Rect{},
                     .padding = .{ .x = 5, .y = 3, .w = 5, .h = 2 },
-                    .corner_radius = dvui.Rect.all(8),
+                    .corners = .round(8),
                 });
                 defer hbox.deinit();
 
@@ -1666,7 +1666,7 @@ pub fn drawFrames(self: *Sprites) !void {
                     .gravity_y = 0.5,
                     .min_size_content = .{ .w = 8.0, .h = 8.0 },
                     .color_fill = anim_color,
-                    .corner_radius = dvui.Rect.all(1000),
+                    .corners = .round(1000),
                     .margin = .{ .x = 2, .w = 4 },
                     .padding = dvui.Rect.all(0),
                 });
@@ -1677,7 +1677,7 @@ pub fn drawFrames(self: *Sprites) !void {
                     .gravity_y = 0.5,
                     .margin = dvui.Rect.rect(2, 0, 2, 0),
                     .padding = dvui.Rect.all(0),
-                    .corner_radius = dvui.Rect.all(1000),
+                    .corners = .round(1000),
                     .color_text = if (sprite_selected) dvui.themeGet().color(.control, .text) else dvui.themeGet().color(.control, .text),
                 });
 
@@ -2011,7 +2011,7 @@ fn processFrameTreePointerEvents(
                         const cw = dvui.currentWindow();
                         if (cw.dragging.state != .none) dvui.dragEnd();
                         frameTreeClearGestureKeysOnly(file);
-                        dvui.dragPreStart(me.p, .{ .offset = h.hbox_tl.diff(me.p) });
+                        dvui.dragPreStart(me.button, me.p, .{ .offset = h.hbox_tl.diff(me.p) });
 
                         const mode = pixi_mod.core.dvui.TreeSelection.clickModeFromMod(me.mod);
                         const narrow_on_release = applyFrameClick(file, animation_index, anim_id, h.frame_index, mode) catch blk: {
@@ -2074,9 +2074,9 @@ fn processFrameTreePointerEvents(
                         var multi_buf: [256]usize = undefined;
                         const multi_ids = buildFrameMultiDragIds(file, animation_index, hits, &multi_buf);
                         if (multi_ids.len > 1) {
-                            tree.dragStartMulti(branch_usize.?, multi_ids, me.p, row_size);
+                            tree.dragStartMulti(branch_usize.?, multi_ids, me.button, me.p, row_size);
                         } else {
-                            tree.dragStart(branch_usize.?, me.p, row_size);
+                            tree.dragStart(branch_usize.?, me.button, me.p, row_size);
                         }
 
                         if (frame_row_gesture) |*g| {
@@ -2365,7 +2365,7 @@ fn processAnimationTreePointerEvents(_: *Sprites, tree: *pixi_mod.core.dvui.Tree
                         const cw = dvui.currentWindow();
                         if (cw.dragging.state != .none) dvui.dragEnd();
                         animationTreeClearGestureKeysOnly(file);
-                        dvui.dragPreStart(me.p, .{ .offset = h.hbox_tl.diff(me.p) });
+                        dvui.dragPreStart(me.button, me.p, .{ .offset = h.hbox_tl.diff(me.p) });
 
                         const mode = pixi_mod.core.dvui.TreeSelection.clickModeFromMod(me.mod);
                         const narrow_on_release = applyAnimationClick(file, h.anim_index, mode) catch blk: {
@@ -2429,9 +2429,9 @@ fn processAnimationTreePointerEvents(_: *Sprites, tree: *pixi_mod.core.dvui.Tree
                         var multi_buf: [64]usize = undefined;
                         const multi_ids = buildAnimationMultiDragIds(file, hits, &multi_buf);
                         if (multi_ids.len > 1) {
-                            tree.dragStartMulti(branch_usize.?, multi_ids, me.p, row_size);
+                            tree.dragStartMulti(branch_usize.?, multi_ids, me.button, me.p, row_size);
                         } else {
-                            tree.dragStart(branch_usize.?, me.p, row_size);
+                            tree.dragStart(branch_usize.?, me.button, me.p, row_size);
                         }
 
                         if (animation_row_gesture) |*g| {

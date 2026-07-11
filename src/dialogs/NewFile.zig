@@ -54,7 +54,7 @@ pub fn dialog(id: dvui.Id) anyerror!bool {
         var unique_id = id.update(if (mode == .single) "single" else "grid");
 
         {
-            const hbox = dvui.box(@src(), .{ .dir = .horizontal, .equal_space = true }, .{ .expand = .horizontal, .corner_radius = .all(100000), .margin = .all(4) });
+            const hbox = dvui.box(@src(), .{ .dir = .horizontal, .equal_space = true }, .{ .expand = .horizontal, .corners = .round(100000), .margin = .all(4) });
             defer hbox.deinit();
 
             for (0..2) |i| {
@@ -62,7 +62,7 @@ pub fn dialog(id: dvui.Id) anyerror!bool {
                 const button_opts: dvui.Options = .{
                     .padding = .all(6),
                     .margin = .{ .y = 2, .h = 4 },
-                    .corner_radius = if (i == 0) .{ .x = 100000, .h = 100000 } else .{ .y = 100000, .w = 100000 },
+                    .corners = if (i == 0) .{ .tl = .round(100000), .bl = .round(100000) } else .{ .tr = .round(100000), .br = .round(100000) },
                     .expand = .horizontal,
                     .color_fill = color,
                     .color_fill_hover = if (i == @intFromEnum(mode)) color else null,
@@ -72,7 +72,7 @@ pub fn dialog(id: dvui.Id) anyerror!bool {
                         .offset = .{ .x = 0.0, .y = 2.0 },
                         .fade = 7.0,
                         .alpha = 0.2,
-                        .corner_radius = if (i == 0) .{ .x = 100000, .h = 100000 } else .{ .y = 100000, .w = 100000 },
+                        .corners = if (i == 0) .{ .tl = .round(100000), .bl = .round(100000) } else .{ .tr = .round(100000), .br = .round(100000) },
                     } else null,
                 };
 

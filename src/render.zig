@@ -14,7 +14,7 @@ pub const RenderFileOptions = struct {
     color_mod: dvui.Color = .white,
     fade: f32 = 0.0,
     uv: dvui.Rect = .{ .w = 1.0, .h = 1.0 },
-    corner_radius: dvui.Rect = .all(0),
+    corners: dvui.CornerRect = .square,
     allow_peek: bool = true,
     /// Optional skewed quad in physical corner order (tl, tr, br, bl). When set,
     /// the layer stack renders into this quad instead of the axis-aligned `rs.r`,
@@ -292,7 +292,7 @@ pub fn renderLayersMagnifierSample(init_opts: RenderFileOptions) !void {
     var path: dvui.Path.Builder = .init(runtime.allocator());
     defer path.deinit();
 
-    path.addRect(init_opts.rs.r, dvui.Rect.Physical.all(0));
+    path.addRect(init_opts.rs.r, dvui.CornerRect.Physical.square);
 
     var triangles = try path.build().fillConvexTriangles(runtime.allocator(), .{ .color = init_opts.color_mod, .fade = init_opts.fade });
     defer triangles.deinit(runtime.allocator());
@@ -566,7 +566,7 @@ fn renderLayersIntoTarget(
 
     var path: dvui.Path.Builder = .init(runtime.allocator());
     defer path.deinit();
-    path.addRect(image_rect, dvui.Rect.Physical.all(0));
+    path.addRect(image_rect, dvui.CornerRect.Physical.square);
 
     var tris = try path.build().fillConvexTriangles(runtime.allocator(), .{ .color = .white, .fade = 0 });
     defer tris.deinit(runtime.allocator());
@@ -661,7 +661,7 @@ pub fn syncPreviewComposite(file: *pixi_mod.internal.File) !void {
     {
         var path: dvui.Path.Builder = .init(runtime.allocator());
         defer path.deinit();
-        path.addRect(image_rect, dvui.Rect.Physical.all(0));
+        path.addRect(image_rect, dvui.CornerRect.Physical.square);
         var tris = try path.build().fillConvexTriangles(runtime.allocator(), .{ .color = dvui.themeGet().color(.content, .fill), .fade = 0 });
         defer tris.deinit(runtime.allocator());
         dvui.renderTriangles(tris, null) catch {};
@@ -671,7 +671,7 @@ pub fn syncPreviewComposite(file: *pixi_mod.internal.File) !void {
     if (file.checkerboardTileTexture()) |checker| {
         var path: dvui.Path.Builder = .init(runtime.allocator());
         defer path.deinit();
-        path.addRect(image_rect, dvui.Rect.Physical.all(0));
+        path.addRect(image_rect, dvui.CornerRect.Physical.square);
         const tint = dvui.themeGet().color(.content, .fill).lighten(6.0).opacity(0.5);
         var tris = try path.build().fillConvexTriangles(runtime.allocator(), .{ .color = tint, .fade = 0 });
         defer tris.deinit(runtime.allocator());
@@ -682,7 +682,7 @@ pub fn syncPreviewComposite(file: *pixi_mod.internal.File) !void {
     // 3) Flattened layers, then selection + temp overlays — sampled 1:1.
     var path: dvui.Path.Builder = .init(runtime.allocator());
     defer path.deinit();
-    path.addRect(image_rect, dvui.Rect.Physical.all(0));
+    path.addRect(image_rect, dvui.CornerRect.Physical.square);
     var tris = try path.build().fillConvexTriangles(runtime.allocator(), .{ .color = .white, .fade = 0 });
     defer tris.deinit(runtime.allocator());
     tris.uvFromRectuv(image_rect, .{ .x = 0, .y = 0, .w = 1, .h = 1 });
@@ -782,7 +782,7 @@ pub fn renderLayers(init_opts: RenderFileOptions) !void {
         var path: dvui.Path.Builder = .init(runtime.allocator());
         defer path.deinit();
 
-        path.addRect(content_rs.r, init_opts.corner_radius.scale(content_rs.s, dvui.Rect.Physical));
+        path.addRect(content_rs.r, init_opts.corners.scale(content_rs.s, dvui.CornerRect.Physical));
 
         var t = try path.build().fillConvexTriangles(runtime.allocator(), .{ .color = init_opts.color_mod, .fade = init_opts.fade });
         t.uvFromRectuv(content_rs.r, init_opts.uv);

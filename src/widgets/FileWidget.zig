@@ -173,7 +173,7 @@ pub fn processSample(self: *FileWidget) void {
                     self.right_mouse_down = true;
                     e.handle(@src(), self.init_options.file.editor.canvas.scroll_container.data());
                     dvui.captureMouse(self.init_options.file.editor.canvas.scroll_container.data(), e.num);
-                    dvui.dragPreStart(me.p, .{ .name = "sample_drag" });
+                    dvui.dragPreStart(me.button, me.p, .{ .name = "sample_drag" });
                     self.drag_data_point = current_point;
 
                     self.sample(file, current_point, me.p, self.sample_key_down or self.left_mouse_down, false);
@@ -421,7 +421,7 @@ pub fn processCellReorder(self: *FileWidget) void {
                             if (index) |i| {
                                 offset = file.spriteRect(i).topLeft().diff(current_point);
                             }
-                            dvui.dragPreStart(me.p, .{ .name = "sprite_reorder_drag", .offset = file.editor.canvas.screenFromDataPoint(offset) });
+                            dvui.dragPreStart(me.button, me.p, .{ .name = "sprite_reorder_drag", .offset = file.editor.canvas.screenFromDataPoint(offset) });
 
                             self.cell_reorder_point = current_point;
                         }
@@ -610,7 +610,7 @@ pub fn processSpriteSelection(self: *FileWidget) void {
 
                     e.handle(@src(), self.init_options.file.editor.canvas.scroll_container.data());
                     dvui.captureMouse(self.init_options.file.editor.canvas.scroll_container.data(), e.num);
-                    dvui.dragPreStart(me.p, .{ .name = "sprite_selection_drag" });
+                    dvui.dragPreStart(me.button, me.p, .{ .name = "sprite_selection_drag" });
 
                     self.drag_data_point = current_point;
                 } else if (me.action == .release and me.button.pointer()) {
@@ -1510,7 +1510,7 @@ pub fn drawSpriteBubble(
                 .fade = (button_height / 10) * t,
                 .alpha = 0.5 * t,
             },
-            .corner_radius = dvui.Rect.all(1000000),
+            .corners = .round(1000000),
             .gravity_x = 0.5,
             .gravity_y = 0.5,
         });
@@ -1706,7 +1706,7 @@ pub fn drawSpriteBubble(
                     .rect = button.data().rectScale().rectFromPhysical(icon_rect),
                     .border = dvui.Rect.all(0),
                     .background = true,
-                    .corner_radius = dvui.Rect.all(1000000),
+                    .corners = .round(1000000),
                     .box_shadow = .{
                         .color = .black,
                         .offset = .{ .x = -0.05 * button_height, .y = 0.08 * button_height },
@@ -1738,7 +1738,7 @@ pub fn drawSpriteBubble(
                             .rect = button.data().rectScale().rectFromPhysical(fill_rect),
                             .border = dvui.Rect.all(0),
                             .background = true,
-                            .corner_radius = dvui.Rect.all(1000000),
+                            .corners = .round(1000000),
                             .box_shadow = .{
                                 .color = .black,
                                 .offset = .{ .x = -0.05 * button_height, .y = 0.08 * button_height },
@@ -1792,7 +1792,7 @@ pub fn drawSpriteSelection(self: *FileWidget) void {
         const screen_selection_rect = self.init_options.file.editor.canvas.screenFromDataRect(span_rect);
         const selection_color = if (dvui.currentWindow().modifiers.matchBind("shift")) dvui.themeGet().color(.err, .fill).opacity(0.5) else dvui.themeGet().color(.highlight, .fill).opacity(0.5);
         screen_selection_rect.fill(
-            dvui.Rect.Physical.all(6 * dvui.currentWindow().natural_scale),
+            dvui.CornerRect.Physical.round(6 * dvui.currentWindow().natural_scale),
             .{
                 .color = selection_color,
             },
@@ -2185,7 +2185,7 @@ pub fn processSelection(self: *FileWidget) void {
                     }
 
                     dvui.captureMouse(self.init_options.file.editor.canvas.scroll_container.data(), e.num);
-                    dvui.dragPreStart(me.p, .{ .name = "stroke_drag" });
+                    dvui.dragPreStart(me.button, me.p, .{ .name = "stroke_drag" });
 
                     // Only clear the mask if we don't have ctrl/cmd pressed
                     if (!me.mod.matchBind("ctrl/cmd") and !me.mod.matchBind("shift"))
@@ -2433,7 +2433,7 @@ pub fn processStroke(self: *FileWidget) void {
                     if (!widget_active) continue;
                     e.handle(@src(), self.init_options.file.editor.canvas.scroll_container.data());
                     dvui.captureMouse(self.init_options.file.editor.canvas.scroll_container.data(), e.num);
-                    dvui.dragPreStart(me.p, .{ .name = "stroke_drag" });
+                    dvui.dragPreStart(me.button, me.p, .{ .name = "stroke_drag" });
                     file.editor.active_drawing = true;
 
                     file.buffers.stroke.clearAndFree();
@@ -2725,7 +2725,7 @@ pub fn processTransform(self: *FileWidget) void {
                                     transform.active_point = @enumFromInt(point_index);
                                     e.handle(@src(), self.init_options.file.editor.canvas.scroll_container.data());
                                     dvui.captureMouse(self.init_options.file.editor.canvas.scroll_container.data(), e.num);
-                                    dvui.dragPreStart(me.p, .{ .name = "transform_vertex_drag" });
+                                    dvui.dragPreStart(me.button, me.p, .{ .name = "transform_vertex_drag" });
                                     self.drag_data_point = current_point;
                                     transform.start_rotation = transform.rotation;
                                     if (point_index < 4) {
@@ -2937,7 +2937,7 @@ pub fn processTransform(self: *FileWidget) void {
                                 //if (is_hovered or me.mod.matchBind("ctrl/cmd")) {
                                 e.handle(@src(), self.init_options.file.editor.canvas.scroll_container.data());
                                 dvui.captureMouse(self.init_options.file.editor.canvas.scroll_container.data(), e.num);
-                                dvui.dragPreStart(me.p, .{ .name = "transform_drag" });
+                                dvui.dragPreStart(me.button, me.p, .{ .name = "transform_drag" });
                                 //}
                             } else if (me.action == .motion or me.action == .wheel_x or me.action == .wheel_y) {
                                 if (dvui.captured(self.init_options.file.editor.canvas.scroll_container.data().id)) {
@@ -3069,12 +3069,12 @@ pub fn drawTransform(self: *FileWidget) void {
             centroid_screen_rect.x -= centroid_screen_rect.w / 2;
             centroid_screen_rect.y -= centroid_screen_rect.h / 2;
 
-            centroid_screen_rect.fill(dvui.Rect.Physical.all(100000), .{
+            centroid_screen_rect.fill(dvui.CornerRect.Physical.round(100000), .{
                 .color = dvui.themeGet().color(.control, .fill),
             });
 
             centroid_screen_rect = centroid_screen_rect.insetAll(2 * dvui.currentWindow().natural_scale);
-            centroid_screen_rect.fill(dvui.Rect.Physical.all(100000), .{
+            centroid_screen_rect.fill(dvui.CornerRect.Physical.round(100000), .{
                 .color = dvui.themeGet().color(.window, .text),
             });
         }
@@ -3088,7 +3088,7 @@ pub fn drawTransform(self: *FileWidget) void {
                 outline_rect.y = transform.point(.pivot).y - transform.radius;
                 const outline_screen_rect = file.editor.canvas.screenFromDataRect(outline_rect);
 
-                rotate_path.addRect(outline_screen_rect, dvui.Rect.Physical.all(100000));
+                rotate_path.addRect(outline_screen_rect, dvui.CornerRect.Physical.round(100000));
                 rotate_path.build().stroke(.{
                     .thickness = 4 * dvui.currentWindow().natural_scale,
                     .color = dvui.themeGet().color(.control, .fill),
@@ -3435,7 +3435,7 @@ pub fn drawTransform(self: *FileWidget) void {
                 screen_rect.x -= screen_rect.w / 2;
                 screen_rect.y -= screen_rect.h / 2;
 
-                screen_rect.fill(dvui.Rect.Physical.all(100000), .{
+                screen_rect.fill(dvui.CornerRect.Physical.round(100000), .{
                     .color = dvui.themeGet().color(.control, .fill),
                 });
 
@@ -3451,12 +3451,12 @@ pub fn drawTransform(self: *FileWidget) void {
                     color = dvui.themeGet().color(.highlight, .fill);
                 }
 
-                screen_rect.fill(dvui.Rect.Physical.all(100000), .{
+                screen_rect.fill(dvui.CornerRect.Physical.round(100000), .{
                     .color = color,
                 });
 
                 screen_rect = screen_rect.inset(dvui.Rect.Physical.all(2 * dvui.currentWindow().natural_scale));
-                screen_rect.fill(dvui.Rect.Physical.all(100000), .{
+                screen_rect.fill(dvui.CornerRect.Physical.round(100000), .{
                     .color = dvui.themeGet().color(.control, .fill),
                 });
             }
@@ -3492,7 +3492,7 @@ fn renderTransformDimLabel(font: dvui.Font, text: []const u8, center_phys: dvui.
     );
     var outline_rect = text_rect.outsetAll(pad);
     const corner = @min(4 * ns, @min(outline_rect.w, outline_rect.h) * 0.48);
-    outline_rect.fill(dvui.Rect.Physical.all(corner), .{
+    outline_rect.fill(dvui.CornerRect.Physical.round(corner), .{
         .color = dvui.themeGet().color(.control, .fill).opacity(0.85),
     });
     dvui.renderText(.{
@@ -4145,7 +4145,7 @@ pub fn drawCursor(self: *FileWidget) void {
                 .h = @as(f32, @floatFromInt(sprite.source[3])) * 1 / self.init_options.file.editor.canvas.scale,
             },
             .border = dvui.Rect.all(0),
-            .corner_radius = .{ .x = 0, .y = 0 },
+            .corners = .square,
             .padding = .{ .x = 0, .y = 0 },
             .margin = .{ .x = 0, .y = 0 },
             .background = false,
@@ -4300,19 +4300,19 @@ fn drawSampleMagnifierPresent(
     composite: dvui.Texture.Target,
     frame_phys: dvui.Rect.Physical,
     content_rs: dvui.RectScale,
-    corner_radius: dvui.Rect,
+    corners: dvui.CornerRect,
     border_nat: f32,
 ) void {
     const window_fill = dvui.themeGet().color(.window, .fill);
     const border_color = dvui.themeGet().color(.control, .text);
     const ns = dvui.currentWindow().natural_scale;
 
-    const corner_frame_phys = corner_radius.scale(content_rs.s, dvui.Rect.Physical);
-    const inner_corner = dvui.Rect{
-        .x = @max(0, corner_radius.x - border_nat),
-        .y = @max(0, corner_radius.y - border_nat),
-        .w = @max(0, corner_radius.w - border_nat),
-        .h = @max(0, corner_radius.h - border_nat),
+    const corner_frame_phys = corners.scale(content_rs.s, dvui.CornerRect.Physical);
+    const inner_corner = dvui.CornerRect{
+        .tl = .round(@max(0, corners.tl.rx - border_nat)),
+        .tr = .round(@max(0, corners.tr.rx - border_nat)),
+        .br = .round(@max(0, corners.br.rx - border_nat)),
+        .bl = .round(@max(0, corners.bl.rx - border_nat)),
     };
 
     // Shadow (matches FloatingWidget magnifier styling).
@@ -4347,7 +4347,7 @@ fn drawSampleMagnifierPresent(
         .colormod = .white,
         .uv = .{ .x = 0, .y = 0, .w = 1, .h = 1 },
         // Natural radii; `renderTexture` scales by `content_rs.s` once (not pre-scaled).
-        .corner_radius = inner_corner,
+        .corners = inner_corner,
     }) catch {
         dvui.log.err("Failed to render magnifier composite", .{});
     };
@@ -4416,7 +4416,7 @@ pub fn drawSampleMagnifier(file: *pixi_mod.internal.File, data_point: dvui.Point
     };
     const magnifier_nat = magnifier_phys.toNatural();
 
-    // Corner-radius rect maps {x: TL, y: TR, w: BR, h: BL}. At home BL is sharp (0) so it "points"
+    // Corners map {tl, tr, br, bl}. At home BL is sharp (0) so it "points"
     // at the sample. As the window pushes the magnifier away, grow BL toward `cr_max` so the
     // rectangle's rounded edge slides tangent to the sample point — fully circular when far enough.
     // `cr_max` is just under half-width because `Path.addRect` skips the apex when two adjacent
@@ -4426,7 +4426,7 @@ pub fn drawSampleMagnifier(file: *pixi_mod.internal.File, data_point: dvui.Point
     const push_dist_phys = @sqrt(push_x_phys * push_x_phys + push_y_phys * push_y_phys);
     const push_dist_nat = if (win_scale > 0) push_dist_phys / win_scale else push_dist_phys;
     const bl_radius = @min(cr_max, push_dist_nat);
-    const corner_radius = dvui.Rect{ .x = cr_max, .y = cr_max, .w = cr_max, .h = bl_radius };
+    const corners = dvui.CornerRect{ .tl = .round(cr_max), .tr = .round(cr_max), .br = .round(cr_max), .bl = .round(bl_radius) };
 
     const win_rs = dvui.windowRectScale();
     const ns = dvui.currentWindow().natural_scale;
@@ -4460,7 +4460,7 @@ pub fn drawSampleMagnifier(file: *pixi_mod.internal.File, data_point: dvui.Point
     ftb.init();
     defer ftb.deinit();
 
-    drawSampleMagnifierPresent(composite, frame_phys, content_rs, corner_radius, border_nat);
+    drawSampleMagnifierPresent(composite, frame_phys, content_rs, corners, border_nat);
 }
 
 pub fn updateActiveLayerMask(self: *FileWidget) void {
@@ -4513,7 +4513,7 @@ pub fn drawLayers(self: *FileWidget) void {
         .border = dvui.Rect.all(0),
         .box_shadow = .{
             .fade = 20 * 1 / self.init_options.file.editor.canvas.scale,
-            .corner_radius = dvui.Rect.all(2 * 1 / self.init_options.file.editor.canvas.scale),
+            .corners = .round(2 * 1 / self.init_options.file.editor.canvas.scale),
             .alpha = if (dvui.themeGet().dark) 0.4 else 0.2,
             .offset = .{
                 .x = 2 * 1 / self.init_options.file.editor.canvas.scale,
@@ -4636,7 +4636,7 @@ pub fn drawLayers(self: *FileWidget) void {
                 } }, .{ .thickness = 1, .color = dvui.themeGet().color(.err, .fill) });
             }
 
-            sprite_rect_physical.inset(.all(dvui.currentWindow().natural_scale * 1.5)).stroke(dvui.Rect.Physical.all(@min(sprite_rect_physical.w, sprite_rect_physical.h) / 8), .{
+            sprite_rect_physical.inset(.all(dvui.currentWindow().natural_scale * 1.5)).stroke(dvui.CornerRect.Physical.round(@min(sprite_rect_physical.w, sprite_rect_physical.h) / 8), .{
                 .thickness = 1.5 * dvui.currentWindow().natural_scale,
                 .color = dvui.themeGet().color(.highlight, .fill),
                 .closed = true,
@@ -5009,7 +5009,7 @@ fn drawReorderPreviewForAxis(
             }
         }
 
-        file.editor.canvas.screenFromDataRect(animated_target_box_rect).fill(.all(3.0 / scale), .{
+        file.editor.canvas.screenFromDataRect(animated_target_box_rect).fill(.round(3.0 / scale), .{
             .color = if (same_slot)
                 dvui.themeGet().color(.control, .fill).opacity(0.6)
             else
@@ -5043,7 +5043,7 @@ fn drawReorderPreviewForAxis(
                 },
                 .alpha = 0.25,
                 .fade = 16 / scale,
-                .corner_radius = dvui.Rect.all(target_rect.w / 2.0 / scale),
+                .corners = .round(target_rect.w / 2.0 / scale),
             },
         });
         defer target_box.deinit();
@@ -5607,7 +5607,7 @@ pub fn processResize(self: *FileWidget) void {
             bounds_rect.y = icon_button.data().contentRectScale().r.topLeft().y - bounds_rect.h / 2.0;
 
             var path = dvui.Path.Builder.init(dvui.currentWindow().arena());
-            path.addRect(bounds_rect, .{ .x = bounds_rect.w / 2.0, .y = bounds_rect.h / 2.0, .w = bounds_rect.w / 2.0, .h = bounds_rect.h / 2.0 });
+            path.addRect(bounds_rect, .round(1000000));
             const built = path.build();
             built.fillConvex(.{ .color = dvui.themeGet().color(.window, .fill).opacity(0.5), .fade = 1.5 });
             built.stroke(.{ .color = dvui.themeGet().color(.control, .text).opacity(0.5), .thickness = 1.0, .closed = true });
@@ -5648,6 +5648,7 @@ pub fn processResize(self: *FileWidget) void {
 
         if (icon_button.pressed()) {
             dvui.dragStart(
+                .left,
                 dvui.currentWindow().mouse_pt,
                 .{ .name = "resize_drag", .cursor = .hidden },
             );

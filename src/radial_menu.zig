@@ -89,7 +89,7 @@ pub fn draw() !void {
         .rect = outer_rect,
         .expand = .none,
         .background = true,
-        .corner_radius = dvui.Rect.all(100000),
+        .corners = .round(100000),
         .box_shadow = .{
             .color = .black,
             .offset = .{ .x = -4.0, .y = 4.0 },
@@ -133,14 +133,14 @@ pub fn draw() !void {
         button.init(@src(), .{}, .{
             .rect = rect,
             .id_extra = i,
-            .corner_radius = dvui.Rect.all(1000.0),
+            .corners = .round(1000.0),
             .color_fill = if (tool == runtime.state().tools.current) dvui.themeGet().color(.content, .fill) else .transparent,
             .box_shadow = if (tool == runtime.state().tools.current) .{
                 .color = .black,
                 .offset = .{ .x = -2.5, .y = 2.5 },
                 .fade = 4.0,
                 .alpha = 0.25,
-                .corner_radius = dvui.Rect.all(1000),
+                .corners = .round(1000),
             } else null,
             .padding = .all(0),
             .margin = .all(0),
@@ -217,13 +217,13 @@ pub fn draw() !void {
         if (runtime.state().docs.fileById(doc.id)) |file| {
             if (dvui.buttonIcon(@src(), "Play", if (file.editor.playing) icons.tvg.entypo.pause else icons.tvg.entypo.play, .{}, .{}, .{
                 .expand = .none,
-                .corner_radius = dvui.Rect.all(1000),
+                .corners = .round(1000),
                 .box_shadow = .{
                     .color = .black,
                     .offset = .{ .x = -2.5, .y = 2.5 },
                     .fade = 4.0,
                     .alpha = 0.25,
-                    .corner_radius = dvui.Rect.all(1000),
+                    .corners = .round(1000),
                 },
                 .color_fill = dvui.themeGet().color(.control, .fill_hover),
                 .rect = rect,

@@ -217,7 +217,7 @@ fn drawRulerContent(
         .margin = dvui.Rect.all(0),
         .padding = dvui.Rect.all(0),
         .background = false,
-        .corner_radius = dvui.Rect.all(0),
+        .corners = .square,
     });
     defer reorder.deinit();
 
@@ -228,7 +228,7 @@ fn drawRulerContent(
     var reorder_box = dvui.box(@src(), .{ .dir = reorder_box_dir }, .{
         .expand = .both,
         .background = false,
-        .corner_radius = dvui.Rect.all(0),
+        .corners = .square,
         .margin = dvui.Rect.all(0),
         .padding = dvui.Rect.all(0),
     });
@@ -399,7 +399,7 @@ fn drawRulerContent(
                         if (me.action == .press and me.button.pointer()) {
                             e.handle(@src(), cell_box.data());
                             dvui.captureMouse(cell_box.data(), e.num);
-                            dvui.dragPreStart(me.p, .{
+                            dvui.dragPreStart(me.button, me.p, .{
                                 .size = reorderable.data().rectScale().r.size(),
                                 .offset = reorderable.data().rectScale().r.topLeft().diff(me.p),
                             });
@@ -709,12 +709,12 @@ pub fn drawTransformDialog(_: *CanvasData, file: *File, container: *dvui.WidgetD
             .expand = .none,
             .background = true,
             .color_fill = dvui.themeGet().color(.control, .fill),
-            .corner_radius = dvui.Rect.all(8),
+            .corners = .round(8),
             .box_shadow = .{
                 .color = .black,
                 .alpha = 0.2,
                 .fade = 8,
-                .corner_radius = dvui.Rect.all(8),
+                .corners = .round(8),
             },
         });
         defer fw.deinit();
@@ -874,13 +874,13 @@ pub fn drawEditPill(self: *CanvasData, container: *dvui.WidgetData) void {
         .expand = .none,
         .background = self.edit_pill_expanded,
         .color_fill = dvui.themeGet().color(.window, .fill),
-        .corner_radius = dvui.Rect.all(pill_radius),
+        .corners = .round(pill_radius),
         .box_shadow = if (self.edit_pill_expanded) .{
             .color = .black,
             .alpha = 0.25,
             .fade = 10,
             .offset = .{ .x = 0, .y = 3 },
-            .corner_radius = dvui.Rect.all(pill_radius),
+            .corners = .round(pill_radius),
         } else null,
     });
     defer fw.deinit();
@@ -903,7 +903,7 @@ pub fn drawEditPill(self: *CanvasData, container: *dvui.WidgetData) void {
             .gravity_x = 0.5,
             .gravity_y = 0.0,
             .background = true,
-            .corner_radius = dvui.Rect.all(btn_radius),
+            .corners = .round(btn_radius),
             .color_fill = dvui.themeGet().color(.content, .fill),
             .color_fill_hover = dvui.themeGet().color(.content, .fill).lighten(if (dvui.themeGet().dark) 10.0 else -10.0),
             .color_border = .transparent,
@@ -914,7 +914,7 @@ pub fn drawEditPill(self: *CanvasData, container: *dvui.WidgetData) void {
                 .alpha = 0.2,
                 .fade = 4,
                 .offset = .{ .x = 0, .y = 2 },
-                .corner_radius = dvui.Rect.all(btn_radius),
+                .corners = .round(btn_radius),
             },
         });
         defer btn.deinit();
@@ -982,7 +982,7 @@ pub fn drawEditPill(self: *CanvasData, container: *dvui.WidgetData) void {
             .expand = .none,
             .gravity_x = 0.5,
             .background = true,
-            .corner_radius = dvui.Rect.all(btn_radius),
+            .corners = .round(btn_radius),
             .color_fill = dvui.themeGet().color(.content, .fill),
             .color_fill_hover = dvui.themeGet().color(.content, .fill).lighten(if (dvui.themeGet().dark) 10.0 else -10.0),
             .color_border = .transparent,
@@ -993,7 +993,7 @@ pub fn drawEditPill(self: *CanvasData, container: *dvui.WidgetData) void {
                 .alpha = 0.2,
                 .fade = 4,
                 .offset = .{ .x = 0, .y = 2 },
-                .corner_radius = dvui.Rect.all(btn_radius),
+                .corners = .round(btn_radius),
             },
         });
         defer btn.deinit();
@@ -1118,7 +1118,7 @@ pub fn drawSampleButton(self: *CanvasData, container: *dvui.WidgetData) void {
         .expand = .both,
         .background = true,
         .min_size_content = .{ .w = button_size, .h = button_size },
-        .corner_radius = dvui.Rect.all(btn_radius),
+        .corners = .round(btn_radius),
         .color_fill = dvui.themeGet().color(.content, .fill),
         .color_fill_hover = dvui.themeGet().color(.content, .fill).lighten(if (dvui.themeGet().dark) 10.0 else -10.0),
         .color_border = .transparent,
@@ -1129,7 +1129,7 @@ pub fn drawSampleButton(self: *CanvasData, container: *dvui.WidgetData) void {
             .alpha = 0.2,
             .fade = 4,
             .offset = .{ .x = 0, .y = 2 },
-            .corner_radius = dvui.Rect.all(btn_radius),
+            .corners = .round(btn_radius),
         },
     });
     defer btn.deinit();
@@ -1161,7 +1161,7 @@ pub fn drawSampleButton(self: *CanvasData, container: *dvui.WidgetData) void {
                 if (!btn_rs.r.contains(me.p)) continue;
                 e.handle(@src(), btn.data());
                 dvui.captureMouse(btn.data(), e.num);
-                dvui.dragPreStart(me.p, .{ .name = "sample_button_drag" });
+                dvui.dragPreStart(me.button, me.p, .{ .name = "sample_button_drag" });
                 is_drag_sampling = false;
                 did_sample = false;
             },
@@ -1247,7 +1247,7 @@ pub fn drawSampleButton(self: *CanvasData, container: *dvui.WidgetData) void {
             .box_shadow = .{
                 .color = .black,
                 .shrink = 0,
-                .corner_radius = dvui.Rect.all(8),
+                .corners = .round(8),
                 .offset = .{ .x = 0, .y = 2 },
                 .fade = 4,
                 .alpha = 0.2,

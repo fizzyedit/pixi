@@ -714,7 +714,7 @@ fn renderPreview(
             .border = dvui.Rect.all(0),
             .box_shadow = .{
                 .fade = 20 * 1 / scale,
-                .corner_radius = dvui.Rect.all(2 * 1 / scale),
+                .corners = .round(2 * 1 / scale),
                 .alpha = if (dvui.themeGet().dark) 0.4 else 0.2,
                 .offset = .{
                     .x = 2 * 1 / scale,
@@ -788,13 +788,13 @@ fn gridLayoutDrawModePill(dlg_id: dvui.Id) void {
     const field_names = std.meta.fieldNames(@TypeOf(mode));
 
     for (field_names, 0..) |tag, i| {
-        const corner_radius: dvui.Rect = if (i == 0) .{
-            .x = 100000,
-            .h = 100000,
+        const corners: dvui.CornerRect = if (i == 0) .{
+            .tl = .round(100000),
+            .bl = .round(100000),
         } else if (i == field_names.len - 1) .{
-            .y = 100000,
-            .w = 100000,
-        } else .all(0);
+            .tr = .round(100000),
+            .br = .round(100000),
+        } else .square;
 
         var name = dvui.currentWindow().arena().dupe(u8, tag) catch {
             dvui.log.err("Failed to dupe tag {s}", .{tag});
@@ -805,7 +805,7 @@ fn gridLayoutDrawModePill(dlg_id: dvui.Id) void {
 
         var button: dvui.ButtonWidget = undefined;
         button.init(@src(), .{}, .{
-            .corner_radius = corner_radius,
+            .corners = corners,
             .id_extra = i,
             .margin = .{ .y = 2, .h = 4 },
             .padding = .{ .x = 12, .y = 6, .w = 12, .h = 6 },
@@ -816,7 +816,7 @@ fn gridLayoutDrawModePill(dlg_id: dvui.Id) void {
                 .offset = .{ .x = 0.0, .y = 2 },
                 .fade = 7.0,
                 .alpha = 0.2,
-                .corner_radius = corner_radius,
+                .corners = corners,
                 .shrink = 0,
             } else null,
         });
@@ -1287,7 +1287,7 @@ fn drawResizeForm(
                 const button_opts: dvui.Options = .{
                     .padding = .all(4),
                     .margin = .all(2),
-                    .corner_radius = .all(4),
+                    .corners = .round(4),
                     .min_size_content = .{ .w = 36, .h = 28 },
                     .color_fill = color,
                     .color_fill_hover = if (selected) color else null,
@@ -1534,7 +1534,7 @@ pub fn windowFn(id: dvui.Id) anyerror!void {
     }, .{
         .id_extra = id.asUsize(),
         .color_text = .black,
-        .corner_radius = dvui.Rect.all(10),
+        .corners = .round(10),
         .min_size_content = .{ .w = init_w, .h = @max(init_h, 400) },
         .border = .all(0),
         .color_fill = dvui.themeGet().color(.content, .fill).opacity(0.85),
@@ -1542,7 +1542,7 @@ pub fn windowFn(id: dvui.Id) anyerror!void {
             .color = .black,
             .alpha = 0.35,
             .fade = 10,
-            .corner_radius = dvui.Rect.all(10),
+            .corners = .round(10),
         },
     });
     defer win.deinit();

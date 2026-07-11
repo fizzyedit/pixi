@@ -62,13 +62,13 @@ pub fn dialog(id: dvui.Id) anyerror!bool {
         const field_names = std.meta.fieldNames(@TypeOf(mode));
 
         for (field_names, 0..) |tag, i| {
-            const corner_radius: dvui.Rect = if (i == 0) .{
-                .x = 100000,
-                .h = 100000,
+            const corners: dvui.CornerRect = if (i == 0) .{
+                .tl = .round(100000),
+                .bl = .round(100000),
             } else if (i == field_names.len - 1) .{
-                .y = 100000,
-                .w = 100000,
-            } else .all(0);
+                .tr = .round(100000),
+                .br = .round(100000),
+            } else .square;
 
             var name = dvui.currentWindow().arena().dupe(u8, tag) catch {
                 dvui.log.err("Failed to dupe tag {s}", .{tag});
@@ -79,7 +79,7 @@ pub fn dialog(id: dvui.Id) anyerror!bool {
 
             var button: dvui.ButtonWidget = undefined;
             button.init(@src(), .{}, .{
-                .corner_radius = corner_radius,
+                .corners = corners,
                 .id_extra = i,
                 .margin = .{ .y = 2, .h = 4 },
                 .padding = .all(6),
@@ -90,7 +90,7 @@ pub fn dialog(id: dvui.Id) anyerror!bool {
                     .offset = .{ .x = 0.0, .y = 2 },
                     .fade = 7.0,
                     .alpha = 0.2,
-                    .corner_radius = corner_radius,
+                    .corners = corners,
                     .shrink = 0,
                 } else null,
             });
@@ -430,11 +430,11 @@ fn exportScaleSlider(max_scale_val: f32) void {
             .offset = .{ .x = 0.0, .y = 3 },
             .fade = 5.0,
             .alpha = 0.2,
-            .corner_radius = .all(100000),
+            .corners = .round(100000),
         },
         .color_fill = dvui.themeGet().color(.window, .fill).lighten(-4),
         .color_fill_hover = dvui.themeGet().color(.window, .fill).lighten(2),
-        .corner_radius = .all(100000),
+        .corners = .round(100000),
         .margin = .all(6),
     })) dvui.currentWindow().extra_frames_needed = 2;
 }
