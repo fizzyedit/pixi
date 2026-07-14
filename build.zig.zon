@@ -14,8 +14,8 @@
     .fingerprint = 0xdef5a52dbae70684,
     .dependencies = .{
         .fizzy = .{
-            .url = "https://github.com/fizzyedit/fizzy/archive/68d1013633cb71f864c80f69ee4cc85f44d01ee7.tar.gz",
-            .hash = "fizzy-0.0.20-c46aVr1ANgC7yrsF-QtXD6ls5rMhXRSsGH0SlpbRTJwo",
+            .url = "https://github.com/fizzyedit/fizzy/archive/d6f058badae8adf2be75cc36510c2d5f1637bb8a.tar.gz",
+            .hash = "fizzy-0.0.20-c46aVqjxNgCqyclqmx5A8JTrLBQPpObG0qFNkTC3xOu6",
             //.path = "../../fizzy",
         },
         .assetpack = .{
