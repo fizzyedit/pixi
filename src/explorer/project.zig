@@ -3,7 +3,7 @@ const builtin = @import("builtin");
 const icons = @import("icons");
 
 const dvui = @import("dvui");
-const pixi_mod = @import("../../pixi.zig");
+const pixi = @import("../pixi.zig");
 const runtime = @import("../runtime.zig");
 const PackProject = @import("../pack_project.zig");
 
@@ -25,7 +25,7 @@ pub fn draw() !void {
             });
             defer tl.deinit();
 
-            const project_path = std.fs.path.join(dvui.currentWindow().lifo(), &.{ folder, pixi_mod.Project.filename }) catch {
+            const project_path = std.fs.path.join(dvui.currentWindow().lifo(), &.{ folder, pixi.Project.filename }) catch {
                 dvui.log.err("Failed to join project path", .{});
                 return;
             };
@@ -354,7 +354,7 @@ fn pathTextEntry(path_type: PathType) !void {
 
 fn drawPackedAtlasStats() void {
     const atlas = &runtime.packer().atlas.?;
-    const image_size = pixi_mod.image.size(atlas.source);
+    const image_size = pixi.image.size(atlas.source);
     const atlas_w: u32 = @intFromFloat(image_size.w);
     const atlas_h: u32 = @intFromFloat(image_size.h);
 
@@ -398,7 +398,7 @@ fn drawPackedAtlasStats() void {
 }
 
 fn formatLastPacked(buf: []u8, packed_at_ns: i128) []const u8 {
-    const elapsed_s = @divTrunc(pixi_mod.perf.nanoTimestamp() - packed_at_ns, std.time.ns_per_s);
+    const elapsed_s = @divTrunc(pixi.perf.nanoTimestamp() - packed_at_ns, std.time.ns_per_s);
     if (elapsed_s < 10) {
         return std.fmt.bufPrint(buf, "just now", .{}) catch "recently";
     }
@@ -444,7 +444,7 @@ fn packProjectButton(packing: bool) bool {
     // Spinner overlays at the right edge — same content rect as the label, but anchored to
     // `gravity_x = 1.0`. Sized to roughly match the cap height so it doesn't fight the label.
     if (packing) {
-        pixi_mod.core.dvui.bubbleSpinner(@src(), (dvui.Options{}).strip().override(bw.style()).override(.{
+        pixi.core.dvui.bubbleSpinner(@src(), (dvui.Options{}).strip().override(bw.style()).override(.{
             .min_size_content = .{ .w = 16, .h = 16 },
             .gravity_x = 1.0,
             .gravity_y = 0.5,

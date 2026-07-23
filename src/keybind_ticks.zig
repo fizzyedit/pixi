@@ -1,8 +1,9 @@
 //! Global keybind handlers for pixel-art editing (tool shortcuts, radial menu, export).
+const std = @import("std");
 const dvui = @import("dvui");
-const pixi_mod = @import("../pixi.zig");
+const pixi = @import("pixi.zig");
 const runtime = @import("runtime.zig");
-const Tools = pixi_mod.Tools;
+const Tools = pixi.Tools;
 const Export = @import("dialogs/Export.zig");
 
 pub fn tick() !void {
@@ -38,7 +39,7 @@ pub fn tick() !void {
                 }
 
                 if (ke.matchBind("export") and ke.action == .down) {
-                    var mutex = pixi_mod.core.dvui.dialog(@src(), .{
+                    var mutex = pixi.core.dvui.dialog(@src(), .{
                         .displayFn = Export.dialog,
                         .callafterFn = Export.callAfter,
                         .title = "Export...",
@@ -80,7 +81,7 @@ pub fn tick() !void {
                 // their keybind names, only whichever plugin owns the focused document does.
                 if (ke.matchBind("transform") and ke.action == .down) {
                     if (runtime.state().host.activeDoc()) |doc| {
-                        if (doc.owner == pixi_mod.plugin.pluginPtr()) {
+                        if (std.mem.eql(u8, doc.owner.id, "pixi")) {
                             runtime.state().host.runCommand("pixi.transform") catch |err| {
                                 dvui.log.err("Transform command failed: {s}", .{@errorName(err)});
                             };
@@ -90,7 +91,7 @@ pub fn tick() !void {
 
                 if (ke.matchBind("grid_layout") and ke.action == .down) {
                     if (runtime.state().host.activeDoc()) |doc| {
-                        if (doc.owner == pixi_mod.plugin.pluginPtr()) {
+                        if (std.mem.eql(u8, doc.owner.id, "pixi")) {
                             runtime.state().host.runCommand("pixi.gridLayout") catch |err| {
                                 dvui.log.err("Grid layout command failed: {s}", .{@errorName(err)});
                             };

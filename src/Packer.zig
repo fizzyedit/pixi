@@ -1,7 +1,7 @@
 const std = @import("std");
 const zstbi = @import("zstbi");
 const dvui = @import("dvui");
-const pixi_mod = @import("../pixi.zig");
+const pixi = @import("pixi.zig");
 const runtime = @import("runtime.zig");
 
 
@@ -32,16 +32,16 @@ pub const Sprite = struct {
 
 frames: std.array_list.Managed(zstbi.Rect),
 sprites: std.array_list.Managed(Sprite),
-animations: std.array_list.Managed(pixi_mod.Animation),
+animations: std.array_list.Managed(pixi.Animation),
 id_counter: u32 = 0,
 placeholder: Image,
 contains_height: bool = false,
-open_files: std.array_list.Managed(pixi_mod.internal.File),
+open_files: std.array_list.Managed(pixi.internal.File),
 target: PackTarget = .project,
 //camera: fizzy.gfx.Camera = .{},
-atlas: ?pixi_mod.internal.Atlas = null,
+atlas: ?pixi.internal.Atlas = null,
 
-/// Monotonic time (`pixi_mod.perf.nanoTimestamp`) when the current in-memory atlas was last installed.
+/// Monotonic time (`pixi.perf.nanoTimestamp`) when the current in-memory atlas was last installed.
 last_packed_at_ns: ?i128 = null,
 
 ldtk: bool = false,
@@ -62,8 +62,8 @@ pub fn init(allocator: std.mem.Allocator) !Packer {
     return .{
         .sprites = std.array_list.Managed(Sprite).init(allocator),
         .frames = std.array_list.Managed(zstbi.Rect).init(allocator),
-        .animations = std.array_list.Managed(pixi_mod.Animation).init(allocator),
-        .open_files = std.array_list.Managed(pixi_mod.internal.File).init(allocator),
+        .animations = std.array_list.Managed(pixi.Animation).init(allocator),
+        .open_files = std.array_list.Managed(pixi.internal.File).init(allocator),
         .placeholder = .{ .width = 2, .height = 2, .pixels = pixels },
         .ldtk_tilesets = std.array_list.Managed(LDTKTileset).init(allocator),
     };
@@ -110,9 +110,9 @@ pub fn clearAndFree(self: *Packer) void {
     self.open_files.clearAndFree();
 }
 
-pub fn append(self: *Packer, file: *pixi_mod.internal.File) !void {
+pub fn append(self: *Packer, file: *pixi.internal.File) !void {
     std.log.info("Appending file with sprites: {d}", .{file.sprites.slice().len});
-    var layer_opt: ?pixi_mod.Layer = null;
+    var layer_opt: ?pixi.Layer = null;
     var index: usize = 0;
     while (index < file.layers.slice().len) : (index += 1) {
         var layer = file.layers.get(index);
@@ -122,7 +122,7 @@ pub fn append(self: *Packer, file: *pixi_mod.internal.File) !void {
 
         // If this layer is collapsed, we need to record its texture to survive the next loop
         if ((layer.collapse and !last_item) or ((index != 0 and file.layers.slice().get(index - 1).collapse))) {
-            const current_layer = if (layer_opt) |carry_over_layer| carry_over_layer else try pixi_mod.Layer.init(
+            const current_layer = if (layer_opt) |carry_over_layer| carry_over_layer else try pixi.Layer.init(
                 0,
                 "",
                 file.width(),
@@ -205,7 +205,7 @@ pub fn append(self: *Packer, file: *pixi_mod.internal.File) !void {
                 for (0..file.animations.len) |animation_index| {
                     const animation = file.animations.get(animation_index);
                     if (animation.frames[0].sprite_index == sprite_index) {
-                        const frames = try runtime.allocator().alloc(pixi_mod.Animation.Frame, animation.frames.len);
+                        const frames = try runtime.allocator().alloc(pixi.Animation.Frame, animation.frames.len);
                         for (frames, animation.frames, 0..) |*current_frame, file_anim_frame, i| {
                             current_frame.sprite_index = new_sprite_index + i;
                             current_frame.ms = file_anim_frame.ms;
@@ -266,14 +266,14 @@ pub fn recurseFiles(packer: *Packer, root_directory: []const u8) !void {
             while (try iter.next(io)) |entry| {
                 if (entry.kind == .file) {
                     const ext = std.fs.path.extension(entry.name);
-                    if (pixi_mod.internal.File.isFizzyExtension(ext)) {
+                    if (pixi.internal.File.isFizzyExtension(ext)) {
                         const abs_path = try std.fs.path.joinZ(runtime.allocator(), &.{ directory, entry.name });
                         defer runtime.allocator().free(abs_path);
 
                         if (runtime.state().docs.fileFromPath(abs_path)) |file| {
                             try p.append(file);
                         } else {
-                            if (try pixi_mod.internal.File.fromPath(abs_path)) |file| {
+                            if (try pixi.internal.File.fromPath(abs_path)) |file| {
                                 try p.open_files.append(file);
                                 try p.append(&p.open_files.items[p.open_files.items.len - 1]);
                             }
@@ -296,7 +296,7 @@ pub fn recurseFiles(packer: *Packer, root_directory: []const u8) !void {
 pub fn packAndClear(packer: *Packer) !void {
     if (try packer.packRects()) |size| {
         //var atlas_texture = try fizzy.gfx.Texture.createEmpty(size[0], size[1], .{});
-        var atlas_layer = try pixi_mod.Layer.init(
+        var atlas_layer = try pixi.Layer.init(
             0,
             "",
             size[0],
@@ -319,9 +319,9 @@ pub fn packAndClear(packer: *Packer) !void {
         }
         atlas_layer.invalidate();
 
-        const atlas: pixi_mod.internal.Atlas = .{
-            .sprites = try runtime.allocator().alloc(pixi_mod.internal.Atlas.Sprite, packer.sprites.items.len),
-            .animations = try runtime.allocator().alloc(pixi_mod.Animation, packer.animations.items.len),
+        const atlas: pixi.internal.Atlas = .{
+            .sprites = try runtime.allocator().alloc(pixi.internal.Atlas.Sprite, packer.sprites.items.len),
+            .animations = try runtime.allocator().alloc(pixi.Animation, packer.animations.items.len),
         };
 
         for (atlas.sprites, packer.sprites.items, packer.frames.items) |*dst, src, src_rect| {
@@ -331,7 +331,7 @@ pub fn packAndClear(packer: *Packer) !void {
 
         for (atlas.animations, packer.animations.items) |*dst, src| {
             dst.name = try runtime.allocator().dupe(u8, src.name);
-            dst.frames = try runtime.allocator().dupe(pixi_mod.Animation.Frame, src.frames);
+            dst.frames = try runtime.allocator().dupe(pixi.Animation.Frame, src.frames);
             //dst.length = src.length;
             // dst.start = src.start;
         }
@@ -344,7 +344,7 @@ pub fn packAndClear(packer: *Packer) !void {
             runtime.allocator().free(current_atlas.data.sprites);
             runtime.allocator().free(current_atlas.data.animations);
 
-            runtime.allocator().free(pixi_mod.image.bytes(current_atlas.source));
+            runtime.allocator().free(pixi.image.bytes(current_atlas.source));
 
             current_atlas.data = atlas;
             current_atlas.source = atlas_layer.source;
@@ -357,7 +357,7 @@ pub fn packAndClear(packer: *Packer) !void {
             packer.atlas.?.initCheckerboardTile();
         }
 
-        packer.last_packed_at_ns = pixi_mod.perf.nanoTimestamp();
+        packer.last_packed_at_ns = pixi.perf.nanoTimestamp();
         packer.clearAndFree();
     }
 }

@@ -2,11 +2,11 @@
 const std = @import("std");
 const dvui = @import("dvui");
 const icons = @import("icons");
-const pixi_mod = @import("../pixi.zig");
+const pixi = @import("pixi.zig");
 const runtime = @import("runtime.zig");
-const State = pixi_mod.State;
-const Internal = pixi_mod.internal;
-const DocHandle = pixi_mod.sdk.DocHandle;
+const State = pixi.State;
+const Internal = pixi.internal;
+const DocHandle = pixi.sdk.DocHandle;
 const DimensionsLabel = @import("dialogs/dimensions_label.zig");
 
 fn docFile(st: *State, doc: DocHandle) ?*Internal.File {

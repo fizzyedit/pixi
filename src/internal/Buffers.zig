@@ -1,7 +1,7 @@
 const std = @import("std");
 
 const History = @import("History.zig");
-const pixi_mod = @import("../../pixi.zig");
+const pixi = @import("../pixi.zig");
 const runtime = @import("../runtime.zig");
 const Buffers = @This();
 
@@ -13,7 +13,7 @@ pub const Stroke = struct {
     //values: std.ArrayList([4]u8),
 
     pixels: std.AutoHashMap(usize, [4]u8),
-    //canvas: pixi_mod.file.gui.canvas = .primary,
+    //canvas: pixi.file.gui.canvas = .primary,
 
     pub fn init(allocator: std.mem.Allocator) Stroke {
         return .{
@@ -25,9 +25,9 @@ pub const Stroke = struct {
 
     pub fn append(stroke: *Stroke, index: usize, value: [4]u8) !void {
         const ptr = try stroke.pixels.getOrPut(index);
-        if (pixi_mod.perf.record) {
-            pixi_mod.perf.stroke_append_calls += 1;
-            if (!ptr.found_existing) pixi_mod.perf.stroke_append_new_keys += 1;
+        if (pixi.perf.record) {
+            pixi.perf.stroke_append_calls += 1;
+            if (!ptr.found_existing) pixi.perf.stroke_append_new_keys += 1;
         }
         if (!ptr.found_existing)
             ptr.value_ptr.* = value;
@@ -49,9 +49,9 @@ pub const Stroke = struct {
     /// Like `append` but the map must already have capacity for new keys (see `clearAndReserveCapacity`).
     pub fn appendAssumeCapacity(stroke: *Stroke, index: usize, value: [4]u8) void {
         const gop = stroke.pixels.getOrPutAssumeCapacity(index);
-        if (pixi_mod.perf.record) {
-            pixi_mod.perf.stroke_append_calls += 1;
-            if (!gop.found_existing) pixi_mod.perf.stroke_append_new_keys += 1;
+        if (pixi.perf.record) {
+            pixi.perf.stroke_append_calls += 1;
+            if (!gop.found_existing) pixi.perf.stroke_append_new_keys += 1;
         }
         if (!gop.found_existing)
             gop.value_ptr.* = value;
@@ -68,7 +68,7 @@ pub const Stroke = struct {
     }
 
     pub fn toChange(stroke: *Stroke, layer_id: u64) !History.Change {
-        const t0: i128 = if (pixi_mod.perf.record) pixi_mod.perf.nanoTimestamp() else 0;
+        const t0: i128 = if (pixi.perf.record) pixi.perf.nanoTimestamp() else 0;
         const n = stroke.pixels.count();
 
         // Exact-size allocations; transform accept pre-reserves the hash map to avoid rehash during fills.
@@ -88,10 +88,10 @@ pub const Stroke = struct {
 
         stroke.pixels.clearAndFree();
 
-        if (pixi_mod.perf.record) {
-            pixi_mod.perf.stroke_to_change_ns +%= @intCast(pixi_mod.perf.nanoTimestamp() - t0);
-            pixi_mod.perf.stroke_to_change_calls += 1;
-            pixi_mod.perf.stroke_to_change_pixels_out +%= n;
+        if (pixi.perf.record) {
+            pixi.perf.stroke_to_change_ns +%= @intCast(pixi.perf.nanoTimestamp() - t0);
+            pixi.perf.stroke_to_change_calls += 1;
+            pixi.perf.stroke_to_change_pixels_out +%= n;
         }
 
         return .{ .pixels = .{

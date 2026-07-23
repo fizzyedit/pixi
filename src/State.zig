@@ -10,7 +10,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const dvui = @import("dvui");
 const assets = @import("assets");
-const sdk = @import("sdk");
+const sdk = @import("fizzy_sdk");
 const core = @import("core");
 const Colors = @import("Colors.zig");
 const Project = @import("Project.zig");
@@ -23,10 +23,16 @@ const SpritesPanel = @import("panel/sprites.zig");
 const Palette = @import("internal/Palette.zig");
 const CanvasData = @import("CanvasData.zig");
 const runtime = @import("runtime.zig");
+const pixi = @import("pixi.zig");
+const Internal = pixi.internal;
+const DocHandle = sdk.DocHandle;
+const NewDocGrid = sdk.EditorAPI.NewDocGrid;
 pub const Settings = @import("Settings.zig");
-pub const Docs = @import("Docs.zig");
+pub const DocumentRegistry = @import("DocumentRegistry.zig");
 
 const State = @This();
+
+const Schema = sdk.settings.Schema(Settings);
 
 /// A floating sprite cut/copied from the canvas, pasted relative to `offset`.
 pub const SpriteClipboard = struct {
@@ -43,10 +49,28 @@ host: *sdk.Host,
 ui_atlas: core.Atlas = undefined,
 
 /// Open pixel-art documents (shell `open_files` holds matching `DocHandle`s).
-docs: Docs = .{},
+docs: DocumentRegistry = .{},
 
-/// Pixel-art editing preferences, loaded from the host's per-plugin settings store.
+/// Pixel-art editing preferences shown in the shell settings pane, loaded from the host's
+/// per-plugin settings store (see `loadSettings`).
 settings: Settings = .{},
+
+/// Padding to include in the size of the ruler outside of the font height.
+ruler_padding: f32 = 4.0,
+
+/// Overall zoom sensitivity (0 - 1).
+zoom_sensitivity: f32 = 1.0,
+
+/// Predetermined zoom steps, each pixel perfect.
+zoom_steps: [23]f32 = [_]f32{ 0.125, 0.167, 0.2, 0.25, 0.333, 0.5, 1, 2, 3, 4, 5, 6, 8, 12, 18, 28, 38, 50, 70, 90, 128, 256, 512 },
+
+/// Maximum file size.
+max_file_size: [2]i32 = .{ 4096, 4096 },
+
+/// Color for the even squares of the checkerboard pattern.
+checker_color_even: [4]u8 = .{ 255, 255, 255, 255 },
+/// Color for the odd squares of the checkerboard pattern.
+checker_color_odd: [4]u8 = .{ 175, 175, 175, 255 },
 
 tools: Tools,
 colors: Colors = .{},
@@ -103,9 +127,9 @@ pub fn removeCanvasPane(st: *State, allocator: std.mem.Allocator, grouping: u64)
 pub fn init(allocator: std.mem.Allocator, host: *sdk.Host) !State {
     var st: State = .{
         .host = host,
-        .settings = Settings.load(host),
         .tools = try .init(allocator),
     };
+    st.loadSettings(host);
     st.colors.file_tree_palette = Palette.loadFromBytes(allocator, "fizzy.hex", assets.files.palettes.@"fizzy.hex") catch null;
     st.colors.palette = Palette.loadFromBytes(allocator, "fizzy.hex", assets.files.palettes.@"fizzy.hex") catch null;
     st.ui_atlas = .{
@@ -131,6 +155,290 @@ pub fn persistProject(st: *State) void {
 /// shell's currently-open project folder.
 pub fn reloadProjectForFolder(st: *State, allocator: std.mem.Allocator) void {
     st.project = Project.load(allocator) catch null;
+}
+
+/// Load `settings` from the host's per-plugin store, or leave defaults if absent/unparsable.
+pub fn loadSettings(st: *State, host: *sdk.Host) void {
+    const blob = host.loadPluginSettings("pixi") orelse return;
+    defer host.allocator.free(blob);
+    if (blob.len > 0 and blob[0] == '{') {
+        // Legacy JSON (pre-ZON settings.zon era).
+        const parsed = std.json.parseFromSlice(Settings, host.allocator, blob, .{
+            .ignore_unknown_fields = true,
+        }) catch return;
+        defer parsed.deinit();
+        st.settings = parsed.value;
+    } else {
+        Schema.applyZon(&st.settings, blob);
+    }
+}
+
+/// Register schema with the Host against `&st.settings` directly — the shell pane mutates that
+/// field in place from here on, so it's always the live value; no sync step needed after this
+/// call, including on every future pane edit (see `Plugin.VTable.settingsChanged`, which pixi
+/// leaves unimplemented for this reason).
+pub fn registerSettings(st: *State, host: *sdk.Host, plugin: *sdk.Plugin) !void {
+    try Schema.register(host, plugin, .{
+        .title = "Pixi",
+        .value = &st.settings,
+    });
+}
+
+/// Persist current `settings` (for code paths that mutate them outside the shell pane).
+pub fn saveSettings(st: *const State, host: *sdk.Host) void {
+    Schema.store(host, "pixi", st.settings);
+}
+
+/// Register `file` in `docs` (the shell holds a matching `DocHandle`; this owns the value it
+/// points at). Returns the stable pointer `DocHandle.ptr` should carry.
+pub fn registerOpenDocument(st: *State, file: *Internal.File) !*Internal.File {
+    const gpa = runtime.allocator();
+    try st.docs.files.put(gpa, file.id, file.*);
+    return st.docs.files.getPtr(file.id).?;
+}
+
+pub fn documentFromId(st: *State, id: u64) ?*Internal.File {
+    return st.docs.fileById(id);
+}
+
+pub fn documentFromPath(st: *State, path: []const u8) ?*Internal.File {
+    return st.docs.fileFromPath(path);
+}
+
+pub fn unregisterDocument(st: *State, id: u64) void {
+    _ = st.docs.files.swapRemove(id);
+}
+
+fn docFile(st: *State, doc: DocHandle) ?*Internal.File {
+    return st.docs.fileById(doc.id);
+}
+
+fn activeFile(st: *State) ?*Internal.File {
+    const doc = st.host.activeDoc() orelse return null;
+    return docFile(st, doc);
+}
+
+// ---- SDK-boundary document metadata + pane-binding (was doc_bridge.zig) -------------------
+
+pub fn bindDocumentToWorkspace(
+    st: *State,
+    doc: DocHandle,
+    canvas_id: dvui.Id,
+    workspace_handle: *anyopaque,
+    center: bool,
+) void {
+    const file = docFile(st, doc) orelse return;
+    file.editor.canvas.id = canvas_id;
+    file.editor.workspace_handle = workspace_handle;
+    file.editor.center = center;
+}
+
+pub fn documentGrouping(st: *State, doc: DocHandle) u64 {
+    const file = docFile(st, doc) orelse return 0;
+    return file.editor.grouping;
+}
+
+pub fn setDocumentGrouping(st: *State, doc: DocHandle, grouping: u64) void {
+    const file = docFile(st, doc) orelse return;
+    file.editor.grouping = grouping;
+}
+
+pub fn documentPath(st: *State, doc: DocHandle) []const u8 {
+    const file = docFile(st, doc) orelse return "";
+    return file.path;
+}
+
+pub fn setDocumentPath(st: *State, doc: DocHandle, path: []const u8) !void {
+    const file = docFile(st, doc) orelse return error.DocumentNotFound;
+    const gpa = runtime.allocator();
+    gpa.free(file.path);
+    file.path = try gpa.dupe(u8, path);
+}
+
+pub fn documentHasNativeExtension(st: *State, doc: DocHandle) bool {
+    const file = docFile(st, doc) orelse return false;
+    return Internal.File.isFizzyExtension(std.fs.path.extension(file.path));
+}
+
+pub fn documentHasRecognizedSaveExtension(st: *State, doc: DocHandle) bool {
+    const file = docFile(st, doc) orelse return false;
+    return Internal.File.hasRecognizedSaveExtension(file.path);
+}
+
+pub fn canUndo(st: *State, doc: DocHandle) bool {
+    const file = docFile(st, doc) orelse return false;
+    return file.history.undo_stack.items.len > 0;
+}
+
+pub fn canRedo(st: *State, doc: DocHandle) bool {
+    const file = docFile(st, doc) orelse return false;
+    return file.history.redo_stack.items.len > 0;
+}
+
+pub fn showsSaveStatusIndicator(st: *State, doc: DocHandle) bool {
+    const file = docFile(st, doc) orelse return false;
+    return file.showsSaveStatusIndicator();
+}
+
+pub fn isDocumentSaving(st: *State, doc: DocHandle) bool {
+    const file = docFile(st, doc) orelse return false;
+    return file.isSaving();
+}
+
+pub fn shouldConfirmFlatRasterSave(st: *State, doc: DocHandle) bool {
+    const file = docFile(st, doc) orelse return false;
+    return file.shouldConfirmFlatRasterSave();
+}
+
+pub fn saveDocumentAsync(st: *State, doc: DocHandle) !void {
+    const file = docFile(st, doc) orelse return error.DocumentNotFound;
+    try file.saveAsync();
+}
+
+pub fn timeSinceSaveCompleteNs(st: *State, doc: DocHandle) ?i128 {
+    const file = docFile(st, doc) orelse return null;
+    return file.timeSinceSaveComplete();
+}
+
+// ---- document buffer contract + shell frame hooks (was doc_lifecycle.zig) -----------------
+
+pub fn sizeOfDocument(_: *State) usize {
+    return @sizeOf(Internal.File);
+}
+
+pub fn alignOfDocument(_: *State) usize {
+    return @alignOf(Internal.File);
+}
+
+pub fn documentIdFromBuffer(_: *State, doc: *anyopaque) u64 {
+    const file: *Internal.File = @ptrCast(@alignCast(doc));
+    return file.id;
+}
+
+pub fn deinitDocumentBuffer(_: *State, doc: *anyopaque) void {
+    const file: *Internal.File = @ptrCast(@alignCast(doc));
+    file.deinit();
+}
+
+pub fn setDocumentGroupingOnBuffer(_: *State, doc: *anyopaque, grouping: u64) void {
+    const file: *Internal.File = @ptrCast(@alignCast(doc));
+    file.editor.grouping = grouping;
+}
+
+pub fn createDocument(_: *State, path: []const u8, grid: NewDocGrid, out_doc: *anyopaque) !void {
+    const file: *Internal.File = @ptrCast(@alignCast(out_doc));
+    file.* = try Internal.File.init(path, .{
+        .columns = grid.columns,
+        .rows = grid.rows,
+        .column_width = grid.column_width,
+        .row_height = grid.row_height,
+    });
+}
+
+pub fn documentDefaultSaveAsFilename(st: *State, doc: DocHandle, allocator: std.mem.Allocator) ![]const u8 {
+    const file = docFile(st, doc) orelse return error.DocumentNotFound;
+    return Internal.File.defaultSaveAsFilename(allocator, file.path);
+}
+
+pub fn saveDocumentAs(st: *State, doc: DocHandle, path: []const u8, window: *dvui.Window) !void {
+    const file = docFile(st, doc) orelse return error.DocumentNotFound;
+    const ext = std.fs.path.extension(path);
+    if (Internal.File.isFizzyExtension(ext)) {
+        try file.saveAsFizzy(path, window);
+    } else if (std.mem.eql(u8, ext, ".png") or std.mem.eql(u8, ext, ".jpg") or std.mem.eql(u8, ext, ".jpeg")) {
+        try file.saveAsFlattened(path, window);
+    } else {
+        return error.UnsupportedSaveExtension;
+    }
+}
+
+pub fn resetDocumentSaveUIState(st: *State, doc: DocHandle) void {
+    const file = docFile(st, doc) orelse return;
+    file.resetSaveUIState();
+}
+
+pub fn tickOpenDocuments(st: *State) bool {
+    Internal.File.drainCompletedSaves(&st.docs);
+
+    var needs_save_status_anim_tick = false;
+    for (st.docs.files.values()) |*file| {
+        file.tickSaveDoneFlash();
+        if (file.showsSaveStatusIndicator()) needs_save_status_anim_tick = true;
+    }
+    return needs_save_status_anim_tick;
+}
+
+pub fn resetDocumentPeekLayers(st: *State) void {
+    for (st.docs.files.values()) |*file| {
+        if (file.editor.isolate_layer) {
+            file.peek_layer_index = file.selected_layer_index;
+        } else {
+            file.peek_layer_index = null;
+        }
+    }
+}
+
+pub fn tickActiveDocumentPlayback(st: *State, timer_host_id: dvui.Id) void {
+    const file = activeFile(st) orelse return;
+    if (!file.editor.playing) return;
+    if (file.selected_animation_index) |index| {
+        const animation = file.animations.get(index);
+        if (animation.frames.len == 0) return;
+        if (dvui.timerDoneOrNone(timer_host_id)) {
+            if (file.selected_animation_frame_index >= animation.frames.len - 1) {
+                file.selected_animation_frame_index = 0;
+            } else {
+                file.selected_animation_frame_index += 1;
+            }
+            const millis_per_frame = animation.frames[file.selected_animation_frame_index].ms;
+            dvui.timer(timer_host_id, @intCast(millis_per_frame * 1000));
+        }
+    }
+}
+
+pub fn warmupActiveDocumentComposites(st: *State) void {
+    const file = activeFile(st) orelse return;
+    const w = file.width();
+    const h = file.height();
+    if (w == 0 or h == 0) return;
+    const area = @as(u64, w) * @as(u64, h);
+    if (area < 512 * 512) return;
+    pixi.render.warmupDrawingComposites(file) catch |err| {
+        dvui.log.err("Composite warmup failed: {any}", .{err});
+    };
+}
+
+pub fn isAnyDocumentActivelyDrawing(st: *State) bool {
+    for (st.docs.files.values()) |*file| {
+        if (file.editor.active_drawing) return true;
+    }
+    return false;
+}
+
+pub fn acceptEdit(st: *State) void {
+    const file = activeFile(st) orelse return;
+    if (file.editor.transform) |*t| t.accept();
+}
+
+pub fn cancelEdit(st: *State) void {
+    const file = activeFile(st) orelse return;
+    if (file.editor.transform) |*t| t.cancel();
+    if (file.editor.selected_sprites.count() > 0) file.clearSelectedSprites();
+    if (file.selected_animation_index != null) file.selected_animation_index = null;
+}
+
+pub fn deleteSelection(st: *State) void {
+    const file = activeFile(st) orelse return;
+    file.deleteSelectedContents();
+}
+
+pub fn initPlugin(_: *State) !void {
+    try Internal.File.initSaveQueue();
+}
+
+pub fn deinitPlugin(_: *State) void {
+    Internal.File.waitForSaveQueueDrain();
+    Internal.File.deinitSaveQueue();
 }
 
 pub fn deinit(st: *State, allocator: std.mem.Allocator) void {

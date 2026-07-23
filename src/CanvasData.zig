@@ -17,11 +17,10 @@ const Export = @import("dialogs/Export.zig");
 const GridLayout = @import("dialogs/GridLayout.zig");
 const Clipboard = @import("clipboard.zig");
 const TransformOp = @import("transform_op.zig");
-const DocLifecycle = @import("doc_lifecycle.zig");
-const pixi_mod = @import("../pixi.zig");
+const pixi = @import("pixi.zig");
 const runtime = @import("runtime.zig");
 
-const File = pixi_mod.internal.File;
+const File = pixi.internal.File;
 
 const CanvasData = @This();
 
@@ -83,15 +82,15 @@ pub fn drawRuler(self: *CanvasData, file: *File, orientation: RulerOrientation) 
     const largest_label_size = font.textSize(largest_label);
     const natural_scale = dvui.currentWindow().natural_scale;
     const largest_label_phys = largest_label_size.scale(natural_scale, dvui.Size.Physical);
-    const base_ruler_size = largest_label_size.w + runtime.state().settings.ruler_padding;
+    const base_ruler_size = largest_label_size.w + runtime.state().ruler_padding;
 
     const ruler_thickness: f32 = switch (orientation) {
         .horizontal => blk: {
-            self.horizontal_ruler_height = font.textSize("M").h + runtime.state().settings.ruler_padding;
+            self.horizontal_ruler_height = font.textSize("M").h + runtime.state().ruler_padding;
             break :blk self.horizontal_ruler_height;
         },
         .vertical => blk: {
-            self.vertical_ruler_width = @max(base_ruler_size, font.textSize("M").h + runtime.state().settings.ruler_padding);
+            self.vertical_ruler_width = @max(base_ruler_size, font.textSize("M").h + runtime.state().ruler_padding);
             break :blk self.vertical_ruler_width;
         },
     };
@@ -212,7 +211,7 @@ fn drawRulerContent(
         .vertical => self.rows_drag_name,
     };
 
-    var reorder = pixi_mod.core.dvui.reorder(@src(), .{ .drag_name = drag_name }, .{
+    var reorder = pixi.core.dvui.reorder(@src(), .{ .drag_name = drag_name }, .{
         .expand = .both,
         .margin = dvui.Rect.all(0),
         .padding = dvui.Rect.all(0),
@@ -262,7 +261,7 @@ fn drawRulerContent(
         .horizontal => .{ .w = @as(f32, @floatFromInt(file.column_width)), .h = 1.0 },
         .vertical => .{ .w = 1.0, .h = @as(f32, @floatFromInt(file.row_height)) },
     };
-    const reorder_mode: pixi_mod.core.dvui.ReorderWidget.Reorderable.Mode = switch (orientation) {
+    const reorder_mode: pixi.core.dvui.ReorderWidget.Reorderable.Mode = switch (orientation) {
         .horizontal => .any_y,
         .vertical => .any_x,
     };
@@ -300,7 +299,7 @@ fn drawRulerContent(
 
         var button_color = if (reorder.drag_point != null) dvui.themeGet().color(.control, .fill).opacity(0.85) else dvui.themeGet().color(.window, .fill);
 
-        if (pixi_mod.core.dvui.hovered(reorderable.data())) {
+        if (pixi.core.dvui.hovered(reorderable.data())) {
             button_color = dvui.themeGet().color(.control, .fill_hover);
             dvui.cursorSet(.hand);
         }
@@ -575,7 +574,7 @@ pub fn drawRulerLabel(_: *CanvasData, options: TextLabelOptions) void {
     else
         font.textSize(label).scale(natural, dvui.Size.Physical);
 
-    const padding = runtime.state().settings.ruler_padding * natural;
+    const padding = runtime.state().ruler_padding * natural;
 
     var label_rect = rect;
 
@@ -771,10 +770,10 @@ pub fn drawTransformDialog(_: *CanvasData, file: *File, container: *dvui.WidgetD
             });
             defer box.deinit();
             if (dvui.buttonIcon(@src(), "transform_cancel", icons.tvg.lucide.@"trash-2", .{}, .{ .stroke_color = dvui.themeGet().color(.window, .fill) }, .{ .style = .err, .expand = .horizontal })) {
-                DocLifecycle.cancelEdit(runtime.state());
+                runtime.state().cancelEdit();
             }
             if (dvui.buttonIcon(@src(), "transform_accept", icons.tvg.lucide.check, .{}, .{ .stroke_color = dvui.themeGet().color(.window, .fill) }, .{ .style = .highlight, .expand = .horizontal })) {
-                DocLifecycle.acceptEdit(runtime.state());
+                runtime.state().acceptEdit();
             }
         }
     }
@@ -1026,7 +1025,7 @@ pub fn drawEditPill(self: *CanvasData, container: *dvui.WidgetData) void {
                 },
                 .exportd => {
                     // Open the Export dialog (same configuration the `export` keybind uses).
-                    var mutex = pixi_mod.core.dvui.dialog(@src(), .{
+                    var mutex = pixi.core.dvui.dialog(@src(), .{
                         .displayFn = Export.dialog,
                         .callafterFn = Export.callAfter,
                         .title = "Export...",

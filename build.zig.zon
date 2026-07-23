@@ -1,12 +1,12 @@
 .{
     .name = .pixi,
-    .version = "0.1.10",
+    .version = "0.0.1",
     .minimum_zig_version = "0.16.0",
     .paths = .{
         "build.zig",
         "build.zig.zon",
-        "root.zig",
-        "pixi.zig",
+        "plugin.zig",
+        "plugin.zig.zon",
         "ICON.png",
         "src",
         "assets",
@@ -14,9 +14,9 @@
     .fingerprint = 0xdef5a52dbae70684,
     .dependencies = .{
         .fizzy = .{
-            .url = "https://github.com/fizzyedit/fizzy/archive/d7672085b26b8f42448beb426400fccada313697.tar.gz",
-            .hash = "fizzy-0.1.0-c46aVqtvOQDm2KFwddakX9rEFqQb9kQrxbijUKuevVnE",
-            //.path = "../../fizzy",
+            .url = "https://github.com/fizzyedit/fizzy/archive/refs/tags/sdk-v0.1.39.tar.gz",
+            .hash = "fizzy-0.1.0-c46aVuGBOgB-M5FTCdH97iHueA8BTeQPvMk55BvF9MJY",
+            // .path = "../../fizzy",
         },
         .assetpack = .{
             .url = "https://github.com/foxnne/assetpack/archive/ac7592f3f5988857840d0df4610e1e1fad690e2e.tar.gz",

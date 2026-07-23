@@ -3,8 +3,8 @@ const zgui = @import("zgui");
 const History = @This();
 const dvui = @import("dvui");
 const Layer = @import("Layer.zig");
-const pixi_mod = @import("../../pixi.zig");
-const plugin = @import("../plugin.zig");
+const pixi = @import("../pixi.zig");
+const plugin = @import("../../plugin.zig");
 const runtime = @import("../runtime.zig");
 
 pub const Action = enum { undo, redo };
@@ -58,7 +58,7 @@ pub const Change = union(ChangeType) {
 
     pub const AnimationFrames = struct {
         index: usize,
-        frames: []pixi_mod.Animation.Frame,
+        frames: []pixi.Animation.Frame,
     };
 
     pub const AnimationRestoreDelete = struct {
@@ -188,7 +188,7 @@ pub const Change = union(ChangeType) {
                 .selected = 0,
             } },
             .layer_name => .{ .animation_name = .{
-                .name = [_:0]u8{0} ** pixi_mod.max_name_len,
+                .name = [_:0]u8{0} ** pixi.max_name_len,
                 .index = 0,
             } },
             else => error.NotSupported,
@@ -230,8 +230,8 @@ redo_stack: std.array_list.Managed(Change),
 undo_layer_data_stack: std.array_list.Managed([][][4]u8),
 redo_layer_data_stack: std.array_list.Managed([][][4]u8),
 
-undo_animation_data_stack: std.array_list.Managed([][]pixi_mod.Animation.Frame),
-redo_animation_data_stack: std.array_list.Managed([][]pixi_mod.Animation.Frame),
+undo_animation_data_stack: std.array_list.Managed([][]pixi.Animation.Frame),
+redo_animation_data_stack: std.array_list.Managed([][]pixi.Animation.Frame),
 
 undo_sprite_data_stack: std.array_list.Managed([][2]f32),
 redo_sprite_data_stack: std.array_list.Managed([][2]f32),
@@ -244,8 +244,8 @@ pub fn init(allocator: std.mem.Allocator) History {
         .undo_layer_data_stack = std.array_list.Managed([][][4]u8).init(allocator),
         .redo_layer_data_stack = std.array_list.Managed([][][4]u8).init(allocator),
 
-        .undo_animation_data_stack = std.array_list.Managed([][]pixi_mod.Animation.Frame).init(allocator),
-        .redo_animation_data_stack = std.array_list.Managed([][]pixi_mod.Animation.Frame).init(allocator),
+        .undo_animation_data_stack = std.array_list.Managed([][]pixi.Animation.Frame).init(allocator),
+        .redo_animation_data_stack = std.array_list.Managed([][]pixi.Animation.Frame).init(allocator),
 
         .undo_sprite_data_stack = std.array_list.Managed([][2]f32).init(allocator),
         .redo_sprite_data_stack = std.array_list.Managed([][2]f32).init(allocator),
@@ -253,12 +253,12 @@ pub fn init(allocator: std.mem.Allocator) History {
 }
 
 pub fn append(self: *History, change: Change) !void {
-    const track_pixels = pixi_mod.perf.record and std.meta.activeTag(change) == .pixels;
+    const track_pixels = pixi.perf.record and std.meta.activeTag(change) == .pixels;
     const pixel_slots: usize = if (track_pixels) switch (change) {
         .pixels => |p| p.indices.len,
         else => 0,
     } else 0;
-    const t_hist: i128 = if (track_pixels) pixi_mod.perf.nanoTimestamp() else 0;
+    const t_hist: i128 = if (track_pixels) pixi.perf.nanoTimestamp() else 0;
 
     if (self.redo_stack.items.len > 0) {
         for (self.redo_stack.items) |*c| {
@@ -364,13 +364,13 @@ pub fn append(self: *History, change: Change) !void {
     }
 
     if (track_pixels and t_hist != 0) {
-        pixi_mod.perf.history_append_pixels_ns +%= @intCast(pixi_mod.perf.nanoTimestamp() - t_hist);
-        pixi_mod.perf.history_append_pixels_calls += 1;
-        pixi_mod.perf.history_append_pixels_slots +%= pixel_slots;
+        pixi.perf.history_append_pixels_ns +%= @intCast(pixi.perf.nanoTimestamp() - t_hist);
+        pixi.perf.history_append_pixels_calls += 1;
+        pixi.perf.history_append_pixels_slots +%= pixel_slots;
     }
 }
 
-fn layerMergeUndo(file: *pixi_mod.internal.File, lm: *Change.LayerMerge) !void {
+fn layerMergeUndo(file: *pixi.internal.File, lm: *Change.LayerMerge) !void {
     const dest_i = for (file.layers.items(.id), 0..) |id, i| {
         if (id == lm.dest_layer_id) break i;
     } else return error.InvalidLayerMerge;
@@ -392,7 +392,7 @@ fn layerMergeUndo(file: *pixi_mod.internal.File, lm: *Change.LayerMerge) !void {
     file.invalidateActiveLayerTransparencyMaskCache();
 }
 
-fn layerMergeRedo(file: *pixi_mod.internal.File, lm: *Change.LayerMerge) !void {
+fn layerMergeRedo(file: *pixi.internal.File, lm: *Change.LayerMerge) !void {
     const src_i = for (file.layers.items(.id), 0..) |id, i| {
         if (id == lm.source_layer_id) break i;
     } else return error.InvalidLayerMerge;
@@ -436,7 +436,7 @@ fn layerMergeRedo(file: *pixi_mod.internal.File, lm: *Change.LayerMerge) !void {
 
 // Handling cases in this function details how an undo/redo action works, and must be symmetrical.
 // This means that `change` needs to be modified to contain the active state prior to changing the active state
-pub fn undoRedo(self: *History, file: *pixi_mod.internal.File, action: Action) !void {
+pub fn undoRedo(self: *History, file: *pixi.internal.File, action: Action) !void {
     var active_stack = switch (action) {
         .undo => &self.undo_stack,
         .redo => &self.redo_stack,
@@ -459,8 +459,8 @@ pub fn undoRedo(self: *History, file: *pixi_mod.internal.File, action: Action) !
         // direct `@intCast` to `usize` crashes the safe-mode build with an "integer cast
         // truncates value" panic every time the user undoes/redoes. `id_extra` only needs
         // to be a salt that varies between toasts, so truncate via u128 → low bits of usize.
-        const ts_us: u128 = @intCast(@divTrunc(pixi_mod.perf.nanoTimestamp(), 1000));
-        const id_mutex = dvui.toastAdd(dvui.currentWindow(), @src(), @truncate(ts_us), file.editor.canvas.id, pixi_mod.core.dvui.toastDisplay, 2_000_000);
+        const ts_us: u128 = @intCast(@divTrunc(pixi.perf.nanoTimestamp(), 1000));
+        const id_mutex = dvui.toastAdd(dvui.currentWindow(), @src(), @truncate(ts_us), file.editor.canvas.id, pixi.core.dvui.toastDisplay, 2_000_000);
         const id = id_mutex.id;
         const action_text = switch (action) {
             .undo => "Undo:",
@@ -772,7 +772,7 @@ pub fn undoRedo(self: *History, file: *pixi_mod.internal.File, action: Action) !
             const history_frames = &animation_frames.frames;
             const current_frames = &file.animations.items(.frames)[animation_frames.index];
 
-            std.mem.swap([]pixi_mod.Animation.Frame, history_frames, current_frames);
+            std.mem.swap([]pixi.Animation.Frame, history_frames, current_frames);
 
             file.selected_animation_index = animation_frames.index;
         },
@@ -783,7 +783,7 @@ pub fn undoRedo(self: *History, file: *pixi_mod.internal.File, action: Action) !
             resize.height = file.height();
 
             var layer_data: ?[][][4]u8 = null;
-            var animation_data: ?[][]pixi_mod.Animation.Frame = null;
+            var animation_data: ?[][]pixi.Animation.Frame = null;
             var sprite_data: ?[][2]f32 = null;
 
             switch (action) {
@@ -796,9 +796,9 @@ pub fn undoRedo(self: *History, file: *pixi_mod.internal.File, action: Action) !
                     if (self.undo_animation_data_stack.pop()) |ad| {
                         animation_data = ad;
 
-                        var anim_data = try runtime.allocator().alloc([]pixi_mod.Animation.Frame, file.animations.len);
+                        var anim_data = try runtime.allocator().alloc([]pixi.Animation.Frame, file.animations.len);
                         for (0..file.animations.len) |animation_index| {
-                            anim_data[animation_index] = runtime.allocator().dupe(pixi_mod.Animation.Frame, file.animations.items(.frames)[animation_index]) catch return error.MemoryAllocationFailed;
+                            anim_data[animation_index] = runtime.allocator().dupe(pixi.Animation.Frame, file.animations.items(.frames)[animation_index]) catch return error.MemoryAllocationFailed;
                         }
                         try self.redo_animation_data_stack.append(anim_data);
                     }
@@ -821,9 +821,9 @@ pub fn undoRedo(self: *History, file: *pixi_mod.internal.File, action: Action) !
                     if (self.redo_animation_data_stack.pop()) |ad| {
                         animation_data = ad;
 
-                        var anim_data = try runtime.allocator().alloc([]pixi_mod.Animation.Frame, file.animations.len);
+                        var anim_data = try runtime.allocator().alloc([]pixi.Animation.Frame, file.animations.len);
                         for (0..file.animations.len) |animation_index| {
-                            anim_data[animation_index] = runtime.allocator().dupe(pixi_mod.Animation.Frame, file.animations.items(.frames)[animation_index]) catch return error.MemoryAllocationFailed;
+                            anim_data[animation_index] = runtime.allocator().dupe(pixi.Animation.Frame, file.animations.items(.frames)[animation_index]) catch return error.MemoryAllocationFailed;
                         }
                         try self.undo_animation_data_stack.append(anim_data);
                     }

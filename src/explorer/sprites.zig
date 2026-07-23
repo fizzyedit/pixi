@@ -1,7 +1,7 @@
 const std = @import("std");
 const dvui = @import("dvui");
 const icons = @import("icons");
-const pixi_mod = @import("../../pixi.zig");
+const pixi = @import("../pixi.zig");
 const runtime = @import("../runtime.zig");
 
 const Sprites = @This();
@@ -90,7 +90,7 @@ pub fn init() Sprites {
     return .{};
 }
 
-fn selectionUiKey(file: *pixi_mod.internal.File) u64 {
+fn selectionUiKey(file: *pixi.internal.File) u64 {
     const c = file.editor.selected_sprites.count();
     if (c == 0) return 0;
     const first = file.editor.selected_sprites.findFirstSet() orelse return 0;
@@ -100,7 +100,7 @@ fn selectionUiKey(file: *pixi_mod.internal.File) u64 {
     return (@as(u64, c) << 48) ^ (@as(u64, first) << 24) ^ @as(u64, last);
 }
 
-fn selectionOriginsDifferFrom(file: *pixi_mod.internal.File, indices: []const usize, old_vals: []const [2]f32) bool {
+fn selectionOriginsDifferFrom(file: *pixi.internal.File, indices: []const usize, old_vals: []const [2]f32) bool {
     for (indices, old_vals) |si, ov| {
         const cur = file.sprites.get(si).origin;
         if (cur[0] != ov[0] or cur[1] != ov[1]) return true;
@@ -133,7 +133,7 @@ fn freeOriginAxisDragSnapshot(self: *Sprites, axis: enum { x, y }) void {
     }
 }
 
-fn beginOriginAxisDragSnapshot(self: *Sprites, file: *pixi_mod.internal.File, axis: enum { x, y }) !void {
+fn beginOriginAxisDragSnapshot(self: *Sprites, file: *pixi.internal.File, axis: enum { x, y }) !void {
     switch (axis) {
         .x => if (self.origin_x_drag_indices != null) return,
         .y => if (self.origin_y_drag_indices != null) return,
@@ -160,7 +160,7 @@ fn beginOriginAxisDragSnapshot(self: *Sprites, file: *pixi_mod.internal.File, ax
     }
 }
 
-fn appendOriginsHistory(file: *pixi_mod.internal.File, indices: []usize, old_vals: [][2]f32) !void {
+fn appendOriginsHistory(file: *pixi.internal.File, indices: []usize, old_vals: [][2]f32) !void {
     file.history.append(.{ .origins = .{ .indices = indices, .values = old_vals } }) catch |err| {
         runtime.allocator().free(indices);
         runtime.allocator().free(old_vals);
@@ -168,7 +168,7 @@ fn appendOriginsHistory(file: *pixi_mod.internal.File, indices: []usize, old_val
     };
 }
 
-fn applySpriteOriginAxisNoHistory(file: *pixi_mod.internal.File, axis: enum { x, y }, new_val: f32) void {
+fn applySpriteOriginAxisNoHistory(file: *pixi.internal.File, axis: enum { x, y }, new_val: f32) void {
     const cw = @as(f32, @floatFromInt(file.column_width));
     const rh = @as(f32, @floatFromInt(file.row_height));
     const max_v: f32 = switch (axis) {
@@ -185,7 +185,7 @@ fn applySpriteOriginAxisNoHistory(file: *pixi_mod.internal.File, axis: enum { x,
     }
 }
 
-fn commitSpriteOriginAxis(file: *pixi_mod.internal.File, axis: enum { x, y }, new_val: f32) !void {
+fn commitSpriteOriginAxis(file: *pixi.internal.File, axis: enum { x, y }, new_val: f32) !void {
     const cw = @as(f32, @floatFromInt(file.column_width));
     const rh = @as(f32, @floatFromInt(file.row_height));
     const max_v: f32 = switch (axis) {
@@ -731,17 +731,17 @@ pub fn drawAnimations(self: *Sprites) !void {
         defer {
             if (file.editor.animations_scroll_info.viewport.w < file.editor.animations_scroll_info.virtual_size.w) {
                 if (file.editor.animations_scroll_info.offset(.horizontal) < file.editor.animations_scroll_info.scrollMax(.horizontal)) {
-                    pixi_mod.core.dvui.drawEdgeShadow(scroll_area.data().contentRectScale(), .right, .{});
+                    pixi.core.dvui.drawEdgeShadow(scroll_area.data().contentRectScale(), .right, .{});
                 }
                 if (file.editor.animations_scroll_info.offset(.horizontal) > 0.0) {
-                    pixi_mod.core.dvui.drawEdgeShadow(scroll_area.data().contentRectScale(), .left, .{});
+                    pixi.core.dvui.drawEdgeShadow(scroll_area.data().contentRectScale(), .left, .{});
                 }
             }
         }
 
         const vertical_scroll = file.editor.animations_scroll_info.offset(.vertical);
 
-        var tree = pixi_mod.core.dvui.TreeWidget.tree(@src(), .{ .enable_reordering = true }, .{
+        var tree = pixi.core.dvui.TreeWidget.tree(@src(), .{ .enable_reordering = true }, .{
             .expand = .horizontal,
             .background = false,
         });
@@ -768,7 +768,7 @@ pub fn drawAnimations(self: *Sprites) !void {
                     }
                 }
 
-                var moved = try runtime.allocator().alloc(pixi_mod.internal.Animation, sources.len);
+                var moved = try runtime.allocator().alloc(pixi.internal.Animation, sources.len);
                 defer runtime.allocator().free(moved);
                 for (sources, 0..) |s, i| {
                     moved[i] = file.animations.get(s);
@@ -780,7 +780,7 @@ pub fn drawAnimations(self: *Sprites) !void {
                     file.animations.orderedRemove(sources[ri]);
                 }
 
-                const target_raw = pixi_mod.core.dvui.TreeSelection.adjustInsertBeforeForRemovals(sources, insert_before_raw);
+                const target_raw = pixi.core.dvui.TreeSelection.adjustInsertBeforeForRemovals(sources, insert_before_raw);
                 const target = @min(target_raw, file.animations.len);
 
                 for (moved, 0..) |anim, i| {
@@ -1049,10 +1049,10 @@ pub fn drawAnimations(self: *Sprites) !void {
         const anim_si = file.editor.animations_scroll_info;
         const anim_v_max = anim_si.scrollMax(.vertical);
         if (vertical_scroll > scroll_list_shadow_deadzone_ns)
-            pixi_mod.core.dvui.drawEdgeShadow(scroll_area.data().contentRectScale(), .top, .{});
+            pixi.core.dvui.drawEdgeShadow(scroll_area.data().contentRectScale(), .top, .{});
 
         if (anim_v_max > scroll_list_shadow_deadzone_ns and vertical_scroll < anim_v_max - scroll_list_shadow_deadzone_ns)
-            pixi_mod.core.dvui.drawEdgeShadow(scroll_area.data().contentRectScale(), .bottom, .{});
+            pixi.core.dvui.drawEdgeShadow(scroll_area.data().contentRectScale(), .bottom, .{});
     }
 }
 
@@ -1108,8 +1108,8 @@ pub fn drawFrameControls(_: *Sprites) !void {
             dvui.alphaSet(alpha);
 
             if (sort_anim_asc_button.clicked()) {
-                const prev_order = try runtime.allocator().dupe(pixi_mod.Animation.Frame, animation.frames);
-                std.mem.sort(pixi_mod.Animation.Frame, animation.frames, {}, FrameSort.asc);
+                const prev_order = try runtime.allocator().dupe(pixi.Animation.Frame, animation.frames);
+                std.mem.sort(pixi.Animation.Frame, animation.frames, {}, FrameSort.asc);
 
                 if (!animation.eqlFrames(prev_order)) {
                     file.history.append(.{
@@ -1168,8 +1168,8 @@ pub fn drawFrameControls(_: *Sprites) !void {
                 dvui.alphaSet(alpha);
 
                 if (sort_anim_desc_button.clicked()) {
-                    const prev_order = try runtime.allocator().dupe(pixi_mod.Animation.Frame, animation.frames);
-                    std.mem.sort(pixi_mod.Animation.Frame, animation.frames, {}, FrameSort.desc);
+                    const prev_order = try runtime.allocator().dupe(pixi.Animation.Frame, animation.frames);
+                    std.mem.sort(pixi.Animation.Frame, animation.frames, {}, FrameSort.desc);
 
                     if (!animation.eqlFrames(prev_order)) {
                         file.history.append(.{
@@ -1231,7 +1231,7 @@ pub fn drawFrameControls(_: *Sprites) !void {
             if (add_sprite_button.clicked()) {
                 if (file.editor.selected_sprites.count() > 0) {
                     var iter = file.editor.selected_sprites.iterator(.{ .kind = .set, .direction = .forward });
-                    var frames = std.array_list.Managed(pixi_mod.Animation.Frame).init(dvui.currentWindow().arena());
+                    var frames = std.array_list.Managed(pixi.Animation.Frame).init(dvui.currentWindow().arena());
                     while (iter.next()) |sprite_index| {
                         frames.append(.{
                             .sprite_index = sprite_index,
@@ -1242,7 +1242,7 @@ pub fn drawFrameControls(_: *Sprites) !void {
                         };
                     }
 
-                    const prev_order = try runtime.allocator().dupe(pixi_mod.Animation.Frame, animation.frames);
+                    const prev_order = try runtime.allocator().dupe(pixi.Animation.Frame, animation.frames);
 
                     animation.appendFrames(runtime.allocator(), frames.items) catch {
                         dvui.log.err("Failed to append frames", .{});
@@ -1319,7 +1319,7 @@ pub fn drawFrameControls(_: *Sprites) !void {
 
             if (duplicate_animation_button.clicked()) {
                 var iter = file.editor.selected_sprites.iterator(.{ .kind = .set, .direction = .forward });
-                const prev_order = try runtime.allocator().dupe(pixi_mod.Animation.Frame, animation.frames);
+                const prev_order = try runtime.allocator().dupe(pixi.Animation.Frame, animation.frames);
 
                 while (iter.next()) |sprite_index| {
                     for (animation.frames) |frame| {
@@ -1391,7 +1391,7 @@ pub fn drawFrameControls(_: *Sprites) !void {
 
             if (delete_animation_button.clicked()) {
                 var iter = file.editor.selected_sprites.iterator(.{ .kind = .set, .direction = .forward });
-                const prev_order = try runtime.allocator().dupe(pixi_mod.Animation.Frame, animation.frames);
+                const prev_order = try runtime.allocator().dupe(pixi.Animation.Frame, animation.frames);
 
                 while (iter.next()) |sprite_index| {
                     var i: usize = animation.frames.len;
@@ -1481,7 +1481,7 @@ pub fn drawFrames(self: *Sprites) !void {
             defer self.prev_sprite_count = animation.frames.len;
             defer self.prev_anim_id = animation.id;
 
-            var tree = pixi_mod.core.dvui.TreeWidget.tree(@src(), .{ .enable_reordering = true }, .{
+            var tree = pixi.core.dvui.TreeWidget.tree(@src(), .{ .enable_reordering = true }, .{
                 .expand = .horizontal,
                 .background = false,
             });
@@ -1494,7 +1494,7 @@ pub fn drawFrames(self: *Sprites) !void {
                 if (removed_frame_indices_len > 0) {
                     const sources = removed_frame_indices_buf[0..removed_frame_indices_len];
 
-                    const prev_order = try runtime.allocator().dupe(pixi_mod.Animation.Frame, animation.frames);
+                    const prev_order = try runtime.allocator().dupe(pixi.Animation.Frame, animation.frames);
                     defer file.animations.set(animation_index, animation);
 
                     const primary_before = file.selected_animation_frame_index;
@@ -1508,13 +1508,13 @@ pub fn drawFrames(self: *Sprites) !void {
                         }
                     }
 
-                    var moved = try runtime.allocator().alloc(pixi_mod.Animation.Frame, sources.len);
+                    var moved = try runtime.allocator().alloc(pixi.Animation.Frame, sources.len);
                     defer runtime.allocator().free(moved);
                     for (sources, 0..) |s, i| {
                         moved[i] = animation.frames[s];
                     }
 
-                    var remaining = try runtime.allocator().alloc(pixi_mod.Animation.Frame, animation.frames.len - sources.len);
+                    var remaining = try runtime.allocator().alloc(pixi.Animation.Frame, animation.frames.len - sources.len);
                     defer runtime.allocator().free(remaining);
                     {
                         var ri: usize = 0;
@@ -1534,7 +1534,7 @@ pub fn drawFrames(self: *Sprites) !void {
                         }
                     }
 
-                    const target_raw = pixi_mod.core.dvui.TreeSelection.adjustInsertBeforeForRemovals(sources, insert_before_raw);
+                    const target_raw = pixi.core.dvui.TreeSelection.adjustInsertBeforeForRemovals(sources, insert_before_raw);
                     const target = @min(target_raw, remaining.len);
 
                     var wi: usize = 0;
@@ -1782,10 +1782,10 @@ pub fn drawFrames(self: *Sprites) !void {
         const frames_si = file.editor.sprites_scroll_info;
         const frames_v_max = frames_si.scrollMax(.vertical);
         if (vertical_scroll > scroll_list_shadow_deadzone_ns)
-            pixi_mod.core.dvui.drawEdgeShadow(scroll_area.data().contentRectScale(), .top, .{});
+            pixi.core.dvui.drawEdgeShadow(scroll_area.data().contentRectScale(), .top, .{});
 
         if (frames_v_max > scroll_list_shadow_deadzone_ns and vertical_scroll < frames_v_max - scroll_list_shadow_deadzone_ns)
-            pixi_mod.core.dvui.drawEdgeShadow(scroll_area.data().contentRectScale(), .bottom, .{});
+            pixi.core.dvui.drawEdgeShadow(scroll_area.data().contentRectScale(), .bottom, .{});
     }
 }
 
@@ -1799,21 +1799,21 @@ const FrameRowHit = struct {
     hbox_tl: dvui.Point.Physical,
 };
 
-fn frameGestureMatches(file: *const pixi_mod.internal.File, anim_id: u64) bool {
+fn frameGestureMatches(file: *const pixi.internal.File, anim_id: u64) bool {
     return frame_row_gesture != null and frame_row_gesture.?.file_id == file.id and frame_row_gesture.?.anim_id == anim_id;
 }
 
-fn frameTreeClearGestureKeysOnly(_: *const pixi_mod.internal.File) void {
+fn frameTreeClearGestureKeysOnly(_: *const pixi.internal.File) void {
     frame_row_gesture = null;
 }
 
-fn frameTreeResetRowPointerGesture(_: *const pixi_mod.internal.File) void {
+fn frameTreeResetRowPointerGesture(_: *const pixi.internal.File) void {
     dvui.dragEnd();
     frame_row_gesture = null;
 }
 
 /// After `selected_frame_indices` changes, make tile selection match exactly those frames' sprites.
-fn syncSpritesFromCurrentFrameSelection(file: *pixi_mod.internal.File, anim_index: usize) void {
+fn syncSpritesFromCurrentFrameSelection(file: *pixi.internal.File, anim_index: usize) void {
     const frames = file.animations.get(anim_index).frames;
     file.clearSelectedSprites();
     for (file.editor.selected_frame_indices.items) |fi| {
@@ -1825,7 +1825,7 @@ fn syncSpritesFromCurrentFrameSelection(file: *pixi_mod.internal.File, anim_inde
 
 /// Frame selection is scoped to one animation at a time. `selected_frame_indices` always mirrors
 /// `selected_sprites` for this animation's frames (so canvas changes can't leave stale tree state).
-fn ensureFrameSelection(file: *pixi_mod.internal.File, anim_index: usize, anim_id: u64) void {
+fn ensureFrameSelection(file: *pixi.internal.File, anim_index: usize, anim_id: u64) void {
     const frames = file.animations.get(anim_index).frames;
 
     if (file.editor.selected_frame_indices_for_animation_id != anim_id) {
@@ -1879,11 +1879,11 @@ fn ensureFrameSelection(file: *pixi_mod.internal.File, anim_index: usize, anim_i
 }
 
 fn applyFrameClick(
-    file: *pixi_mod.internal.File,
+    file: *pixi.internal.File,
     anim_index: usize,
     anim_id: u64,
     clicked: usize,
-    mode: pixi_mod.core.dvui.TreeSelection.ClickMode,
+    mode: pixi.core.dvui.TreeSelection.ClickMode,
 ) !bool {
     ensureFrameSelection(file, anim_index, anim_id);
 
@@ -1916,7 +1916,7 @@ fn applyFrameClick(
         break :blk file.editor.selected_frame_indices.items[0];
     } else file.selected_animation_frame_index;
 
-    const res = try pixi_mod.core.dvui.TreeSelection.applyClickUsize(
+    const res = try pixi.core.dvui.TreeSelection.applyClickUsize(
         runtime.allocator(),
         prev_multi,
         primary_for_tree,
@@ -1936,7 +1936,7 @@ fn applyFrameClick(
     return false;
 }
 
-fn narrowFrameSelectionTo(file: *pixi_mod.internal.File, anim_index: usize, anim_id: u64, clicked: usize) void {
+fn narrowFrameSelectionTo(file: *pixi.internal.File, anim_index: usize, anim_id: u64, clicked: usize) void {
     file.editor.selected_frame_indices.clearRetainingCapacity();
     file.editor.selected_frame_indices.append(runtime.allocator(), clicked) catch return;
     file.editor.selected_frame_indices_for_animation_id = anim_id;
@@ -1945,7 +1945,7 @@ fn narrowFrameSelectionTo(file: *pixi_mod.internal.File, anim_index: usize, anim
     syncSpritesFromCurrentFrameSelection(file, anim_index);
 }
 
-fn buildFrameMultiDragIds(file: *const pixi_mod.internal.File, animation_index: usize, hits: []const FrameRowHit, out: []usize) []usize {
+fn buildFrameMultiDragIds(file: *const pixi.internal.File, animation_index: usize, hits: []const FrameRowHit, out: []usize) []usize {
     const frames = file.animations.get(animation_index).frames;
     var len: usize = 0;
     const playhead = file.selected_animation_frame_index;
@@ -1982,8 +1982,8 @@ fn buildFrameMultiDragIds(file: *const pixi_mod.internal.File, animation_index: 
 }
 
 fn processFrameTreePointerEvents(
-    tree: *pixi_mod.core.dvui.TreeWidget,
-    file: *pixi_mod.internal.File,
+    tree: *pixi.core.dvui.TreeWidget,
+    file: *pixi.internal.File,
     anim_id: u64,
     animation_index: usize,
     hits: []const FrameRowHit,
@@ -2013,7 +2013,7 @@ fn processFrameTreePointerEvents(
                         frameTreeClearGestureKeysOnly(file);
                         dvui.dragPreStart(me.button, me.p, .{ .offset = h.hbox_tl.diff(me.p) });
 
-                        const mode = pixi_mod.core.dvui.TreeSelection.clickModeFromMod(me.mod);
+                        const mode = pixi.core.dvui.TreeSelection.clickModeFromMod(me.mod);
                         const narrow_on_release = applyFrameClick(file, animation_index, anim_id, h.frame_index, mode) catch blk: {
                             dvui.log.err("Failed to apply frame click", .{});
                             break :blk false;
@@ -2143,15 +2143,15 @@ const AnimationRowHit = struct {
     hbox_tl: dvui.Point.Physical,
 };
 
-fn animationGestureMatches(file: *const pixi_mod.internal.File) bool {
+fn animationGestureMatches(file: *const pixi.internal.File) bool {
     return animation_row_gesture != null and animation_row_gesture.?.file_id == file.id;
 }
 
-fn animationTreeClearGestureKeysOnly(_: *const pixi_mod.internal.File) void {
+fn animationTreeClearGestureKeysOnly(_: *const pixi.internal.File) void {
     animation_row_gesture = null;
 }
 
-fn animationTreeResetRowPointerGesture(_: *const pixi_mod.internal.File) void {
+fn animationTreeResetRowPointerGesture(_: *const pixi.internal.File) void {
     dvui.dragEnd();
     animation_row_gesture = null;
 }
@@ -2174,7 +2174,7 @@ fn animationPointerInScrollViewport(p: dvui.Point.Physical, viewport_r: ?dvui.Re
     return true;
 }
 
-fn animationTreePointerInTreeSurface(tree: *pixi_mod.core.dvui.TreeWidget, p: dvui.Point.Physical, floating_win: dvui.Id) bool {
+fn animationTreePointerInTreeSurface(tree: *pixi.core.dvui.TreeWidget, p: dvui.Point.Physical, floating_win: dvui.Id) bool {
     if (floating_win != dvui.subwindowCurrentId()) return false;
     const tr = tree.data().borderRectScale().r;
     if (!tr.contains(p)) return false;
@@ -2182,12 +2182,12 @@ fn animationTreePointerInTreeSurface(tree: *pixi_mod.core.dvui.TreeWidget, p: dv
     return true;
 }
 
-fn animationTreePointerInTreeBorder(tree: *pixi_mod.core.dvui.TreeWidget, p: dvui.Point.Physical, floating_win: dvui.Id) bool {
+fn animationTreePointerInTreeBorder(tree: *pixi.core.dvui.TreeWidget, p: dvui.Point.Physical, floating_win: dvui.Id) bool {
     if (floating_win != dvui.subwindowCurrentId()) return false;
     return tree.data().borderRectScale().r.contains(p);
 }
 
-fn animationTreeMotionAllowsReorder(tree: *pixi_mod.core.dvui.TreeWidget, e: *dvui.Event) bool {
+fn animationTreeMotionAllowsReorder(tree: *pixi.core.dvui.TreeWidget, e: *dvui.Event) bool {
     if (e.target_widgetId) |fwid| {
         if (fwid == tree.data().id) return true;
     }
@@ -2199,7 +2199,7 @@ fn animationTreeMotionAllowsReorder(tree: *pixi_mod.core.dvui.TreeWidget, e: *dv
     return in_surface or in_border;
 }
 
-fn syncAnimationSelectionFrames(file: *pixi_mod.internal.File, anim_index: usize) void {
+fn syncAnimationSelectionFrames(file: *pixi.internal.File, anim_index: usize) void {
     const anim = file.animations.get(anim_index);
     if (anim.frames.len > 0) {
         if (file.selected_animation_frame_index >= anim.frames.len) {
@@ -2210,7 +2210,7 @@ fn syncAnimationSelectionFrames(file: *pixi_mod.internal.File, anim_index: usize
     }
 }
 
-fn animationIndexInMulti(file: *const pixi_mod.internal.File, anim_index: usize) bool {
+fn animationIndexInMulti(file: *const pixi.internal.File, anim_index: usize) bool {
     for (file.editor.selected_animation_indices.items) |i| {
         if (i == anim_index) return true;
     }
@@ -2220,7 +2220,7 @@ fn animationIndexInMulti(file: *const pixi_mod.internal.File, anim_index: usize)
 /// Keep `selected_animation_indices` consistent with the authoritative single-selection and the
 /// current animation count. The set may be empty (no animations yet), but if `selected_animation_index`
 /// is set we guarantee it appears in the set.
-fn ensureAnimationSelection(file: *pixi_mod.internal.File) void {
+fn ensureAnimationSelection(file: *pixi.internal.File) void {
     const count = file.animations.len;
     if (count == 0) {
         file.editor.selected_animation_indices.clearRetainingCapacity();
@@ -2263,7 +2263,7 @@ fn ensureAnimationSelection(file: *pixi_mod.internal.File) void {
 
 /// Apply a modifier-aware click to the animation selection. Returns whether the click should defer
 /// narrowing until release (Finder-style): plain click on an already-multi-selected row.
-fn applyAnimationClick(file: *pixi_mod.internal.File, clicked: usize, mode: pixi_mod.core.dvui.TreeSelection.ClickMode) !bool {
+fn applyAnimationClick(file: *pixi.internal.File, clicked: usize, mode: pixi.core.dvui.TreeSelection.ClickMode) !bool {
     const prev_multi = file.editor.selected_animation_indices.items;
     const was_in_multi = animationIndexInMulti(file, clicked);
     const was_multi = prev_multi.len > 1;
@@ -2283,7 +2283,7 @@ fn applyAnimationClick(file: *pixi_mod.internal.File, clicked: usize, mode: pixi
         return true;
     }
 
-    const res = try pixi_mod.core.dvui.TreeSelection.applyClickUsize(
+    const res = try pixi.core.dvui.TreeSelection.applyClickUsize(
         runtime.allocator(),
         prev_multi,
         file.selected_animation_index,
@@ -2302,7 +2302,7 @@ fn applyAnimationClick(file: *pixi_mod.internal.File, clicked: usize, mode: pixi
     return false;
 }
 
-fn narrowAnimationSelectionTo(file: *pixi_mod.internal.File, clicked: usize) void {
+fn narrowAnimationSelectionTo(file: *pixi.internal.File, clicked: usize) void {
     file.editor.selected_animation_indices.clearRetainingCapacity();
     file.editor.selected_animation_indices.append(runtime.allocator(), clicked) catch return;
     file.editor.animation_selection_anchor = clicked;
@@ -2312,7 +2312,7 @@ fn narrowAnimationSelectionTo(file: *pixi_mod.internal.File, clicked: usize) voi
 
 /// Populate `out` with the branch-ids of every selected animation row (primary first), for
 /// `TreeWidget.dragStartMulti`. Returns a slice into `out` with just the written entries.
-fn buildAnimationMultiDragIds(file: *const pixi_mod.internal.File, hits: []const AnimationRowHit, out: []usize) []usize {
+fn buildAnimationMultiDragIds(file: *const pixi.internal.File, hits: []const AnimationRowHit, out: []usize) []usize {
     var len: usize = 0;
     const primary = file.selected_animation_index;
     if (primary) |p| {
@@ -2341,7 +2341,7 @@ fn buildAnimationMultiDragIds(file: *const pixi_mod.internal.File, hits: []const
     return out[0..len];
 }
 
-fn processAnimationTreePointerEvents(_: *Sprites, tree: *pixi_mod.core.dvui.TreeWidget, file: *pixi_mod.internal.File, hits: []const AnimationRowHit, viewport_r: ?dvui.Rect.Physical) void {
+fn processAnimationTreePointerEvents(_: *Sprites, tree: *pixi.core.dvui.TreeWidget, file: *pixi.internal.File, hits: []const AnimationRowHit, viewport_r: ?dvui.Rect.Physical) void {
     if (!tree.init_options.enable_reordering) return;
 
     for (dvui.events()) |*e| {
@@ -2367,7 +2367,7 @@ fn processAnimationTreePointerEvents(_: *Sprites, tree: *pixi_mod.core.dvui.Tree
                         animationTreeClearGestureKeysOnly(file);
                         dvui.dragPreStart(me.button, me.p, .{ .offset = h.hbox_tl.diff(me.p) });
 
-                        const mode = pixi_mod.core.dvui.TreeSelection.clickModeFromMod(me.mod);
+                        const mode = pixi.core.dvui.TreeSelection.clickModeFromMod(me.mod);
                         const narrow_on_release = applyAnimationClick(file, h.anim_index, mode) catch blk: {
                             dvui.log.err("Failed to apply animation click", .{});
                             break :blk false;
@@ -2489,11 +2489,11 @@ fn processAnimationTreePointerEvents(_: *Sprites, tree: *pixi_mod.core.dvui.Tree
 }
 
 const FrameSort = struct {
-    pub fn asc(_: void, a: pixi_mod.Animation.Frame, b: pixi_mod.Animation.Frame) bool {
+    pub fn asc(_: void, a: pixi.Animation.Frame, b: pixi.Animation.Frame) bool {
         return a.sprite_index < b.sprite_index;
     }
 
-    pub fn desc(_: void, a: pixi_mod.Animation.Frame, b: pixi_mod.Animation.Frame) bool {
+    pub fn desc(_: void, a: pixi.Animation.Frame, b: pixi.Animation.Frame) bool {
         return a.sprite_index > b.sprite_index;
     }
 };

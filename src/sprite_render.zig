@@ -2,17 +2,17 @@
 //!
 //! Heavy rendering on top of `core.Sprite` rects: layer compositing, file previews,
 //! reflections, and water-surface meshes. Shell/workbench UI icons use
-//! `pixi_mod.core_sprite.draw` from core instead of this module.
+//! `pixi.core_sprite.draw` from core instead of this module.
 const std = @import("std");
 const dvui = @import("dvui");
-const pixi_mod = @import("../pixi.zig");
+const pixi = @import("pixi.zig");
 const runtime = @import("runtime.zig");
 
 pub const SpriteInitOptions = struct {
     source: dvui.ImageSource,
-    file: ?*pixi_mod.internal.File = null,
+    file: ?*pixi.internal.File = null,
     alpha_source: ?dvui.ImageSource = null,
-    sprite: pixi_mod.core_sprite,
+    sprite: pixi.core_sprite,
     scale: f32 = 1.0,
     depth: f32 = 0.0, // -1.0 is front, 1.0 is back
     reflection: bool = false,
@@ -34,7 +34,7 @@ pub const SpriteInitOptions = struct {
 
 /// Columns the reflection mesh samples across a card's width (waterline strip).
 /// Matches `water_surface.cols_per_slot` (+1) so finer ripples render per card.
-pub const reflection_surface_cols = pixi_mod.water_surface.reflection_surface_cols;
+pub const reflection_surface_cols = pixi.water_surface.reflection_surface_cols;
 
 /// Reflection-only waterline sample across the card width (logical px). `cols_dx`
 /// is horizontal refraction from surface slope; `cols_dy` is vertical height at
@@ -145,7 +145,7 @@ pub fn sprite(src: std.builtin.SourceLocation, init_opts: SpriteInitOptions, opt
     // checker + layers + selection + temp are baked into one texture once per
     // frame, so each card (front and reflection) is a single textured pass
     // instead of several overlapping alpha-blended fills. Null → multi-pass path.
-    const preview_tex: ?dvui.Texture = if (init_opts.file) |f| pixi_mod.render.spritePreviewComposite(f) else null;
+    const preview_tex: ?dvui.Texture = if (init_opts.file) |f| pixi.render.spritePreviewComposite(f) else null;
 
     if (init_opts.reflection) {
         var path2: dvui.Path.Builder = .init(dvui.currentWindow().arena());
@@ -238,7 +238,7 @@ pub fn sprite(src: std.builtin.SourceLocation, init_opts: SpriteInitOptions, opt
             };
 
             if (init_opts.file) |file| {
-                const preview_opts = pixi_mod.render.RenderFileOptions{
+                const preview_opts = pixi.render.RenderFileOptions{
                     .file = file,
                     .rs = .{
                         .r = wd.contentRectScale().r,
@@ -247,7 +247,7 @@ pub fn sprite(src: std.builtin.SourceLocation, init_opts: SpriteInitOptions, opt
                     .uv = uv,
                     .corners = .square,
                 };
-                pixi_mod.render.renderReflectionLayerStack(preview_opts, reflection_triangles_layers, reflection_triangles_layers_dimmed) catch |err| {
+                pixi.render.renderReflectionLayerStack(preview_opts, reflection_triangles_layers, reflection_triangles_layers_dimmed) catch |err| {
                     dvui.log.err("Failed to render reflection layer stack: {any}", .{err});
                 };
 
@@ -329,7 +329,7 @@ pub fn sprite(src: std.builtin.SourceLocation, init_opts: SpriteInitOptions, opt
             dvui.log.err("Failed to render sprite preview composite", .{});
         };
     } else if (init_opts.file) |file| {
-        pixi_mod.render.renderLayers(.{
+        pixi.render.renderLayers(.{
             .file = file,
             .rs = .{
                 .r = wd.contentRectScale().r,
@@ -647,7 +647,7 @@ pub fn pathToSubdividedQuad(path: dvui.Path, allocator: std.mem.Allocator, optio
     return builder.build();
 }
 
-pub fn renderSprite(source: dvui.ImageSource, s: pixi_mod.core_sprite, data_point: dvui.Point, scale: f32, opts: dvui.RenderTextureOptions) !void {
+pub fn renderSprite(source: dvui.ImageSource, s: pixi.core_sprite, data_point: dvui.Point, scale: f32, opts: dvui.RenderTextureOptions) !void {
     const atlas_size = dvui.imageSize(source) catch {
         std.log.err("Failed to get atlas size", .{});
         return;

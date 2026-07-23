@@ -1,7 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const dvui = @import("dvui");
-const pixi_mod = @import("../pixi.zig");
+const pixi = @import("pixi.zig");
 const runtime = @import("runtime.zig");
 
 const Project = @This();
@@ -32,13 +32,13 @@ pub fn load(allocator: std.mem.Allocator) !?Project {
     if (runtime.state().host.folder()) |folder| {
         filename = ".pixiproject";
         var file = try std.fs.path.join(runtime.state().host.arena(), &.{ folder, filename });
-        var maybe_r = pixi_mod.fs.read(allocator, dvui.io, file) catch null;
+        var maybe_r = pixi.fs.read(allocator, dvui.io, file) catch null;
 
         if (maybe_r == null) {
             // No `.pixiproject` in this folder — fall back to the legacy `.fizproject` name.
             filename = ".fizproject";
             file = try std.fs.path.join(runtime.state().host.arena(), &.{ folder, filename });
-            maybe_r = pixi_mod.fs.read(allocator, dvui.io, file) catch null;
+            maybe_r = pixi.fs.read(allocator, dvui.io, file) catch null;
             if (maybe_r == null) {
                 // Neither exists — a freshly-created project defaults to `.pixiproject`.
                 filename = ".pixiproject";

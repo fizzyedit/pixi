@@ -1,11 +1,11 @@
 const std = @import("std");
 const icons = @import("icons");
 const dvui = @import("dvui");
-const pixi_mod = @import("../../pixi.zig");
+const pixi = @import("../pixi.zig");
 const runtime = @import("../runtime.zig");
-const ReflectionLagSample = pixi_mod.sprite_render.ReflectionLagSample;
-const reflection_surface_cols = pixi_mod.sprite_render.reflection_surface_cols;
-const wsurf = pixi_mod.water_surface;
+const ReflectionLagSample = pixi.sprite_render.ReflectionLagSample;
+const reflection_surface_cols = pixi.sprite_render.reflection_surface_cols;
+const wsurf = pixi.water_surface;
 
 const Sprites = @This();
 
@@ -114,12 +114,12 @@ const SpriteSlot = struct {
     }
 };
 
-/// Cover-flow scrub momentum tuning (sprite-index units). See `pixi_mod.Fling`.
+/// Cover-flow scrub momentum tuning (sprite-index units). See `pixi.Fling`.
 /// Mouse/trackpad release velocity is measured over a position/time window
 /// (`releaseWindowed`), not a per-frame EMA — the EMA converged per frame, so a quick
 /// flick built up too little velocity at 60 Hz (e.g. Safari on a deployed build) even
 /// though it worked at 120 Hz. The window is wall-clock based, so it's refresh-independent.
-const sprite_fling: pixi_mod.Fling.Tuning = .{
+const sprite_fling: pixi.Fling.Tuning = .{
     .decay = 4.0,
     .min_start = 1.2,
     .stop = 0.6,
@@ -131,7 +131,7 @@ const sprite_fling_window_s: f32 = 0.08;
 /// Touch scrub: a finger flick is short and bursty, so start coasting at a lower
 /// speed and tolerate the small gap the browser leaves before `touchend`. Velocity is
 /// measured over a position/time window (`releaseWindowed`) rather than the last frame.
-const sprite_fling_touch: pixi_mod.Fling.Tuning = .{
+const sprite_fling_touch: pixi.Fling.Tuning = .{
     .decay = 4.0,
     .min_start = 0.6,
     .stop = 0.6,
@@ -186,7 +186,7 @@ moved_since_press: bool = false,
 /// True when the active scrub began with a touch press (not mouse).
 drag_was_touch: bool = false,
 /// Release momentum for the scrub: coasts the flow after a flick, then snaps.
-fling: pixi_mod.Fling = .{},
+fling: pixi.Fling = .{},
 /// Set once we've seeded `scroll_pos` from the initial selection.
 initialized: bool = false,
 /// Previous "flown" state (see `sideCardsFlown`), so we can fire the fly-out /
@@ -267,7 +267,7 @@ pub fn draw(self: *Sprites) !void {
         // ---- Animated fit-scale: aim the front sprite at a fraction of the
         // pane so several neighbours are visible at once. ----
         const scale = blk: {
-            const steps = runtime.state().settings.zoom_steps;
+            const steps = runtime.state().zoom_steps;
             const sprite_width = src_rect.w;
             const sprite_height = src_rect.h;
             const target_width = parent.w * 0.34;
@@ -430,8 +430,8 @@ pub fn draw(self: *Sprites) !void {
             return;
         }
 
-        const perf_sp = pixi_mod.perf.spritePreviewBegin();
-        defer pixi_mod.perf.spritePreviewEnd(perf_sp);
+        const perf_sp = pixi.perf.spritePreviewBegin();
+        defer pixi.perf.spritePreviewEnd(perf_sp);
 
         const center_x = parent.center().x;
         // Card rects are positioned in the content slot's *content-local* space, where
@@ -752,7 +752,7 @@ pub fn draw(self: *Sprites) !void {
             const tiltness = if (max_depth > 0.0) std.math.clamp(@abs(cd.depth) / max_depth, 0.0, 1.0) else 0.0;
             const refl_detail = std.math.lerp(1.0, skewed_reflection_detail, tiltness);
 
-            _ = pixi_mod.sprite_render.sprite(SpriteSlot.src(), .{
+            _ = pixi.sprite_render.sprite(SpriteSlot.src(), .{
                 .source = file.layers.items(.source)[file.selected_layer_index],
                 .file = file,
                 .alpha_source = if (file.checkerboardTileTexture()) |t| dvui.ImageSource{ .texture = t } else null,
@@ -1053,7 +1053,7 @@ fn handleInput(self: *Sprites, file: anytype, mode: ScrollMode, count: usize, px
 
     // Dialogs/subwindows stack above the sprites pane in z-order but share the same
     // screen rect — don't capture clicks meant for their footer or chrome.
-    if (pixi_mod.core.dvui.canvasPointerInputSuppressed()) {
+    if (pixi.core.dvui.canvasPointerInputSuppressed()) {
         if (dvui.captured(id)) {
             for (dvui.events()) |*e| {
                 if (e.evt == .mouse and e.evt.mouse.action == .release and e.evt.mouse.button.pointer()) {
@@ -1241,7 +1241,7 @@ pub fn drawAnimationControlsDialog(_: *Sprites) void {
             flown,
         ) and !fly_forced) {
             runtime.state().settings.scrolling_cards = !runtime.state().settings.scrolling_cards;
-            runtime.state().settings.save(runtime.state().host);
+            runtime.state().saveSettings(runtime.state().host);
             dvui.refresh(null, @src(), dvui.parentGet().data().id);
         }
     }

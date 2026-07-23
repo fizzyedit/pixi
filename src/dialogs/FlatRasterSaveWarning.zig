@@ -1,9 +1,9 @@
 const std = @import("std");
 const dvui = @import("dvui");
-const pixi_mod = @import("../../pixi.zig");
+const pixi = @import("../pixi.zig");
 const runtime = @import("../runtime.zig");
 
-pub const Mode = pixi_mod.sdk.Plugin.SaveConfirmMode;
+pub const Mode = pixi.sdk.Plugin.SaveConfirmMode;
 
 pub var pending_mode: Mode = .editor_save;
 
@@ -12,7 +12,7 @@ pub var pending_mode: Mode = .editor_save;
 /// no externally-mutated module flag has to be reset when the quit walk aborts.
 pub fn request(file_id: u64, mode: Mode, from_save_all_quit: bool) void {
     pending_mode = mode;
-    var mutex = pixi_mod.core.dvui.dialog(@src(), .{
+    var mutex = pixi.core.dvui.dialog(@src(), .{
         .displayFn = dialog,
         .callafterFn = callAfter,
         .title = "Save as .pixi or current extension?",
@@ -29,7 +29,7 @@ pub fn request(file_id: u64, mode: Mode, from_save_all_quit: bool) void {
     mutex.mutex.unlock(dvui.io);
 }
 
-fn fileRef(file_id: u64) ?*pixi_mod.internal.File {
+fn fileRef(file_id: u64) ?*pixi.internal.File {
     return runtime.state().docs.fileById(file_id);
 }
 
@@ -115,7 +115,7 @@ fn onChooseFizzy(file_id: u64) !void {
     if (pending_mode == .save_and_close) {
         runtime.state().host.setPendingCloseDocId(file_id);
     }
-    pixi_mod.core.dvui.closeFloatingDialogAnchored();
+    pixi.core.dvui.closeFloatingDialogAnchored();
     runtime.state().host.requestSaveAs();
 }
 
@@ -123,7 +123,7 @@ fn onChooseFlatRaster(file_id: u64, from_save_all_quit: bool) !void {
     const f = fileRef(file_id) orelse return;
     switch (pending_mode) {
         .editor_save => {
-            pixi_mod.core.dvui.closeFloatingDialogAnchored();
+            pixi.core.dvui.closeFloatingDialogAnchored();
             if (comptime @import("builtin").target.cpu.arch == .wasm32) {
                 const idx = runtime.state().host.docIndex(file_id) orelse return;
                 runtime.state().host.setActiveDocIndex(idx);
@@ -153,14 +153,14 @@ fn onChooseFlatRaster(file_id: u64, from_save_all_quit: bool) !void {
             } else {
                 try runtime.state().host.queueCloseAfterSave(file_id);
             }
-            pixi_mod.core.dvui.closeFloatingDialogAnchored();
+            pixi.core.dvui.closeFloatingDialogAnchored();
         },
     }
 }
 
 fn onCancel() void {
     runtime.state().host.cancelPendingSaveDialog();
-    pixi_mod.core.dvui.closeFloatingDialogAnchored();
+    pixi.core.dvui.closeFloatingDialogAnchored();
 }
 
 pub fn callAfter(_: dvui.Id, response: dvui.enums.DialogResponse) !void {

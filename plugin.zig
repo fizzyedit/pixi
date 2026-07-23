@@ -4,51 +4,42 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const dvui = @import("dvui");
-const internal = @import("../pixi.zig");
+const internal = @import("src/pixi.zig");
 const sdk = internal.sdk;
-const runtime = @import("runtime.zig");
+const runtime = @import("src/runtime.zig");
 const State = internal.State;
 const Packer = internal.Packer;
-const CanvasData = @import("CanvasData.zig");
-const FileWidget = @import("widgets/FileWidget.zig");
-const ImageWidget = @import("widgets/ImageWidget.zig");
-const PixelArtSettings = @import("Settings.zig");
-const KeybindTicks = @import("keybind_ticks.zig");
-const RadialMenu = @import("radial_menu.zig");
-const Clipboard = @import("clipboard.zig");
-const PackProject = @import("pack_project.zig");
-const TransformOp = @import("transform_op.zig");
-const DocsRegistry = @import("docs_registry.zig");
-const DocBridge = @import("doc_bridge.zig");
-const DocLifecycle = @import("doc_lifecycle.zig");
-const InfobarStatus = @import("infobar_status.zig");
-const GridLayout = @import("dialogs/GridLayout.zig");
-const FlatRasterSaveWarning = @import("dialogs/FlatRasterSaveWarning.zig");
-const NewFile = @import("dialogs/NewFile.zig");
+const CanvasData = @import("src/CanvasData.zig");
+const FileWidget = @import("src/widgets/FileWidget.zig");
+const ImageWidget = @import("src/widgets/ImageWidget.zig");
+const keybind_ticks = @import("src/keybind_ticks.zig");
+const radial_menu = @import("src/radial_menu.zig");
+const clipboard = @import("src/clipboard.zig");
+const pack_project = @import("src/pack_project.zig");
+const transform_op = @import("src/transform_op.zig");
+const infobar_status = @import("src/infobar_status.zig");
+const GridLayout = @import("src/dialogs/GridLayout.zig");
+const FlatRasterSaveWarning = @import("src/dialogs/FlatRasterSaveWarning.zig");
+const NewFile = @import("src/dialogs/NewFile.zig");
 
 const DocHandle = sdk.DocHandle;
 const Internal = internal.internal;
 
-/// Version forwarded from `build.zig.zon` via the build-injected options module — bump it there.
-const plugin_options = @import("fizzy_plugin_options");
+/// Injected at build time from `plugin.zig.zon` — required by fizzy's generated dylib root,
+/// which reaches its own copy of this plugin's identity through this export rather than
+/// importing `fizzy_plugin_options` itself (see fizzy's `docs/PLUGINS.md` §2.5).
+pub const plugin_options = @import("fizzy_plugin_options");
 
-pub const manifest = sdk.PluginManifest{
-    .id = "pixi",
-    .name = "Pixi",
-    .version = plugin_options.version,
-};
-
-/// Stable contribution ids (plugin-namespaced) referenced across modules.
-pub const view_tools = "internal.tools";
-pub const view_sprites = "internal.sprites";
-pub const view_project = "internal.project";
-pub const bottom_sprites = "internal.sprites_panel";
+pub const view_tools = "pixi.tools";
+pub const view_sprites = "pixi.sprites";
+pub const view_project = "pixi.project";
+pub const bottom_sprites = "pixi.sprites_panel";
 
 var plugin: sdk.Plugin = .{
     .state = undefined,
     .vtable = &vtable,
-    .id = "pixi",
-    .display_name = "Pixi",
+    .id = plugin_options.id,
+    .display_name = plugin_options.name,
 };
 
 const vtable: sdk.Plugin.VTable = .{
@@ -209,22 +200,22 @@ fn closeDocument(_: *anyopaque, doc: DocHandle) void {
 /// live on the pixel-art-owned `CanvasData` (keyed by workbench pane `grouping` on `State`).
 fn drawDocument(_: *anyopaque, doc: DocHandle) anyerror!void {
     const file = docFile(doc);
-    const chrome = CanvasData.forGrouping(file.editor.grouping);
+    const canvas = CanvasData.forGrouping(file.editor.grouping);
     const container = dvui.parentGet().data();
 
     // Grid (column/row) reorder is driven by the rulers and consumed by `FileWidget`; commit
     // the pending reorder and clear the per-frame drag indices after the whole document (incl.
     // the file widget) has drawn. Registered first so they run last.
-    defer chrome.columns_drag_index = null;
-    defer chrome.rows_drag_index = null;
-    defer chrome.processColumnReorder(file);
-    defer chrome.processRowReorder(file);
+    defer canvas.columns_drag_index = null;
+    defer canvas.rows_drag_index = null;
+    defer canvas.processColumnReorder(file);
+    defer canvas.processRowReorder(file);
 
     internal.perf.canvasPaneDrawn();
 
     if (runtime.state().settings.show_rulers and !dvui.firstFrame(container.id)) {
         defer internal.core.dvui.drawEdgeShadow(container.rectScale(), .top, .{});
-        chrome.drawRuler(file, .horizontal);
+        canvas.drawRuler(file, .horizontal);
     }
 
     var canvas_hbox = dvui.box(@src(), .{ .dir = .horizontal }, .{ .expand = .both });
@@ -232,13 +223,13 @@ fn drawDocument(_: *anyopaque, doc: DocHandle) anyerror!void {
 
     if (runtime.state().settings.show_rulers and !dvui.firstFrame(container.id)) {
         defer internal.core.dvui.drawEdgeShadow(container.rectScale(), .left, .{});
-        chrome.drawRuler(file, .vertical);
+        canvas.drawRuler(file, .vertical);
     }
 
-    chrome.drawTransformDialog(file, container);
-    chrome.drawEditPill(container);
+    canvas.drawTransformDialog(file, container);
+    canvas.drawEditPill(container);
     // Before the file widget so FloatingWidget uses window-scale coords (not canvas zoom).
-    chrome.drawSampleButton(container);
+    canvas.drawSampleButton(container);
 
     const pane_grouping = container.options.id_extra orelse return;
     if (@as(u64, @intCast(pane_grouping)) != file.editor.grouping) return;
@@ -338,7 +329,7 @@ fn drawProjectView(_: ?*anyopaque, pane: *sdk.WorkbenchPaneView) anyerror!void {
 
 fn drawDocumentInfobar(state: *anyopaque, doc: DocHandle) anyerror!void {
     const st: *State = @ptrCast(@alignCast(state));
-    return InfobarStatus.drawDocumentInfobar(st, doc);
+    return infobar_status.drawDocumentInfobar(st, doc);
 }
 
 fn undo(_: *anyopaque, doc: DocHandle) anyerror!void {
@@ -353,12 +344,12 @@ fn redo(_: *anyopaque, doc: DocHandle) anyerror!void {
 
 fn canUndo(state: *anyopaque, doc: DocHandle) bool {
     const st: *State = @ptrCast(@alignCast(state));
-    return DocBridge.canUndo(st, doc);
+    return st.canUndo(doc);
 }
 
 fn canRedo(state: *anyopaque, doc: DocHandle) bool {
     const st: *State = @ptrCast(@alignCast(state));
-    return DocBridge.canRedo(st, doc);
+    return st.canRedo(doc);
 }
 
 /// Pixi owns its own runtime state + atlas packer (like any third-party plugin) instead of the
@@ -406,12 +397,7 @@ pub fn register(host: *sdk.Host) !void {
         .draw = drawSpritesPanel,
         .persistent = true,
     });
-    try host.registerSettingsSection(.{
-        .id = "internal.settings",
-        .owner = &plugin,
-        .title = "Pixi",
-        .draw = PixelArtSettings.draw,
-    });
+    try plugin_state.registerSettings(host, &plugin);
 
     // Pixel-art's invocable, plugin-specific features. The shell/menus/keybinds trigger these
     // by id via `host.runCommand` without naming them. (Generic active-doc editing verbs like
@@ -545,61 +531,61 @@ fn drawSpritesPanel(_: ?*anyopaque) anyerror!void {
 }
 
 fn tickKeybinds(_: *anyopaque) anyerror!void {
-    try KeybindTicks.tick();
+    try keybind_ticks.tick();
 }
 
 /// Pixel-art's per-frame overlay: the radial tool menu (processes its hold-to-open input,
 /// then draws while visible). Wired to the universal `Plugin.drawOverlay` phase.
 fn drawOverlay(_: *anyopaque) anyerror!void {
-    RadialMenu.processHoldOpenInput();
-    if (RadialMenu.visible()) try RadialMenu.draw();
+    radial_menu.processHoldOpenInput();
+    if (radial_menu.visible()) try radial_menu.draw();
 }
 
 fn pluginCopy(state: *anyopaque) anyerror!void {
     const st: *State = @ptrCast(@alignCast(state));
-    try Clipboard.copy(st);
+    try clipboard.copy(st);
 }
 
 fn pluginTransform(state: *anyopaque) anyerror!void {
     const st: *State = @ptrCast(@alignCast(state));
-    try TransformOp.begin(st);
+    try transform_op.begin(st);
 }
 
 fn registerOpenDocument(state: *anyopaque, file: *anyopaque) anyerror!*anyopaque {
     const st: *State = @ptrCast(@alignCast(state));
     const internal_file: *Internal.File = @ptrCast(@alignCast(file));
-    const ptr = try DocsRegistry.registerOpenDocument(st, internal_file);
+    const ptr = try st.registerOpenDocument(internal_file);
     return ptr;
 }
 
 fn documentPtr(state: *anyopaque, id: u64) ?*anyopaque {
     const st: *State = @ptrCast(@alignCast(state));
-    return DocsRegistry.documentFromId(st, id);
+    return st.documentFromId(id);
 }
 
 fn documentByPath(state: *anyopaque, path: []const u8) ?*anyopaque {
     const st: *State = @ptrCast(@alignCast(state));
-    return DocsRegistry.documentFromPath(st, path);
+    return st.documentFromPath(path);
 }
 
 fn unregisterDocument(state: *anyopaque, id: u64) void {
     const st: *State = @ptrCast(@alignCast(state));
-    DocsRegistry.unregisterDocument(st, id);
+    st.unregisterDocument(id);
 }
 
 fn bindDocumentToPane(state: *anyopaque, doc: DocHandle, canvas_id: dvui.Id, workspace_handle: *anyopaque, center: bool) void {
     const st: *State = @ptrCast(@alignCast(state));
-    DocBridge.bindDocumentToWorkspace(st, doc, canvas_id, workspace_handle, center);
+    st.bindDocumentToWorkspace(doc, canvas_id, workspace_handle, center);
 }
 
 fn documentGrouping(state: *anyopaque, doc: DocHandle) u64 {
     const st: *State = @ptrCast(@alignCast(state));
-    return DocBridge.documentGrouping(st, doc);
+    return st.documentGrouping(doc);
 }
 
 fn setDocumentGrouping(state: *anyopaque, doc: DocHandle, grouping: u64) void {
     const st: *State = @ptrCast(@alignCast(state));
-    DocBridge.setDocumentGrouping(st, doc, grouping);
+    st.setDocumentGrouping(doc, grouping);
 }
 
 fn removeCanvasPane(state: *anyopaque, grouping: u64, allocator: std.mem.Allocator) void {
@@ -609,106 +595,106 @@ fn removeCanvasPane(state: *anyopaque, grouping: u64, allocator: std.mem.Allocat
 
 fn documentPath(state: *anyopaque, doc: DocHandle) []const u8 {
     const st: *State = @ptrCast(@alignCast(state));
-    return DocBridge.documentPath(st, doc);
+    return st.documentPath(doc);
 }
 
 fn setDocumentPath(state: *anyopaque, doc: DocHandle, path: []const u8) anyerror!void {
     const st: *State = @ptrCast(@alignCast(state));
-    return DocBridge.setDocumentPath(st, doc, path);
+    return st.setDocumentPath(doc, path);
 }
 
 fn documentHasNativeExtension(state: *anyopaque, doc: DocHandle) bool {
     const st: *State = @ptrCast(@alignCast(state));
-    return DocBridge.documentHasNativeExtension(st, doc);
+    return st.documentHasNativeExtension(doc);
 }
 
 fn documentHasRecognizedSaveExtension(state: *anyopaque, doc: DocHandle) bool {
     const st: *State = @ptrCast(@alignCast(state));
-    return DocBridge.documentHasRecognizedSaveExtension(st, doc);
+    return st.documentHasRecognizedSaveExtension(doc);
 }
 
 fn showsSaveStatusIndicator(state: *anyopaque, doc: DocHandle) bool {
     const st: *State = @ptrCast(@alignCast(state));
-    return DocBridge.showsSaveStatusIndicator(st, doc);
+    return st.showsSaveStatusIndicator(doc);
 }
 
 fn isDocumentSaving(state: *anyopaque, doc: DocHandle) bool {
     const st: *State = @ptrCast(@alignCast(state));
-    return DocBridge.isDocumentSaving(st, doc);
+    return st.isDocumentSaving(doc);
 }
 
 fn shouldConfirmFlatRasterSave(state: *anyopaque, doc: DocHandle) bool {
     const st: *State = @ptrCast(@alignCast(state));
-    return DocBridge.shouldConfirmFlatRasterSave(st, doc);
+    return st.shouldConfirmFlatRasterSave(doc);
 }
 
 fn saveDocumentAsync(state: *anyopaque, doc: DocHandle) anyerror!void {
     const st: *State = @ptrCast(@alignCast(state));
-    return DocBridge.saveDocumentAsync(st, doc);
+    return st.saveDocumentAsync(doc);
 }
 
 fn timeSinceSaveCompleteNs(state: *anyopaque, doc: DocHandle) ?i128 {
     const st: *State = @ptrCast(@alignCast(state));
-    return DocBridge.timeSinceSaveCompleteNs(st, doc);
+    return st.timeSinceSaveCompleteNs(doc);
 }
 
 fn pluginDeinit(state: *anyopaque) void {
     const st: *State = @ptrCast(@alignCast(state));
     const gpa = sdk.allocator();
     State.persistProject(st); // save the open project before teardown (covers the quit path)
-    DocLifecycle.deinitPlugin(st);
+    st.deinitPlugin();
     if (st.packer) |p| p.deinit();
     st.deinit(gpa);
 }
 
 fn pluginInit(state: *anyopaque) anyerror!void {
     const st: *State = @ptrCast(@alignCast(state));
-    return DocLifecycle.initPlugin(st);
+    return st.initPlugin();
 }
 
 fn documentStackSize(state: *anyopaque) usize {
     const st: *State = @ptrCast(@alignCast(state));
-    return DocLifecycle.sizeOfDocument(st);
+    return st.sizeOfDocument();
 }
 
 fn documentStackAlign(state: *anyopaque) usize {
     const st: *State = @ptrCast(@alignCast(state));
-    return DocLifecycle.alignOfDocument(st);
+    return st.alignOfDocument();
 }
 
 fn documentIdFromBuffer(state: *anyopaque, doc: *anyopaque) u64 {
     const st: *State = @ptrCast(@alignCast(state));
-    return DocLifecycle.documentIdFromBuffer(st, doc);
+    return st.documentIdFromBuffer(doc);
 }
 
 fn deinitDocumentBuffer(state: *anyopaque, doc: *anyopaque) void {
     const st: *State = @ptrCast(@alignCast(state));
-    DocLifecycle.deinitDocumentBuffer(st, doc);
+    st.deinitDocumentBuffer(doc);
 }
 
 fn setDocumentGroupingOnBuffer(state: *anyopaque, doc: *anyopaque, grouping: u64) void {
     const st: *State = @ptrCast(@alignCast(state));
-    DocLifecycle.setDocumentGroupingOnBuffer(st, doc, grouping);
+    st.setDocumentGroupingOnBuffer(doc, grouping);
 }
 
 fn createDocument(state: *anyopaque, path: []const u8, grid: sdk.EditorAPI.NewDocGrid, out_doc: *anyopaque) anyerror!void {
     const st: *State = @ptrCast(@alignCast(state));
-    return DocLifecycle.createDocument(st, path, grid, out_doc);
+    return st.createDocument(path, grid, out_doc);
 }
 
 fn documentDefaultSaveAsFilename(state: *anyopaque, doc: DocHandle, allocator: std.mem.Allocator) anyerror![]const u8 {
     const st: *State = @ptrCast(@alignCast(state));
-    return DocLifecycle.documentDefaultSaveAsFilename(st, doc, allocator);
+    return st.documentDefaultSaveAsFilename(doc, allocator);
 }
 
 fn saveDocumentAs(state: *anyopaque, doc: DocHandle, path: []const u8, window: *dvui.Window) anyerror!void {
     const st: *State = @ptrCast(@alignCast(state));
-    return DocLifecycle.saveDocumentAs(st, doc, path, window);
+    return st.saveDocumentAs(doc, path, window);
 }
 
 fn resetDocumentSaveUIState(state: *anyopaque, doc: DocHandle) void {
     const st: *State = @ptrCast(@alignCast(state));
-    DocLifecycle.resetDocumentSaveUIState(st, doc);
+    st.resetDocumentSaveUIState(doc);
 }
 
 fn requestNewDocumentDialog(_: *anyopaque, parent_path: ?[]const u8, id_extra: usize) void {
@@ -731,73 +717,76 @@ fn beginFrame(state: *anyopaque) void {
     internal.render.frame_index +%= 1;
     // Sweep any in-flight atlas-pack jobs. The shell no longer orchestrates packing — the
     // plugin drives its own background work from this universal per-frame phase.
-    PackProject.tick(st);
-    if (comptime @import("builtin").target.cpu.arch == .wasm32) PackProject.runWasmWorkers(st);
+    pack_project.tick(st);
+    if (comptime @import("builtin").target.cpu.arch == .wasm32) pack_project.runWasmWorkers(st);
 }
 
 /// Command body for `internal.packProject`.
 fn packProjectCommand(state: *anyopaque) anyerror!void {
     const st: *State = @ptrCast(@alignCast(state));
-    try PackProject.start(st);
+    try pack_project.start(st);
 }
 
 /// `internal.packProject` is enabled only when no pack is already in flight.
 fn packProjectEnabled(state: *anyopaque) bool {
     const st: *State = @ptrCast(@alignCast(state));
-    return !PackProject.isActive(st);
+    return !pack_project.isActive(st);
 }
 
 fn tickOpenDocuments(state: *anyopaque) bool {
     const st: *State = @ptrCast(@alignCast(state));
-    return DocLifecycle.tickOpenDocuments(st);
+    return st.tickOpenDocuments();
 }
 
 fn tickActiveDocumentPlayback(state: *anyopaque, timer_host_id: dvui.Id) void {
     const st: *State = @ptrCast(@alignCast(state));
-    DocLifecycle.tickActiveDocumentPlayback(st, timer_host_id);
+    st.tickActiveDocumentPlayback(timer_host_id);
 }
 
 fn resetDocumentPeekLayers(state: *anyopaque) void {
     const st: *State = @ptrCast(@alignCast(state));
-    DocLifecycle.resetDocumentPeekLayers(st);
+    st.resetDocumentPeekLayers();
 }
 
 fn warmupActiveDocumentComposites(state: *anyopaque) void {
     const st: *State = @ptrCast(@alignCast(state));
-    DocLifecycle.warmupActiveDocumentComposites(st);
+    st.warmupActiveDocumentComposites();
 }
 
 fn isAnyDocumentActivelyDrawing(state: *anyopaque) bool {
     const st: *State = @ptrCast(@alignCast(state));
-    return DocLifecycle.isAnyDocumentActivelyDrawing(st);
+    return st.isAnyDocumentActivelyDrawing();
 }
 
 // Editing-verb command bodies (registered in `register`). `anyerror!void` to match `Command.run`.
 fn pluginAcceptEdit(state: *anyopaque) anyerror!void {
-    DocLifecycle.acceptEdit(@ptrCast(@alignCast(state)));
+    const st: *State = @ptrCast(@alignCast(state));
+    st.acceptEdit();
 }
 
 fn pluginCancelEdit(state: *anyopaque) anyerror!void {
-    DocLifecycle.cancelEdit(@ptrCast(@alignCast(state)));
+    const st: *State = @ptrCast(@alignCast(state));
+    st.cancelEdit();
 }
 
 fn pluginDeleteSelection(state: *anyopaque) anyerror!void {
-    DocLifecycle.deleteSelection(@ptrCast(@alignCast(state)));
+    const st: *State = @ptrCast(@alignCast(state));
+    st.deleteSelection();
 }
 
 fn pluginPersistProjectFolder(state: *anyopaque) void {
     const st: *State = @ptrCast(@alignCast(state));
-    DocsRegistry.persistProjectFolder(st);
+    st.persistProject();
 }
 
 fn pluginReloadProjectFolder(state: *anyopaque, allocator: std.mem.Allocator) void {
     const st: *State = @ptrCast(@alignCast(state));
-    DocsRegistry.reloadProjectFolder(st, allocator);
+    st.reloadProjectForFolder(allocator);
 }
 
 fn pluginPaste(state: *anyopaque) anyerror!void {
     const st: *State = @ptrCast(@alignCast(state));
-    try Clipboard.paste(st);
+    try clipboard.paste(st);
 }
 
 /// Pixel-art editing + tool keybinds.

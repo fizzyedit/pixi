@@ -2,7 +2,7 @@ const std = @import("std");
 const dvui = @import("dvui");
 
 const palette_parse = @import("palette_parse.zig");
-const pixi_mod = @import("../../pixi.zig");
+const pixi = @import("../pixi.zig");
 const runtime = @import("../runtime.zig");
 
 pub const Palette = @This();
@@ -20,7 +20,7 @@ pub fn loadFromFile(allocator: std.mem.Allocator, file: []const u8) !Palette {
     const ext = std.fs.path.extension(file);
 
     if (std.mem.eql(u8, ext, ".hex")) {
-        if (pixi_mod.fs.read(runtime.allocator(), dvui.io, file) catch null) |read| {
+        if (pixi.fs.read(runtime.allocator(), dvui.io, file) catch null) |read| {
             defer runtime.allocator().free(read);
 
             return loadFromBytes(allocator, std.fs.path.basename(file), read);

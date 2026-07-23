@@ -2,7 +2,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const dvui = @import("dvui");
-const pixi_mod = @import("../pixi.zig");
+const pixi = @import("pixi.zig");
 const runtime = @import("runtime.zig");
 
 fn downloadNameWithExtension(allocator: std.mem.Allocator, filename: []const u8, ext: []const u8) ![]const u8 {

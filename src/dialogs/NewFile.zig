@@ -2,7 +2,7 @@ const std = @import("std");
 const dvui = @import("dvui");
 
 const DimensionsLabel = @import("dimensions_label.zig");
-const pixi_mod = @import("../../pixi.zig");
+const pixi = @import("../pixi.zig");
 const runtime = @import("../runtime.zig");
 
 pub var mode: enum(usize) {
@@ -22,7 +22,7 @@ pub const min_size: [2]u32 = .{ 1, 1 };
 /// on disk inside that folder (explorer-initiated); otherwise an in-memory `untitled-n` is made.
 /// `id_extra` disambiguates dialogs launched from distinct explorer rows.
 pub fn request(parent_path: ?[]const u8, id_extra: usize) void {
-    var mutex = pixi_mod.core.dvui.dialog(@src(), .{
+    var mutex = pixi.core.dvui.dialog(@src(), .{
         .displayFn = dialog,
         .callafterFn = callAfter,
         .title = "New File...",

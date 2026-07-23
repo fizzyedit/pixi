@@ -10,11 +10,11 @@ const dvui = @import("dvui");
 const std = @import("std");
 
 const NewFile = @import("NewFile.zig");
-const CanvasWidget = pixi_mod.core.dvui.CanvasWidget;
+const CanvasWidget = pixi.core.dvui.CanvasWidget;
 const CanvasBridge = @import("../widgets/CanvasBridge.zig");
-const pixi_mod = @import("../../pixi.zig");
+const pixi = @import("../pixi.zig");
 const runtime = @import("../runtime.zig");
-const FloatingWindowWidget = pixi_mod.core.dvui.FloatingWindowWidget;
+const FloatingWindowWidget = pixi.core.dvui.FloatingWindowWidget;
 
 /// Editable grid fields for one mode (Slice vs Resize each keep their own backing).
 pub const GridFormState = struct {
@@ -77,7 +77,7 @@ var preview_prev_slice_full_layer: bool = false;
 /// a trackpad). Small epsilon tracks real layout drift; fit only runs when dimensions actually move.
 const preview_layout_min_delta: f32 = 0.01;
 
-const anchors: [9]pixi_mod.math.layout_anchor.LayoutAnchor = .{
+const anchors: [9]pixi.math.layout_anchor.LayoutAnchor = .{
     .nw, .n, .ne,
     .w,  .c, .e,
     .sw, .s, .se,
@@ -94,7 +94,7 @@ pub fn request(file_id: u64) void {
     const file = runtime.state().docs.fileById(file_id) orelse return;
     presetFromFile(file);
 
-    var mutex = pixi_mod.core.dvui.dialog(@src(), .{
+    var mutex = pixi.core.dvui.dialog(@src(), .{
         .displayFn = dialog,
         .callafterFn = callAfter,
         .windowFn = windowFn,
@@ -113,7 +113,7 @@ pub fn request(file_id: u64) void {
 }
 
 /// Seed both mode forms with the active file's current grid so the dialog opens "no-op" by default.
-pub fn presetFromFile(file: *pixi_mod.internal.File) void {
+pub fn presetFromFile(file: *pixi.internal.File) void {
     resize_form = .{
         .column_width = file.column_width,
         .row_height = file.row_height,
@@ -235,7 +235,7 @@ fn font() dvui.Font {
 /// Checkerboard behind the preview: one quad per grid cell with UV 0..1 (same as
 /// `FileWidget.drawCheckerboardCellsBatched`). Per-cell so vertex colors can vary.
 fn drawCheckerboardPreviewTiled(
-    file: *pixi_mod.internal.File,
+    file: *pixi.internal.File,
     cv: *CanvasWidget,
     rs_box: dvui.RectScale,
     cols: u32,
@@ -418,7 +418,7 @@ fn appendTexturedRectQuad(
 /// Samples the layer composite texture per **old grid cell**, mapping each sprite through `cellAnchoredBlit`
 /// so the preview matches the result of `applyGridLayout` independently in every tile.
 fn drawCompositePreviewPerCells(
-    file: *pixi_mod.internal.File,
+    file: *pixi.internal.File,
     rs_box: dvui.RectScale,
     old_cols: u32,
     old_rows: u32,
@@ -428,9 +428,9 @@ fn drawCompositePreviewPerCells(
     new_rows: u32,
     new_cw_: u32,
     new_rh_: u32,
-    anchor_vis: pixi_mod.math.layout_anchor.LayoutAnchor,
+    anchor_vis: pixi.math.layout_anchor.LayoutAnchor,
 ) void {
-    pixi_mod.render.syncLayerComposite(file) catch {
+    pixi.render.syncLayerComposite(file) catch {
         dvui.log.err("Grid layout preview: composite failed", .{});
         return;
     };
@@ -450,7 +450,7 @@ fn drawCompositePreviewPerCells(
     defer builder.deinit(arena);
 
     const tint = dvui.Color.PMA.fromColor(dvui.Color.white.opacity(dvui.currentWindow().alpha));
-    const blk = pixi_mod.math.layout_anchor.cellAnchoredBlit(old_cw, old_rh, new_cw_, new_rh_, anchor_vis);
+    const blk = pixi.math.layout_anchor.cellAnchoredBlit(old_cw, old_rh, new_cw_, new_rh_, anchor_vis);
     if (blk.sw == 0 or blk.sh == 0) return;
 
     var nrow: u32 = 0;
@@ -483,9 +483,9 @@ fn drawCompositePreviewPerCells(
 }
 
 /// One quad for the full layer composite (slice preview — no per-cell remapping).
-fn drawCompositePreviewFullLayer(file: *pixi_mod.internal.File, rs_box: dvui.RectScale, nw: f32, nh: f32) void {
+fn drawCompositePreviewFullLayer(file: *pixi.internal.File, rs_box: dvui.RectScale, nw: f32, nh: f32) void {
     if (nw <= 0 or nh <= 0) return;
-    pixi_mod.render.syncLayerComposite(file) catch {
+    pixi.render.syncLayerComposite(file) catch {
         dvui.log.err("Grid layout preview: composite failed", .{});
         return;
     };
@@ -509,7 +509,7 @@ fn drawCompositePreviewFullLayer(file: *pixi_mod.internal.File, rs_box: dvui.Rec
 /// When entering Slice, keep the current form values if they already tile the layer exactly;
 /// otherwise snap from the file's authoritative grid (never force 1×1 unless metadata disagrees
 /// with pixel dimensions).
-fn harmonizeSliceStateWithLayer(file: *pixi_mod.internal.File) void {
+fn harmonizeSliceStateWithLayer(file: *pixi.internal.File) void {
     const canvas = file.canvasPixelSize();
     const tw = canvas.w;
     const th = canvas.h;
@@ -539,14 +539,14 @@ fn harmonizeSliceStateWithLayer(file: *pixi_mod.internal.File) void {
 fn renderPreview(
     mutex_id: dvui.Id,
     dlg_id: dvui.Id,
-    file: *pixi_mod.internal.File,
+    file: *pixi.internal.File,
     nw: u32,
     nh: u32,
     new_cw_: u32,
     new_rh_: u32,
     new_cols: u32,
     new_rows: u32,
-    anchor_vis: pixi_mod.math.layout_anchor.LayoutAnchor,
+    anchor_vis: pixi.math.layout_anchor.LayoutAnchor,
     slice_full_layer: bool,
     host_rect: dvui.Rect,
 ) void {
@@ -870,7 +870,7 @@ pub fn dialog(id: dvui.Id) anyerror!bool {
     const form_font = font();
 
     const file_id_for_dialog = dvui.dataGet(null, id, "_grid_layout_file_id", u64);
-    const target_file: ?*pixi_mod.internal.File = if (file_id_for_dialog) |fid|
+    const target_file: ?*pixi.internal.File = if (file_id_for_dialog) |fid|
         runtime.state().docs.fileById(fid)
     else
         null;
@@ -902,10 +902,10 @@ pub fn dialog(id: dvui.Id) anyerror!bool {
 
     defer {
         if (dialog_middle_scroll.offset(.vertical) > 0.0)
-            pixi_mod.core.dvui.drawEdgeShadow(mid_scroll.data().contentRectScale(), .top, .{});
+            pixi.core.dvui.drawEdgeShadow(mid_scroll.data().contentRectScale(), .top, .{});
 
         if (dialog_middle_scroll.virtual_size.h > dialog_middle_scroll.viewport.h)
-            pixi_mod.core.dvui.drawEdgeShadow(mid_scroll.data().contentRectScale(), .bottom, .{});
+            pixi.core.dvui.drawEdgeShadow(mid_scroll.data().contentRectScale(), .bottom, .{});
     }
 
     // Form (intrinsic width, full height) + preview (expands horizontally with the window).
@@ -965,18 +965,18 @@ pub fn dialog(id: dvui.Id) anyerror!bool {
         const v_scroll = left_scroll.offset(.vertical);
         const h_scroll = left_scroll.offset(.horizontal);
         if (v_scroll > 0.0) {
-            pixi_mod.core.dvui.drawEdgeShadow(pane_left.data().contentRectScale(), .top, .{});
+            pixi.core.dvui.drawEdgeShadow(pane_left.data().contentRectScale(), .top, .{});
         }
         if (left_scroll.virtual_size.h > left_scroll.viewport.h) {
-            pixi_mod.core.dvui.drawEdgeShadow(pane_left.data().contentRectScale(), .bottom, .{});
+            pixi.core.dvui.drawEdgeShadow(pane_left.data().contentRectScale(), .bottom, .{});
         }
         pane_left.deinit();
 
         if (left_scroll.virtual_size.w > left_scroll.viewport.w) {
-            pixi_mod.core.dvui.drawEdgeShadow(shell_left.data().contentRectScale(), .right, .{});
+            pixi.core.dvui.drawEdgeShadow(shell_left.data().contentRectScale(), .right, .{});
         }
         if (h_scroll > 0.0) {
-            pixi_mod.core.dvui.drawEdgeShadow(shell_left.data().contentRectScale(), .left, .{});
+            pixi.core.dvui.drawEdgeShadow(shell_left.data().contentRectScale(), .left, .{});
         }
         shell_left.deinit();
     }
@@ -1012,7 +1012,7 @@ pub fn dialog(id: dvui.Id) anyerror!bool {
                 slice_form.rows,
                 anchors[@min(anchor_ix, anchors.len - 1)],
             };
-            break :blk .{ tf.column_width, tf.row_height, tf.columns, tf.rows, @as(pixi_mod.math.layout_anchor.LayoutAnchor, .nw) };
+            break :blk .{ tf.column_width, tf.row_height, tf.columns, tf.rows, @as(pixi.math.layout_anchor.LayoutAnchor, .nw) };
         }
         break :blk switch (mode) {
             .slice => .{
@@ -1043,15 +1043,15 @@ pub fn dialog(id: dvui.Id) anyerror!bool {
 
         defer {
             const rs_scroll = preview_host.data().rectScale();
-            pixi_mod.core.dvui.drawEdgeShadow(rs_scroll, .top, .{});
-            pixi_mod.core.dvui.drawEdgeShadow(rs_scroll, .bottom, .{});
-            pixi_mod.core.dvui.drawEdgeShadow(rs_scroll, .left, .{});
-            pixi_mod.core.dvui.drawEdgeShadow(rs_scroll, .right, .{});
+            pixi.core.dvui.drawEdgeShadow(rs_scroll, .top, .{});
+            pixi.core.dvui.drawEdgeShadow(rs_scroll, .bottom, .{});
+            pixi.core.dvui.drawEdgeShadow(rs_scroll, .left, .{});
+            pixi.core.dvui.drawEdgeShadow(rs_scroll, .right, .{});
         }
 
         if (target_file) |tf| {
             const host_rect = preview_host.data().contentRect();
-            const dims_ok = pixi_mod.internal.File.validateGridLayoutProposedDims(pv_cw, pv_rh, pv_cols, pv_rows);
+            const dims_ok = pixi.internal.File.validateGridLayoutProposedDims(pv_cw, pv_rh, pv_cols, pv_rows);
             if (dims_ok) {
                 renderPreview(
                     id,
@@ -1108,7 +1108,7 @@ pub fn dialog(id: dvui.Id) anyerror!bool {
 /// Resize-mode form: cell width (x), cell height (y), columns (x), rows (y); 9-way anchor; current vs after readout.
 fn drawResizeForm(
     unique_id: dvui.Id,
-    target_file: ?*pixi_mod.internal.File,
+    target_file: ?*pixi.internal.File,
     form_font: dvui.Font,
 ) bool {
     var valid: bool = true;
@@ -1134,7 +1134,7 @@ fn drawResizeForm(
         .color_text = dvui.themeGet().color(.control, .text),
     });
 
-    if (!pixi_mod.internal.File.validateGridLayoutProposedDims(
+    if (!pixi.internal.File.validateGridLayoutProposedDims(
         resize_form.column_width,
         resize_form.row_height,
         resize_form.columns,
@@ -1327,7 +1327,7 @@ fn drawResizeForm(
 /// multiply back to the locked total.
 fn drawSliceForm(
     unique_id: dvui.Id,
-    target_file: ?*pixi_mod.internal.File,
+    target_file: ?*pixi.internal.File,
     form_font: dvui.Font,
 ) bool {
     var valid: bool = true;
@@ -1490,7 +1490,7 @@ fn drawSliceForm(
     return valid;
 }
 
-/// Custom window shell for the grid-layout dialog: matches `pixi_mod.core.dvui.dialogWindow` (open
+/// Custom window shell for the grid-layout dialog: matches `pixi.core.dvui.dialogWindow` (open
 /// `autoSize()` animation, nudge + center on modal rect). `min_size_content` is half the main
 /// window so the first layout pass does not collapse the shell; DVUI then grows to fit content
 /// (see `FloatingWindowWidget` `Size.max(min_size, min_sizeGet)`). Do not use `max_size_content`
@@ -1503,7 +1503,7 @@ pub fn windowFn(id: dvui.Id) anyerror!void {
     };
 
     if (modal) {
-        pixi_mod.core.dvui.modal_dim_titlebar = true;
+        pixi.core.dvui.modal_dim_titlebar = true;
     }
 
     const title = dvui.dataGetSlice(null, id, "_title", []u8) orelse {
@@ -1516,8 +1516,8 @@ pub fn windowFn(id: dvui.Id) anyerror!void {
     };
     const cancel_label = dvui.dataGetSlice(null, id, "_cancel_label", []u8);
     const default = dvui.dataGet(null, id, "_default", dvui.enums.DialogResponse);
-    const callafter = dvui.dataGet(null, id, "_callafter", pixi_mod.core.dvui.CallAfterFn);
-    const displayFn = dvui.dataGet(null, id, "_displayFn", pixi_mod.core.dvui.DisplayFn);
+    const callafter = dvui.dataGet(null, id, "_callafter", pixi.core.dvui.CallAfterFn);
+    const displayFn = dvui.dataGet(null, id, "_displayFn", pixi.core.dvui.DisplayFn);
 
     // Default shell: wide enough for form + preview; DVUI autoSize grows to content if larger.
     const wr = dvui.windowRect();
@@ -1525,7 +1525,7 @@ pub fn windowFn(id: dvui.Id) anyerror!void {
     const init_h = @round(wr.h * 0.52);
     const center_on = dvui.currentWindow().subwindows.current_rect;
 
-    var win = pixi_mod.core.dvui.floatingWindow(@src(), .{
+    var win = pixi.core.dvui.floatingWindow(@src(), .{
         .modal = modal,
         .center_on = center_on,
         .window_avoid = .nudge,
@@ -1557,12 +1557,12 @@ pub fn windowFn(id: dvui.Id) anyerror!void {
 
     if (dvui.animationGet(win.data().id, "_close_x")) |a| {
         if (a.done()) {
-            pixi_mod.core.dvui.dialog_close_rect_override = null;
+            pixi.core.dvui.dialog_close_rect_override = null;
             dvui.dialogRemove(id);
         }
-    } else if (pixi_mod.core.dvui.dialog_close_rect_override) |close_rect| {
+    } else if (pixi.core.dvui.dialog_close_rect_override) |close_rect| {
         dvui.dataSet(null, win.data().id, "_close_rect", close_rect);
-        pixi_mod.core.dvui.dialog_close_rect_override = null;
+        pixi.core.dvui.dialog_close_rect_override = null;
     } else {
         // Call `autoSize` only while opening. Doing it every frame leaves `auto_size` true and the
         // window keeps animating/snapping to content min size — user resize appears "locked".
@@ -1587,16 +1587,16 @@ pub fn windowFn(id: dvui.Id) anyerror!void {
     var shell = dvui.box(@src(), .{ .dir = .vertical }, .{ .expand = .both });
     defer shell.deinit();
 
-    const header_kind: pixi_mod.core.dvui.DialogHeaderKind = switch (dvui.dataGet(null, id, "_header_kind", u8) orelse 0) {
-        @intFromEnum(pixi_mod.core.dvui.DialogHeaderKind.none) => .none,
-        @intFromEnum(pixi_mod.core.dvui.DialogHeaderKind.info) => .info,
-        @intFromEnum(pixi_mod.core.dvui.DialogHeaderKind.warning) => .warning,
-        @intFromEnum(pixi_mod.core.dvui.DialogHeaderKind.err) => .err,
+    const header_kind: pixi.core.dvui.DialogHeaderKind = switch (dvui.dataGet(null, id, "_header_kind", u8) orelse 0) {
+        @intFromEnum(pixi.core.dvui.DialogHeaderKind.none) => .none,
+        @intFromEnum(pixi.core.dvui.DialogHeaderKind.info) => .info,
+        @intFromEnum(pixi.core.dvui.DialogHeaderKind.warning) => .warning,
+        @intFromEnum(pixi.core.dvui.DialogHeaderKind.err) => .err,
         else => .none,
     };
 
     var header_openflag = true;
-    win.dragAreaSet(pixi_mod.core.dvui.windowHeader(title, "", &header_openflag, header_kind));
+    win.dragAreaSet(pixi.core.dvui.windowHeader(title, "", &header_openflag, header_kind));
     if (!header_openflag) {
         if (callafter) |ca| {
             ca(id, .cancel) catch {
@@ -1629,7 +1629,7 @@ pub fn windowFn(id: dvui.Id) anyerror!void {
         }
     }
 
-    { // Footer — match `pixi_mod.core.dvui.dialogWindow` (horizontal strip, gravity_x centered).
+    { // Footer — match `pixi.core.dvui.dialogWindow` (horizontal strip, gravity_x centered).
         var hbox = dvui.box(@src(), .{ .dir = .horizontal }, .{
             .gravity_x = 0.5,
             .padding = .{ .y = 6, .h = 8 },
@@ -1724,7 +1724,7 @@ pub fn callAfter(id: dvui.Id, response: dvui.enums.DialogResponse) anyerror!void
             switch (mode) {
                 .slice => {
                     const s = slice_form;
-                    if (!pixi_mod.internal.File.validateGridLayoutProposedDims(s.column_width, s.row_height, s.columns, s.rows))
+                    if (!pixi.internal.File.validateGridLayoutProposedDims(s.column_width, s.row_height, s.columns, s.rows))
                         return;
                     file.applyGridSliceOnly(.{
                         .column_width = s.column_width,
@@ -1738,7 +1738,7 @@ pub fn callAfter(id: dvui.Id, response: dvui.enums.DialogResponse) anyerror!void
                 },
                 .resize => {
                     const r = resize_form;
-                    if (!pixi_mod.internal.File.validateGridLayoutProposedDims(r.column_width, r.row_height, r.columns, r.rows))
+                    if (!pixi.internal.File.validateGridLayoutProposedDims(r.column_width, r.row_height, r.columns, r.rows))
                         return;
                     file.applyGridLayout(.{
                         .column_width = r.column_width,

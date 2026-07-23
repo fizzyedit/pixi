@@ -3,7 +3,7 @@ const builtin = @import("builtin");
 const dvui = @import("dvui");
 const icons = @import("icons");
 const assets = @import("assets");
-const pixi_mod = @import("../../pixi.zig");
+const pixi = @import("../pixi.zig");
 const runtime = @import("../runtime.zig");
 
 const Tools = @This();
@@ -72,7 +72,7 @@ pub fn draw(self: *Tools) !void {
     const layer_count: usize = if (runtime.state().docs.activeFile(runtime.state().host)) |file| file.layers.len else 0;
     defer prev_layer_count = layer_count;
 
-    var paned = pixi_mod.core.dvui.paned(@src(), .{
+    var paned = pixi.core.dvui.paned(@src(), .{
         .direction = .vertical,
         .collapsed_size = 0,
         .handle_size = 10,
@@ -160,8 +160,8 @@ pub fn drawTools() !void {
         .padding = .{ .h = 10.0, .w = 4.0, .x = 4.0, .y = 4.0 },
     });
     defer toolbox.deinit();
-    for (0..std.meta.fields(pixi_mod.Tools.Tool).len) |i| {
-        const tool: pixi_mod.Tools.Tool = @enumFromInt(i);
+    for (0..std.meta.fields(pixi.Tools.Tool).len) |i| {
+        const tool: pixi.Tools.Tool = @enumFromInt(i);
         const id_extra = i;
 
         const selected = runtime.state().tools.current == tool;
@@ -172,16 +172,16 @@ pub fn drawTools() !void {
         }
 
         const selection_sprite = switch (runtime.state().tools.selection_mode) {
-            .pixel => runtime.uiAtlas().sprites[pixi_mod.atlas.sprites.pixel_selection_default],
-            .box => runtime.uiAtlas().sprites[pixi_mod.atlas.sprites.box_selection_default],
-            .color => runtime.uiAtlas().sprites[pixi_mod.atlas.sprites.color_selection_default],
+            .pixel => runtime.uiAtlas().sprites[pixi.atlas.sprites.pixel_selection_default],
+            .box => runtime.uiAtlas().sprites[pixi.atlas.sprites.box_selection_default],
+            .color => runtime.uiAtlas().sprites[pixi.atlas.sprites.color_selection_default],
         };
 
         const sprite = switch (tool) {
-            .pointer => runtime.uiAtlas().sprites[pixi_mod.atlas.sprites.cursor_default],
-            .pencil => runtime.uiAtlas().sprites[pixi_mod.atlas.sprites.pencil_default],
-            .eraser => runtime.uiAtlas().sprites[pixi_mod.atlas.sprites.eraser_default],
-            .bucket => runtime.uiAtlas().sprites[pixi_mod.atlas.sprites.bucket_default],
+            .pointer => runtime.uiAtlas().sprites[pixi.atlas.sprites.cursor_default],
+            .pencil => runtime.uiAtlas().sprites[pixi.atlas.sprites.pencil_default],
+            .eraser => runtime.uiAtlas().sprites[pixi.atlas.sprites.eraser_default],
+            .bucket => runtime.uiAtlas().sprites[pixi.atlas.sprites.bucket_default],
             .selection => selection_sprite,
         };
         var button: dvui.ButtonWidget = undefined;
@@ -425,7 +425,7 @@ pub fn drawLayers(tools: *Tools) !?dvui.Rect.Physical {
 
         const vertical_scroll = file.editor.layers_scroll_info.offset(.vertical);
 
-        var tree = pixi_mod.core.dvui.TreeWidget.tree(@src(), .{ .enable_reordering = true }, .{
+        var tree = pixi.core.dvui.TreeWidget.tree(@src(), .{ .enable_reordering = true }, .{
             .expand = .horizontal,
             .background = false,
         });
@@ -456,7 +456,7 @@ pub fn drawLayers(tools: *Tools) !?dvui.Rect.Physical {
                 }
 
                 // Snapshot moved layers before any removal so indices stay valid.
-                var moved = try runtime.allocator().alloc(pixi_mod.internal.Layer, sources.len);
+                var moved = try runtime.allocator().alloc(pixi.internal.Layer, sources.len);
                 defer runtime.allocator().free(moved);
                 for (sources, 0..) |s, i| {
                     moved[i] = file.layers.get(s);
@@ -469,7 +469,7 @@ pub fn drawLayers(tools: *Tools) !?dvui.Rect.Physical {
                     file.layers.orderedRemove(sources[ri]);
                 }
 
-                const target_raw = pixi_mod.core.dvui.TreeSelection.adjustInsertBeforeForRemovals(sources, insert_before_raw);
+                const target_raw = pixi.core.dvui.TreeSelection.adjustInsertBeforeForRemovals(sources, insert_before_raw);
                 const target = @min(target_raw, file.layers.len);
 
                 for (moved, 0..) |layer, i| {
@@ -918,13 +918,13 @@ pub fn drawLayers(tools: *Tools) !?dvui.Rect.Physical {
 
         // Only draw shadow if the scroll bar has been scrolled some
         if (vertical_scroll > 0.0)
-            pixi_mod.core.dvui.drawEdgeShadow(scroll_area.data().contentRectScale(), .top, .{});
+            pixi.core.dvui.drawEdgeShadow(scroll_area.data().contentRectScale(), .top, .{});
 
         if (file.editor.layers_scroll_info.virtual_size.h > file.editor.layers_scroll_info.viewport.h + 1 and vertical_scroll < file.editor.layers_scroll_info.scrollMax(.vertical))
-            pixi_mod.core.dvui.drawEdgeShadow(scroll_area.data().contentRectScale(), .bottom, .{});
+            pixi.core.dvui.drawEdgeShadow(scroll_area.data().contentRectScale(), .bottom, .{});
     }
 
-    if (pixi_mod.core.dvui.hovered(vbox.data())) {
+    if (pixi.core.dvui.hovered(vbox.data())) {
         const mp = dvui.currentWindow().mouse_pt;
         if (tools.layers_scroll_viewport_rect) |vr| {
             if (!vr.contains(mp)) return null;
@@ -1134,7 +1134,7 @@ pub fn drawPalettes() !void {
                         const ext = std.fs.path.extension(entry.name);
                         if (std.mem.eql(u8, ext, ".hex")) {
                             if (dropdown.addChoiceLabel(entry.name)) {
-                                runtime.state().colors.palette = pixi_mod.internal.Palette.loadFromBytes(runtime.allocator(), entry.name, data) catch |err| {
+                                runtime.state().colors.palette = pixi.internal.Palette.loadFromBytes(runtime.allocator(), entry.name, data) catch |err| {
                                     dvui.log.err("Failed to load palette: {s}", .{@errorName(err)});
                                     return error.FailedToLoadPalette;
                                 };
@@ -1284,7 +1284,7 @@ fn searchPalettes(dropdown: *dvui.DropdownWidget) !void {
                         if (runtime.state().colors.palette) |*palette|
                             palette.deinit();
 
-                        runtime.state().colors.palette = pixi_mod.internal.Palette.loadFromFile(runtime.allocator(), abs_path) catch |err| {
+                        runtime.state().colors.palette = pixi.internal.Palette.loadFromFile(runtime.allocator(), abs_path) catch |err| {
                             dvui.log.err("Failed to load palette: {s}", .{@errorName(err)});
                             return error.FailedToLoadPalette;
                         };
@@ -1318,12 +1318,12 @@ fn pointerReleaseInRectWithoutSelectionModifier(r: dvui.Rect.Physical) bool {
     return false;
 }
 
-fn layerGestureMatches(file: *const pixi_mod.internal.File) bool {
+fn layerGestureMatches(file: *const pixi.internal.File) bool {
     return layer_row_gesture != null and layer_row_gesture.?.file_id == file.id;
 }
 
 /// True if `layer_index` is present in the multi-selection set (the primary index is always implicitly selected).
-fn layerIndexInMulti(file: *const pixi_mod.internal.File, layer_index: usize) bool {
+fn layerIndexInMulti(file: *const pixi.internal.File, layer_index: usize) bool {
     for (file.editor.selected_layer_indices.items) |i| {
         if (i == layer_index) return true;
     }
@@ -1332,7 +1332,7 @@ fn layerIndexInMulti(file: *const pixi_mod.internal.File, layer_index: usize) bo
 
 /// Sync the multi-selection list with `file.selected_layer_index` and the current layer count.
 /// The primary must always be present; stale / out-of-range entries from deletions are dropped.
-fn ensureLayerSelection(file: *pixi_mod.internal.File) void {
+fn ensureLayerSelection(file: *pixi.internal.File) void {
     var sel = &file.editor.selected_layer_indices;
 
     // Drop out-of-range entries.
@@ -1374,9 +1374,9 @@ const LayerClickApplied = struct {
 };
 
 fn applyLayerClick(
-    file: *pixi_mod.internal.File,
+    file: *pixi.internal.File,
     clicked: usize,
-    mode: pixi_mod.core.dvui.TreeSelection.ClickMode,
+    mode: pixi.core.dvui.TreeSelection.ClickMode,
 ) LayerClickApplied {
     const count_before = file.editor.selected_layer_indices.items.len;
 
@@ -1389,7 +1389,7 @@ fn applyLayerClick(
     var tmp: std.ArrayList(usize) = .empty;
     defer tmp.deinit(runtime.allocator());
 
-    const res = pixi_mod.core.dvui.TreeSelection.applyClickUsize(
+    const res = pixi.core.dvui.TreeSelection.applyClickUsize(
         runtime.allocator(),
         file.editor.selected_layer_indices.items,
         file.selected_layer_index,
@@ -1412,7 +1412,7 @@ fn applyLayerClick(
 
 /// Narrow the multi-selection to just `clicked` — used when the user performed a plain press on an
 /// already-multi-selected row and released without dragging. Mirrors Finder-style behavior.
-fn narrowLayerSelectionTo(file: *pixi_mod.internal.File, clicked: usize) void {
+fn narrowLayerSelectionTo(file: *pixi.internal.File, clicked: usize) void {
     file.editor.selected_layer_indices.clearRetainingCapacity();
     file.editor.selected_layer_indices.append(runtime.allocator(), clicked) catch {};
     file.selected_layer_index = clicked;
@@ -1424,7 +1424,7 @@ fn narrowLayerSelectionTo(file: *pixi_mod.internal.File, clicked: usize) void {
 /// in the row-hits buffer are included (out-of-viewport selections are allowed because hits are
 /// populated for every drawn row, not just hovered ones).
 fn buildLayerMultiDragIds(
-    file: *const pixi_mod.internal.File,
+    file: *const pixi.internal.File,
     hits: []const LayerRowHit,
     out: []usize,
 ) usize {
@@ -1444,12 +1444,12 @@ fn buildLayerMultiDragIds(
 }
 
 /// Clear in-flight gesture only (no `dragEnd`). Used before arming a new row press.
-fn layerTreeClearGestureKeysOnly(_: *const pixi_mod.internal.File) void {
+fn layerTreeClearGestureKeysOnly(_: *const pixi.internal.File) void {
     layer_row_gesture = null;
 }
 
 /// Clear gesture and global `Dragging` (stale prestart/drag from other widgets).
-fn layerTreeResetRowPointerGesture(_: *const pixi_mod.internal.File) void {
+fn layerTreeResetRowPointerGesture(_: *const pixi.internal.File) void {
     dvui.dragEnd();
     layer_row_gesture = null;
 }
@@ -1476,7 +1476,7 @@ fn layerPointerInScrollViewport(p: dvui.Point.Physical, viewport_r: ?dvui.Rect.P
     return true;
 }
 
-fn layerTreePointerInTreeSurface(tree: *pixi_mod.core.dvui.TreeWidget, p: dvui.Point.Physical, floating_win: dvui.Id) bool {
+fn layerTreePointerInTreeSurface(tree: *pixi.core.dvui.TreeWidget, p: dvui.Point.Physical, floating_win: dvui.Id) bool {
     if (floating_win != dvui.subwindowCurrentId()) return false;
     const tr = tree.data().borderRectScale().r;
     if (!tr.contains(p)) return false;
@@ -1484,14 +1484,14 @@ fn layerTreePointerInTreeSurface(tree: *pixi_mod.core.dvui.TreeWidget, p: dvui.P
     return true;
 }
 
-fn layerTreePointerInTreeBorder(tree: *pixi_mod.core.dvui.TreeWidget, p: dvui.Point.Physical, floating_win: dvui.Id) bool {
+fn layerTreePointerInTreeBorder(tree: *pixi.core.dvui.TreeWidget, p: dvui.Point.Physical, floating_win: dvui.Id) bool {
     if (floating_win != dvui.subwindowCurrentId()) return false;
     return tree.data().borderRectScale().r.contains(p);
 }
 
 /// While another widget holds capture, `target_widgetId` may not be the tree. Allow starting a reorder drag
 /// when the pointer is over the tree border (scroll clip can disagree with visible row geometry).
-fn layerTreeMotionAllowsLayerReorder(tree: *pixi_mod.core.dvui.TreeWidget, e: *dvui.Event) bool {
+fn layerTreeMotionAllowsLayerReorder(tree: *pixi.core.dvui.TreeWidget, e: *dvui.Event) bool {
     if (e.target_widgetId) |fwid| {
         if (fwid == tree.data().id) return true;
     }
@@ -1505,7 +1505,7 @@ fn layerTreeMotionAllowsLayerReorder(tree: *pixi_mod.core.dvui.TreeWidget, e: *d
 
 /// One pass over `events()` in frame order: press → motion → release.
 /// Runs after layer rows (and rename `textEntry`) are built so geometry and `e.handled` reflect z-order.
-fn processLayerTreePointerEvents(tree: *pixi_mod.core.dvui.TreeWidget, file: *pixi_mod.internal.File, hits: []const LayerRowHit, layers_viewport_r: ?dvui.Rect.Physical) void {
+fn processLayerTreePointerEvents(tree: *pixi.core.dvui.TreeWidget, file: *pixi.internal.File, hits: []const LayerRowHit, layers_viewport_r: ?dvui.Rect.Physical) void {
     if (!tree.init_options.enable_reordering) return;
 
     for (dvui.events()) |*e| {
@@ -1531,7 +1531,7 @@ fn processLayerTreePointerEvents(tree: *pixi_mod.core.dvui.TreeWidget, file: *pi
                         layerTreeClearGestureKeysOnly(file);
                         dvui.dragPreStart(me.button, me.p, .{ .offset = h.hbox_tl.diff(me.p) });
 
-                        const mode = pixi_mod.core.dvui.TreeSelection.clickModeFromMod(me.mod);
+                        const mode = pixi.core.dvui.TreeSelection.clickModeFromMod(me.mod);
                         const applied = applyLayerClick(file, h.layer_index, mode);
 
                         layer_row_gesture = .{

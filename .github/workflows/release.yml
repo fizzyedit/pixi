@@ -1,51 +1,17 @@
-# Drop this into a plugin repo as .github/workflows/release.yml.
-# Tagging `vX.Y.Z` builds every target, hashes them, assembles manifest.json, and publishes
-# all of it as assets on the vX.Y.Z release. The pushed tag is the SINGLE source of truth for
-# the version — there is no version string to edit in this file.
-# Your registry/<id>.json `manifest_url` then points at
-# https://github.com/<owner>/<repo>/releases/latest/download/manifest.json.
+# Tagging `vX.Y.Z` builds every target and publishes binaries + manifest.json.
+# Identity SoT: plugin.zig.zon (tag must equal .version). SDK version + abi fingerprint
+# are derived from the built dylib (pinned fizzy commit) — do not copy them here.
 #
-# Prerequisite: your build.zig.zon must pin the Fizzy SDK by URL+hash (not a local `path`):
-#
-#     .fizzy = .{
-#         .url = "https://github.com/fizzyedit/fizzy/archive/<commit>.tar.gz",
-#         .hash = "<zig-package-hash>",
-#     },
-#
-# Bump `fizzy-sdk-version` / `abi-fingerprint` below only when you rebuild against a new SDK.
-# `fizzy-sdk-version` is `sdk_version` in fizzy's src/sdk/version.zig. `abi-fingerprint` is the
-# host's RUNTIME `dylib.abi_fingerprint` for the SHIPPED host's mode (ReleaseFast — fizzy's
-# release CI packages `-Doptimize=ReleaseFast`), which this workflow also builds in. It is NOT
-# `recorded_sdk_shape_fingerprint` (that is the mode/target-invariant CI-lock hash, a different
-# value). The build workflow dlopens the built binary and fails if its exported fingerprint
-# doesn't match this value, so a wrong number is caught at CI time instead of shipping a plugin
-# no host can load.
+# Prerequisite: build.zig.zon must pin fizzy by URL+hash for CI (not a local path).
 name: Release
 on:
   push:
     tags: ["v*"]
 
 jobs:
-  # Derive the release version from the pushed tag (v0.1.2 → 0.1.2). Because the reusable
-  # build workflow keys the release tag off this value (`tag_name: v<version>`), sourcing it
-  # from the tag guarantees the built release can never drift from the tag that triggered it.
-  version:
-    runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.v.outputs.version }}
-    steps:
-      - id: v
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-
   build:
-    needs: version
-    uses: fizzyedit/plugin-build-action/.github/workflows/build.yml@v2
+    uses: fizzyedit/plugin-build-action/.github/workflows/build.yml@v3
     permissions:
       contents: write
     with:
-      id: pixi
-      version: ${{ needs.version.outputs.version }}
-      fizzy-sdk-version: "0.31.0"
-      abi-fingerprint: "0xe178a41f3578f897"
-      min-sdk-version: "0.31.0"
       zig-version: "0.16.0"

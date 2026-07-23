@@ -1,6 +1,6 @@
 const std = @import("std");
 const dvui = @import("dvui");
-const pixi_mod = @import("../pixi.zig");
+const pixi = @import("pixi.zig");
 const runtime = @import("runtime.zig");
 
 const Tools = @This();
@@ -299,7 +299,7 @@ pub fn drawTooltip(_: Tools, tool: Tool, rect: dvui.Rect.Physical, id_extra: u64
         }));
         defer vbox2.deinit();
 
-        pixi_mod.core.dvui.labelWithKeybind(
+        pixi.core.dvui.labelWithKeybind(
             tool_name,
             switch (tool) {
                 .pointer => dvui.currentWindow().keybinds.get("pointer") orelse .{},
@@ -378,9 +378,9 @@ pub fn drawTooltip(_: Tools, tool: Tool, rect: dvui.Rect.Physical, id_extra: u64
                     defer mode_col.deinit();
 
                     const sprite = switch (mode) {
-                        .box => runtime.uiAtlas().sprites[pixi_mod.atlas.sprites.box_selection_default],
-                        .pixel => runtime.uiAtlas().sprites[pixi_mod.atlas.sprites.pixel_selection_default],
-                        .color => runtime.uiAtlas().sprites[pixi_mod.atlas.sprites.color_selection_default],
+                        .box => runtime.uiAtlas().sprites[pixi.atlas.sprites.box_selection_default],
+                        .pixel => runtime.uiAtlas().sprites[pixi.atlas.sprites.pixel_selection_default],
+                        .color => runtime.uiAtlas().sprites[pixi.atlas.sprites.color_selection_default],
                     };
                     const uv = dvui.Rect{
                         .x = @as(f32, @floatFromInt(sprite.source[0])) / atlas_size.w,

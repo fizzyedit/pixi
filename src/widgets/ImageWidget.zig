@@ -1,5 +1,5 @@
 pub const ImageWidget = @This();
-const CanvasWidget = pixi_mod.core.dvui.CanvasWidget;
+const CanvasWidget = pixi.core.dvui.CanvasWidget;
 const CanvasBridge = @import("CanvasBridge.zig");
 
 init_options: InitOptions,
@@ -144,8 +144,8 @@ fn sample(self: *ImageWidget, point: dvui.Point, screen_p: dvui.Point.Physical) 
 
     var color: [4]u8 = .{ 0, 0, 0, 0 };
 
-    if (pixi_mod.image.pixelIndex(self.init_options.source, point)) |index| {
-        const c = pixi_mod.image.pixels(self.init_options.source)[index];
+    if (pixi.image.pixelIndex(self.init_options.source, point)) |index| {
+        const c = pixi.image.pixels(self.init_options.source)[index];
         if (c[3] > 0) {
             color = c;
         }
@@ -164,7 +164,7 @@ fn sample(self: *ImageWidget, point: dvui.Point, screen_p: dvui.Point.Physical) 
 }
 
 pub fn drawCursor(self: *ImageWidget) void {
-    if (pixi_mod.core.dvui.canvasPointerInputSuppressed()) return;
+    if (pixi.core.dvui.canvasPointerInputSuppressed()) return;
     for (dvui.events()) |*e| {
         if (!self.init_options.canvas.scroll_container.matchEvent(e)) {
             continue;
@@ -207,7 +207,7 @@ pub fn drawSample(self: *ImageWidget) void {
 }
 
 pub fn drawSampleMagnifier(canvas: *CanvasWidget, source: dvui.ImageSource, data_point: dvui.Point) void {
-    if (pixi_mod.core.dvui.canvasPointerInputSuppressed()) return;
+    if (pixi.core.dvui.canvasPointerInputSuppressed()) return;
     if (!canvas.samplePointerInViewport(dvui.currentWindow().mouse_pt)) return;
 
     _ = dvui.cursorSet(.hidden);
@@ -268,7 +268,7 @@ pub fn drawSampleMagnifier(canvas: *CanvasWidget, source: dvui.ImageSource, data
     });
     defer fw.deinit();
 
-    const size = pixi_mod.image.size(source);
+    const size = pixi.image.size(source);
     const uv_rect = dvui.Rect{
         .x = (data_point.x - sample_region_size / 2) / size.w,
         .y = (data_point.y - sample_region_size / 2) / size.h,
@@ -385,7 +385,7 @@ pub fn drawImage(self: *ImageWidget) void {
     // by `syncTransformCachesFromWidgets` before `updateTouchGesture` runs. The mismatch
     // is the visible "image moves at a different rate than the alpha layer" jitter on the
     // packed-atlas preview during pinch zoom. Mirror FileWidget.drawLayers, which renders
-    // its layer textures via `pixi_mod.render.renderLayers` against the cached `canvas.rect`
+    // its layer textures via `pixi.render.renderLayers` against the cached `canvas.rect`
     // for the same reason.
     dvui.renderImage(self.init_options.source, .{
         .r = self.init_options.canvas.rect,
@@ -434,10 +434,10 @@ pub fn processEvents(self: *ImageWidget) void {
 
     self.drawImage();
 
-    pixi_mod.core.dvui.drawEdgeShadow(self.init_options.canvas.scroll_container.data().rectScale(), .top, .{});
-    pixi_mod.core.dvui.drawEdgeShadow(self.init_options.canvas.scroll_container.data().rectScale(), .bottom, .{ .opacity = 0.15 });
-    pixi_mod.core.dvui.drawEdgeShadow(self.init_options.canvas.scroll_container.data().rectScale(), .left, .{});
-    pixi_mod.core.dvui.drawEdgeShadow(self.init_options.canvas.scroll_container.data().rectScale(), .right, .{ .opacity = 0.15 });
+    pixi.core.dvui.drawEdgeShadow(self.init_options.canvas.scroll_container.data().rectScale(), .top, .{});
+    pixi.core.dvui.drawEdgeShadow(self.init_options.canvas.scroll_container.data().rectScale(), .bottom, .{ .opacity = 0.15 });
+    pixi.core.dvui.drawEdgeShadow(self.init_options.canvas.scroll_container.data().rectScale(), .left, .{});
+    pixi.core.dvui.drawEdgeShadow(self.init_options.canvas.scroll_container.data().rectScale(), .right, .{ .opacity = 0.15 });
 
     self.drawCursor();
     self.drawSample();
@@ -470,7 +470,7 @@ const std = @import("std");
 const math = std.math;
 const dvui = @import("dvui");
 const builtin = @import("builtin");
-const pixi_mod = @import("../../pixi.zig");
+const pixi = @import("../pixi.zig");
 const runtime = @import("../runtime.zig");
 
 test {

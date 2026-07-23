@@ -14,12 +14,11 @@ const ScrollContainerWidget = dvui.ScrollContainerWidget;
 const ScaleWidget = dvui.ScaleWidget;
 
 pub const FileWidget = @This();
-const CanvasWidget = pixi_mod.core.dvui.CanvasWidget;
+const CanvasWidget = pixi.core.dvui.CanvasWidget;
 const CanvasBridge = @import("CanvasBridge.zig");
 const CanvasData = @import("../CanvasData.zig");
-const DocLifecycle = @import("../doc_lifecycle.zig");
 const icons = @import("icons");
-const pixi_mod = @import("../../pixi.zig");
+const pixi = @import("../pixi.zig");
 const runtime = @import("../runtime.zig");
 
 // ---- Canvas hooks: pixel-art reactions to off-artboard viewport gestures. The canvas is
@@ -27,7 +26,7 @@ const runtime = @import("../runtime.zig");
 
 /// Off-artboard tap (no move, no hold) → clear the current selection.
 fn onEmptyTap(_: ?*anyopaque) void {
-    DocLifecycle.cancelEdit(runtime.state());
+    runtime.state().cancelEdit();
 }
 
 /// Off-artboard hold past the hold-menu duration → open the radial tool menu at the press
@@ -76,7 +75,7 @@ const SpriteReorderMode = enum {
 };
 
 pub const InitOptions = struct {
-    file: *pixi_mod.internal.File,
+    file: *pixi.internal.File,
     center: bool = false,
 };
 
@@ -241,7 +240,7 @@ pub fn processSample(self: *FileWidget) void {
 /// Set `file.peek_layer_index` to the visible layer with an opaque pixel at `point`, mirroring
 /// `sampleColorAtPoint`'s selection rule (bottommost match wins). Called every frame while the
 /// sample key is held so other layers dim like during layer-list hover.
-pub fn peekLayerAtPoint(file: *pixi_mod.internal.File, point: dvui.Point) void {
+pub fn peekLayerAtPoint(file: *pixi.internal.File, point: dvui.Point) void {
     if (file.editor.isolate_layer) return;
 
     var layer_index: usize = file.layers.len;
@@ -261,7 +260,7 @@ pub fn peekLayerAtPoint(file: *pixi_mod.internal.File, point: dvui.Point) void {
 /// Walk visible layers for an opaque pixel at `point`. Optionally selects the hit layer,
 /// sets the primary color (`apply_primary`), and/or adjusts the active tool (`change_tool`).
 pub fn sampleColorAtPoint(
-    file: *pixi_mod.internal.File,
+    file: *pixi.internal.File,
     point: dvui.Point,
     change_layer: bool,
     apply_primary: bool,
@@ -327,7 +326,7 @@ pub fn sampleColorAtPoint(
     }
 }
 
-fn sample(self: *FileWidget, file: *pixi_mod.internal.File, point: dvui.Point, screen_p: dvui.Point.Physical, change_layer: bool, change_tool: bool) void {
+fn sample(self: *FileWidget, file: *pixi.internal.File, point: dvui.Point, screen_p: dvui.Point.Physical, change_layer: bool, change_tool: bool) void {
     if (!file.editor.canvas.samplePointerInViewport(screen_p)) {
         self.sample_data_point = null;
         return;
@@ -604,7 +603,7 @@ pub fn processSpriteSelection(self: *FileWidget) void {
                                 file.editor.primary_sprite_index = sprite_index;
                             }
                         } else if (!file.editor.canvas.hovered) {
-                            DocLifecycle.cancelEdit(runtime.state());
+                            runtime.state().cancelEdit();
                         }
                     }
 
@@ -1088,7 +1087,7 @@ fn bubbleSpriteDataRect(col_in_row: usize, base_y: f32, col_w: f32, row_h: f32) 
 /// When `accs` is null and `shadow_only` is false, only UI elements are drawn.
 fn drawSpriteBubbleForRow(
     self: *FileWidget,
-    file: *pixi_mod.internal.File,
+    file: *pixi.internal.File,
     sprite_index: usize,
     sprite_rect: dvui.Rect,
     accs: ?*BubbleAccs,
@@ -1534,7 +1533,7 @@ pub fn drawSpriteBubble(
 
                 var anim = self.init_options.file.animations.get(anim_index);
 
-                var frames = std.array_list.Managed(pixi_mod.Animation.Frame).init(runtime.allocator());
+                var frames = std.array_list.Managed(pixi.Animation.Frame).init(runtime.allocator());
                 frames.appendSlice(anim.frames) catch {
                     dvui.log.err("Failed to append frames", .{});
                     return false;
@@ -1611,7 +1610,7 @@ pub fn drawSpriteBubble(
                     self.init_options.file.history.append(.{
                         .animation_frames = .{
                             .index = anim_index,
-                            .frames = runtime.allocator().dupe(pixi_mod.Animation.Frame, anim.frames) catch {
+                            .frames = runtime.allocator().dupe(pixi.Animation.Frame, anim.frames) catch {
                                 dvui.log.err("Failed to dupe frames", .{});
                                 return false;
                             },
@@ -1634,7 +1633,7 @@ pub fn drawSpriteBubble(
                     self.init_options.file.collapseAnimationSelectionToPrimary();
                     self.init_options.file.editor.animations_scroll_to_index = anim_index;
                     runtime.state().sprites_pane.edit_anim_id = self.init_options.file.animations.items(.id)[anim_index];
-                    runtime.state().host.setActiveSidebarView(@import("../plugin.zig").view_sprites);
+                    runtime.state().host.setActiveSidebarView("pixi.sprites");
 
                     var anim = self.init_options.file.animations.get(anim_index);
                     if (anim.frames.len == 0) {
@@ -1948,8 +1947,8 @@ fn drawBoxSelectionMarqueeOutline(self: *FileWidget) void {
 
 /// Preview for rectangular selection while dragging (box mode).
 fn applySelectionBoxPreview(
-    file: *pixi_mod.internal.File,
-    active_layer: *const pixi_mod.internal.Layer,
+    file: *pixi.internal.File,
+    active_layer: *const pixi.internal.Layer,
     start: dvui.Point,
     end: dvui.Point,
     mod: dvui.enums.Mod,
@@ -2037,7 +2036,7 @@ pub fn processSelection(self: *FileWidget) void {
                 var update: bool = false;
                 if (runtime.state().tools.selection_mode == .pixel) {
                     if (ke.matchBind("increase_stroke_size") and (ke.action == .down or ke.action == .repeat)) {
-                        if (runtime.state().tools.stroke_size < pixi_mod.Tools.max_brush_size - 1)
+                        if (runtime.state().tools.stroke_size < pixi.Tools.max_brush_size - 1)
                             runtime.state().tools.stroke_size += 1;
 
                         runtime.state().tools.setStrokeSize(runtime.state().tools.stroke_size);
@@ -2303,7 +2302,7 @@ pub fn processSelection(self: *FileWidget) void {
 
 fn processStrokeDragSegment(
     self: *FileWidget,
-    file: *pixi_mod.internal.File,
+    file: *pixi.internal.File,
     previous_point: dvui.Point,
     current_point: dvui.Point,
     screen_pt: dvui.Point.Physical,
@@ -2364,7 +2363,7 @@ fn processStrokeDragSegment(
                 .stroke_size = stroke_size,
             },
         );
-        pixi_mod.perf.draw_event_count += 1;
+        pixi.perf.draw_event_count += 1;
     } else |err| {
         dvui.log.err("strokeUndoExpandToCoverRect failed: {}", .{err});
     }
@@ -2672,7 +2671,7 @@ pub fn processTransform(self: *FileWidget) void {
             triangles.rotate(.{ .x = transform.point(.pivot).x, .y = transform.point(.pivot).y }, transform.rotation);
 
             for (transform.data_points[0..6], 0..) |*data_point, point_index| {
-                const transform_point = @as(pixi_mod.Transform.TransformPoint, @enumFromInt(point_index));
+                const transform_point = @as(pixi.Transform.TransformPoint, @enumFromInt(point_index));
                 const screen_point = if (point_index < 4) file.editor.canvas.screenFromDataPoint(.{ .x = triangles.vertexes[point_index].pos.x, .y = triangles.vertexes[point_index].pos.y }) else file.editor.canvas.screenFromDataPoint(data_point.*);
 
                 var screen_rect = dvui.Rect.Physical.fromPoint(screen_point);
@@ -2689,7 +2688,7 @@ pub fn processTransform(self: *FileWidget) void {
                     if (screen_rect.contains(dvui.currentWindow().mouse_pt)) {
                         dvui.cursorSet(.hand);
                     } else if (transform.active_point) |active_point| {
-                        if (active_point == @as(pixi_mod.Transform.TransformPoint, @enumFromInt(point_index))) {
+                        if (active_point == @as(pixi.Transform.TransformPoint, @enumFromInt(point_index))) {
                             dvui.cursorSet(.hand);
                         }
                     }
@@ -2784,7 +2783,7 @@ pub fn processTransform(self: *FileWidget) void {
                                                     new_point.y = @round(new_point.y);
 
                                                     // Now we have to un-rotate the vertex and set the original location
-                                                    new_point = pixi_mod.math.rotate(new_point, transform.point(.pivot).*, -transform.rotation);
+                                                    new_point = pixi.math.rotate(new_point, transform.point(.pivot).*, -transform.rotation);
 
                                                     const opposite_index: usize = switch (point_index) {
                                                         0 => 2,
@@ -2835,8 +2834,8 @@ pub fn processTransform(self: *FileWidget) void {
 
                                                             const opposite_point = &transform.data_points[opposite_index];
 
-                                                            var rotation_direction: dvui.Point = pixi_mod.math.rotate(dvui.Point{ .x = 1, .y = 0 }, transform.point(.pivot).*, 0);
-                                                            var rotation_perp: dvui.Point = pixi_mod.math.rotate(dvui.Point{ .x = 0, .y = 1 }, transform.point(.pivot).*, 0);
+                                                            var rotation_direction: dvui.Point = pixi.math.rotate(dvui.Point{ .x = 1, .y = 0 }, transform.point(.pivot).*, 0);
+                                                            var rotation_perp: dvui.Point = pixi.math.rotate(dvui.Point{ .x = 0, .y = 1 }, transform.point(.pivot).*, 0);
 
                                                             // Calculate the difference between the adjacent points and the new point
 
@@ -2890,7 +2889,7 @@ pub fn processTransform(self: *FileWidget) void {
                                                         transform.rotation = std.math.degreesToRadians(@round(std.math.radiansToDegrees(transform.start_rotation + (angle - drag_angle))));
 
                                                         if (me.mod.matchBind("ctrl/cmd")) { // Lock rotation to cardinal directions
-                                                            const direction = pixi_mod.math.Direction.fromRadians(transform.rotation);
+                                                            const direction = pixi.math.Direction.fromRadians(transform.rotation);
                                                             transform.rotation = switch (direction) {
                                                                 .n => std.math.pi / 2.0,
                                                                 .ne => std.math.pi / 4.0,
@@ -3028,7 +3027,7 @@ pub fn drawTransform(self: *FileWidget) void {
         }
 
         var centroid = transform.centroid();
-        centroid = pixi_mod.math.rotate(centroid, transform.point(.pivot).*, transform.rotation);
+        centroid = pixi.math.rotate(centroid, transform.point(.pivot).*, transform.rotation);
 
         // Full-sprite center guides (magenta). When ortho cell dimensions are shown, centering is
         // indicated on those dimension lines (blue) instead — avoids overlapping magenta guides.
@@ -3299,7 +3298,7 @@ pub fn drawTransform(self: *FileWidget) void {
                             const bottom_left_v = triangles.vertexes[3].pos;
                             const bottom_right_v = triangles.vertexes[2].pos;
 
-                            const offset_v = pixi_mod.math.rotate(
+                            const offset_v = pixi.math.rotate(
                                 dvui.Point{ .x = label_off_screen, .y = 0 },
                                 .{ .x = 0, .y = 0 },
                                 transform.rotation,
@@ -3311,7 +3310,7 @@ pub fn drawTransform(self: *FileWidget) void {
                             const simple_v = std.fmt.allocPrint(arena, "{d}", .{@as(i32, @intFromFloat(@round(inner_h_f)))}) catch "—";
                             renderTransformDimLabel(dim_font, simple_v, center_v.plus(off_v));
 
-                            const offset_h = pixi_mod.math.rotate(
+                            const offset_h = pixi.math.rotate(
                                 dvui.Point{ .x = 0, .y = -label_off_screen },
                                 .{ .x = 0, .y = 0 },
                                 transform.rotation,
@@ -3328,7 +3327,7 @@ pub fn drawTransform(self: *FileWidget) void {
                         const bottom_left = triangles.vertexes[3].pos;
                         const bottom_right = triangles.vertexes[2].pos;
 
-                        const offset_v = pixi_mod.math.rotate(
+                        const offset_v = pixi.math.rotate(
                             dvui.Point{ .x = label_off_screen, .y = 0 },
                             .{ .x = 0, .y = 0 },
                             transform.rotation,
@@ -3344,7 +3343,7 @@ pub fn drawTransform(self: *FileWidget) void {
                         ) catch "—";
                         renderTransformDimLabel(dim_font, simple_v, center_v.plus(off_v));
 
-                        const offset_h = pixi_mod.math.rotate(
+                        const offset_h = pixi.math.rotate(
                             dvui.Point{ .x = 0, .y = -label_off_screen },
                             .{ .x = 0, .y = 0 },
                             transform.rotation,
@@ -3444,7 +3443,7 @@ pub fn drawTransform(self: *FileWidget) void {
                 var color = dvui.themeGet().color(.window, .text);
 
                 if (transform.active_point) |active_point| {
-                    if (active_point == @as(pixi_mod.Transform.TransformPoint, @enumFromInt(point_index))) {
+                    if (active_point == @as(pixi.Transform.TransformPoint, @enumFromInt(point_index))) {
                         color = dvui.themeGet().color(.highlight, .fill);
                     }
                 } else if (screen_rect.contains(dvui.currentWindow().mouse_pt)) {
@@ -3554,7 +3553,7 @@ fn doubleStrokeDimensionTickColor(points: []const dvui.Point.Physical, thickness
 /// axis-aligned quad (4 vertices, 2 triangles) submitted via one `renderTriangles`.
 fn drawBatchedGridLines(
     self: *FileWidget,
-    file: *pixi_mod.internal.File,
+    file: *pixi.internal.File,
     columns: usize,
     rows: usize,
     grid_color: dvui.Color,
@@ -3680,7 +3679,7 @@ fn appendLineQuad(builder: *dvui.Triangles.Builder, tl: dvui.Point.Physical, br:
 }
 
 /// Viewport in data space + row/column index range for culling (matches bubble / grid logic).
-fn fileCanvasVisibleGridParams(file: *pixi_mod.internal.File) ?struct {
+fn fileCanvasVisibleGridParams(file: *pixi.internal.File) ?struct {
     visible_data: dvui.Rect,
     row_h: f32,
     col_w: f32,
@@ -3767,7 +3766,7 @@ fn appendHorizontalGridRunsForRow(
 /// Batches grid lines for the resize-shrink overlay (original layer_rect shown in error tint).
 fn drawBatchedResizeOverlayGrid(
     self: *FileWidget,
-    file: *pixi_mod.internal.File,
+    file: *pixi.internal.File,
     columns: usize,
     layer_rect: dvui.Rect,
     grid_thickness: f32,
@@ -3854,7 +3853,7 @@ fn checkerboardVertexColor(
 }
 
 /// Animation color for transparency tint; matches bubble arc palette lookup order (selected animation first, else first containing animation).
-fn spriteAnimationPaletteColor(file: *pixi_mod.internal.File, sprite_index: usize) ?dvui.Color {
+fn spriteAnimationPaletteColor(file: *pixi.internal.File, sprite_index: usize) ?dvui.Color {
     if (runtime.state().colors.file_tree_palette) |*palette| {
         var animation_index: ?usize = null;
 
@@ -3887,8 +3886,8 @@ fn spriteAnimationPaletteColor(file: *pixi_mod.internal.File, sprite_index: usiz
 }
 
 fn checkerboardCellCornerColor(
-    effect: pixi_mod.Settings.TransparencyEffect,
-    file: *pixi_mod.internal.File,
+    effect: pixi.Settings.TransparencyEffect,
+    file: *pixi.internal.File,
     sprite_index: usize,
     c_tl: dvui.Color,
     c_tr: dvui.Color,
@@ -3929,7 +3928,7 @@ fn checkerboardGridPalette() struct { tone: dvui.Color, c_tl: dvui.Color, c_tr: 
 }
 
 /// Same tint as the batched checkerboard for the cell under `sprite_index` (center UV), for bubbles etc.
-fn checkerboardTintAtSpriteCellCenter(file: *pixi_mod.internal.File, sprite_index: usize) dvui.Color {
+fn checkerboardTintAtSpriteCellCenter(file: *pixi.internal.File, sprite_index: usize) dvui.Color {
     const pal = checkerboardGridPalette();
     const tone = pal.tone;
     switch (runtime.state().settings.transparency_effect) {
@@ -3951,7 +3950,7 @@ fn checkerboardTintAtSpriteCellCenter(file: *pixi_mod.internal.File, sprite_inde
 
 /// Checkerboard behind layers: one batched quad per visible cell (UV 0..1 per cell — vertex colors
 /// vary per cell for rainbow / animation effects, which is why this isn't a single wrapped quad).
-fn drawCheckerboardCellsBatched(file: *pixi_mod.internal.File) void {
+fn drawCheckerboardCellsBatched(file: *pixi.internal.File) void {
     const n = file.spriteCount();
     if (n == 0) return;
 
@@ -4063,7 +4062,7 @@ pub fn active(self: *FileWidget) bool {
 }
 
 pub fn drawCursor(self: *FileWidget) void {
-    if (pixi_mod.core.dvui.canvasPointerInputSuppressed()) return;
+    if (pixi.core.dvui.canvasPointerInputSuppressed()) return;
     if (runtime.state().tools.current == .pointer and self.sample_data_point == null) return;
     if (runtime.state().tools.radial_menu.visible) return;
     if (self.init_options.file.editor.transform != null) return;
@@ -4105,15 +4104,15 @@ pub fn drawCursor(self: *FileWidget) void {
     const data_point = self.init_options.file.editor.canvas.dataFromScreenPoint(mouse_point);
 
     const selection_sprite = switch (runtime.state().tools.selection_mode) {
-        .box => if (subtract) runtime.uiAtlas().sprites[pixi_mod.atlas.sprites.box_selection_rem_default] else if (add) runtime.uiAtlas().sprites[pixi_mod.atlas.sprites.box_selection_add_default] else runtime.uiAtlas().sprites[pixi_mod.atlas.sprites.box_selection_default],
-        .pixel => if (subtract) runtime.uiAtlas().sprites[pixi_mod.atlas.sprites.pixel_selection_rem_default] else if (add) runtime.uiAtlas().sprites[pixi_mod.atlas.sprites.pixel_selection_add_default] else runtime.uiAtlas().sprites[pixi_mod.atlas.sprites.pixel_selection_default],
-        .color => if (subtract) runtime.uiAtlas().sprites[pixi_mod.atlas.sprites.color_selection_rem_default] else if (add) runtime.uiAtlas().sprites[pixi_mod.atlas.sprites.color_selection_add_default] else runtime.uiAtlas().sprites[pixi_mod.atlas.sprites.color_selection_default],
+        .box => if (subtract) runtime.uiAtlas().sprites[pixi.atlas.sprites.box_selection_rem_default] else if (add) runtime.uiAtlas().sprites[pixi.atlas.sprites.box_selection_add_default] else runtime.uiAtlas().sprites[pixi.atlas.sprites.box_selection_default],
+        .pixel => if (subtract) runtime.uiAtlas().sprites[pixi.atlas.sprites.pixel_selection_rem_default] else if (add) runtime.uiAtlas().sprites[pixi.atlas.sprites.pixel_selection_add_default] else runtime.uiAtlas().sprites[pixi.atlas.sprites.pixel_selection_default],
+        .color => if (subtract) runtime.uiAtlas().sprites[pixi.atlas.sprites.color_selection_rem_default] else if (add) runtime.uiAtlas().sprites[pixi.atlas.sprites.color_selection_add_default] else runtime.uiAtlas().sprites[pixi.atlas.sprites.color_selection_default],
     };
 
     if (switch (runtime.state().tools.current) {
-        .pencil => runtime.uiAtlas().sprites[pixi_mod.atlas.sprites.pencil_default],
-        .eraser => runtime.uiAtlas().sprites[pixi_mod.atlas.sprites.eraser_default],
-        .bucket => runtime.uiAtlas().sprites[pixi_mod.atlas.sprites.bucket_default],
+        .pencil => runtime.uiAtlas().sprites[pixi.atlas.sprites.pencil_default],
+        .eraser => runtime.uiAtlas().sprites[pixi.atlas.sprites.eraser_default],
+        .bucket => runtime.uiAtlas().sprites[pixi.atlas.sprites.bucket_default],
         .selection => selection_sprite,
         else => null,
     }) |sprite| {
@@ -4206,7 +4205,7 @@ fn mapDataRectToPhysicalStrip(sr: dvui.Rect, parent_data: dvui.Rect, parent_phys
 /// Draw the checkerboard alpha pattern into `dest_phys`. Uses wrap=.repeat on the tile texture so
 /// the entire region is one quad with UV scaled so each `cw × ch` of data space spans one tile.
 fn drawSampleMagnifierCheckerboardTiles(
-    file: *pixi_mod.internal.File,
+    file: *pixi.internal.File,
     region_data: dvui.Rect,
     dest_phys: dvui.Rect.Physical,
     scale: f32,
@@ -4233,7 +4232,7 @@ fn drawSampleMagnifierCheckerboardTiles(
 /// Build checkerboard + layers into an offscreen target. Layer composites are synced on the screen
 /// target first so `renderLayers` does not rebind this target via `syncLayerComposite`.
 fn drawSampleMagnifierCompositeBuild(
-    file: *pixi_mod.internal.File,
+    file: *pixi.internal.File,
     region_data: dvui.Rect,
     content_rs: dvui.RectScale,
     file_w: f32,
@@ -4245,18 +4244,18 @@ fn drawSampleMagnifierCompositeBuild(
     const h: u32 = @intFromFloat(@max(@ceil(content_rs.r.h), 1));
 
     const layer_region = region_data.intersect(dvui.Rect{ .x = 0, .y = 0, .w = file_w, .h = file_h });
-    const layer_opts_base = pixi_mod.render.RenderFileOptions{
+    const layer_opts_base = pixi.render.RenderFileOptions{
         .file = file,
         .rs = content_rs,
         .allow_peek = false,
     };
 
     // Refresh cached layer composites on the screen target (not the magnifier target).
-    pixi_mod.render.ensureLayerCompositesForPreview(layer_opts_base) catch {
+    pixi.render.ensureLayerCompositesForPreview(layer_opts_base) catch {
         dvui.log.err("Failed to sync layer composites for magnifier", .{});
     };
 
-    const target = dvui.textureCreateTarget(.{ .width = w, .height = h, .format = pixi_mod.render.compositeTargetPixelFormat(), .interpolation = .nearest }) catch {
+    const target = dvui.textureCreateTarget(.{ .width = w, .height = h, .format = pixi.render.compositeTargetPixelFormat(), .interpolation = .nearest }) catch {
         dvui.log.err("Failed to create magnifier composite target", .{});
         return null;
     };
@@ -4282,7 +4281,7 @@ fn drawSampleMagnifierCompositeBuild(
             .w = layer_region.w / file_w,
             .h = layer_region.h / file_h,
         };
-        pixi_mod.render.renderLayersMagnifierSample(.{
+        pixi.render.renderLayersMagnifierSample(.{
             .file = file,
             .rs = .{ .r = layer_phys, .s = 1.0 },
             .uv = uv_rect,
@@ -4383,9 +4382,9 @@ fn drawSampleMagnifierPresent(
     } }, .{ .thickness = 2, .color = .black });
 }
 
-pub fn drawSampleMagnifier(file: *pixi_mod.internal.File, data_point: dvui.Point) void {
+pub fn drawSampleMagnifier(file: *pixi.internal.File, data_point: dvui.Point) void {
     const canvas = &file.editor.canvas;
-    if (pixi_mod.core.dvui.canvasPointerInputSuppressed()) return;
+    if (pixi.core.dvui.canvasPointerInputSuppressed()) return;
     if (!canvas.samplePointerInViewport(dvui.currentWindow().mouse_pt)) return;
 
     _ = dvui.cursorSet(.hidden);
@@ -4483,8 +4482,8 @@ pub fn updateActiveLayerMask(self: *FileWidget) void {
 }
 
 pub fn drawLayers(self: *FileWidget) void {
-    const perf_t0 = pixi_mod.perf.drawLayersBegin();
-    defer pixi_mod.perf.drawLayersEnd(perf_t0);
+    const perf_t0 = pixi.perf.drawLayersBegin();
+    defer pixi.perf.drawLayersEnd(perf_t0);
 
     var file = self.init_options.file;
     var columns: usize = file.columns;
@@ -4558,7 +4557,7 @@ pub fn drawLayers(self: *FileWidget) void {
             self.drawColumnRowReorderPreview();
             return;
         } else {
-            pixi_mod.render.renderLayers(.{
+            pixi.render.renderLayers(.{
                 .file = file,
                 .rs = .{
                     .r = self.init_options.file.editor.canvas.rect,
@@ -4617,7 +4616,7 @@ pub fn drawLayers(self: *FileWidget) void {
             const sprite_rect_physical = self.init_options.file.editor.canvas.screenFromDataRect(sprite_rect);
 
             // Draw the origins when in the sprites pane
-            if (runtime.state().host.isActiveSidebarView(@import("../plugin.zig").view_sprites)) {
+            if (runtime.state().host.isActiveSidebarView(@import("../../plugin.zig").view_sprites)) {
                 const origin: dvui.Point = .{ .x = sprite_rect.topLeft().x + file.sprites.get(i).origin[0], .y = sprite_rect.topLeft().y + file.sprites.get(i).origin[1] };
 
                 const horizontal_line_start: dvui.Point = .{ .x = sprite_rect.topLeft().x, .y = origin.y };
@@ -4650,7 +4649,7 @@ const ReorderAxis = enum { columns, rows };
 /// Checkerboard alpha over each cell of the floating column/row, matching `drawCheckerboardCellsBatched` tint/UVs at half opacity.
 fn drawCheckerboardReorderFloatingStrip(
     self: *FileWidget,
-    file: *pixi_mod.internal.File,
+    file: *pixi.internal.File,
     removed_data_rect: dvui.Rect,
     strip_phys: dvui.Rect.Physical,
     axis: ReorderAxis,
@@ -4772,7 +4771,7 @@ fn drawColumnRowReorderPreview(self: *FileWidget) void {
 
 fn renderLayersInDataRect(
     self: *FileWidget,
-    file: *pixi_mod.internal.File,
+    file: *pixi.internal.File,
     data_rect: dvui.Rect,
     screen_rect_override: ?dvui.Rect.Physical,
 ) void {
@@ -4780,7 +4779,7 @@ fn renderLayersInDataRect(
     const w = @as(f32, @floatFromInt(file.width()));
     const h = @as(f32, @floatFromInt(file.height()));
     const r = screen_rect_override orelse file.editor.canvas.screenFromDataRect(data_rect);
-    pixi_mod.render.renderLayers(.{
+    pixi.render.renderLayers(.{
         .file = file,
         .rs = .{ .r = r, .s = scale },
         .uv = .{
@@ -4794,7 +4793,7 @@ fn renderLayersInDataRect(
 
 fn reorderSegmentRects(
     axis: ReorderAxis,
-    file: *pixi_mod.internal.File,
+    file: *pixi.internal.File,
     target_index: usize,
     removed_index: usize,
     target_rect: dvui.Rect,
@@ -4868,7 +4867,7 @@ fn reorderSegmentRects(
 
 fn drawReorderPreviewForAxis(
     self: *FileWidget,
-    file: *pixi_mod.internal.File,
+    file: *pixi.internal.File,
     axis: ReorderAxis,
     target_index: ?usize,
     removed_index: usize,
@@ -5018,10 +5017,10 @@ fn drawReorderPreviewForAxis(
         });
 
         {
-            pixi_mod.core.dvui.drawEdgeShadow(.{ .r = file.editor.canvas.screenFromDataRect(animated_target_box_rect), .s = scale }, if (axis == .columns) .right else .top, .{
+            pixi.core.dvui.drawEdgeShadow(.{ .r = file.editor.canvas.screenFromDataRect(animated_target_box_rect), .s = scale }, if (axis == .columns) .right else .top, .{
                 .opacity = 0.5,
             });
-            pixi_mod.core.dvui.drawEdgeShadow(.{ .r = file.editor.canvas.screenFromDataRect(animated_target_box_rect), .s = scale }, if (axis == .columns) .left else .bottom, .{
+            pixi.core.dvui.drawEdgeShadow(.{ .r = file.editor.canvas.screenFromDataRect(animated_target_box_rect), .s = scale }, if (axis == .columns) .left else .bottom, .{
                 .opacity = 0.5,
             });
         }
@@ -5279,22 +5278,22 @@ pub fn drawCellReorderPreview(self: *FileWidget) void {
 
                     if (left_index) |left_index_value| {
                         if (!temp_selected_sprite.isSet(left_index_value)) {
-                            pixi_mod.core.dvui.drawEdgeShadow(image_rect_scale, .left, .{ .opacity = 0.35 });
+                            pixi.core.dvui.drawEdgeShadow(image_rect_scale, .left, .{ .opacity = 0.35 });
                         }
                     }
                     if (right_index) |right_index_value| {
                         if (!temp_selected_sprite.isSet(right_index_value)) {
-                            pixi_mod.core.dvui.drawEdgeShadow(image_rect_scale, .right, .{ .opacity = 0.35 });
+                            pixi.core.dvui.drawEdgeShadow(image_rect_scale, .right, .{ .opacity = 0.35 });
                         }
                     }
                     if (top_index) |top_index_value| {
                         if (!temp_selected_sprite.isSet(top_index_value)) {
-                            pixi_mod.core.dvui.drawEdgeShadow(image_rect_scale, .top, .{ .opacity = 0.35 });
+                            pixi.core.dvui.drawEdgeShadow(image_rect_scale, .top, .{ .opacity = 0.35 });
                         }
                     }
                     if (bottom_index) |bottom_index_value| {
                         if (!temp_selected_sprite.isSet(bottom_index_value)) {
-                            pixi_mod.core.dvui.drawEdgeShadow(image_rect_scale, .bottom, .{ .opacity = 0.35 });
+                            pixi.core.dvui.drawEdgeShadow(image_rect_scale, .bottom, .{ .opacity = 0.35 });
                         }
                     }
                 }
@@ -5757,7 +5756,7 @@ pub fn processEvents(self: *FileWidget) void {
 
     const canvas_ptr = &self.init_options.file.editor.canvas;
     const mouse_pt = dvui.currentWindow().mouse_pt;
-    canvas_ptr.hovered = !pixi_mod.core.dvui.canvasPointerInputSuppressed() and
+    canvas_ptr.hovered = !pixi.core.dvui.canvasPointerInputSuppressed() and
         canvas_ptr.pointerOverDrawable(mouse_pt);
 
     // Cursor-leave: when hover transitions true → false, the last brush/fill preview
@@ -5799,14 +5798,14 @@ pub fn processEvents(self: *FileWidget) void {
     // current single touch will become one — otherwise the bucket/pencil hover preview would
     // flash on the pinned finger as the user starts a pan gesture.
     if (self.hovered() and !self.init_options.file.editor.canvas.gestureActive()) {
-        const pe_t0 = pixi_mod.perf.processEventsBegin();
-        defer pixi_mod.perf.processEventsEnd(pe_t0);
+        const pe_t0 = pixi.perf.processEventsBegin();
+        defer pixi.perf.processEventsEnd(pe_t0);
 
         resetTempLayerPreview(&self.init_options.file.editor);
 
         {
-            const mask_t0 = pixi_mod.perf.updateMaskBegin();
-            defer pixi_mod.perf.updateMaskEnd(mask_t0);
+            const mask_t0 = pixi.perf.updateMaskBegin();
+            defer pixi.perf.updateMaskEnd(mask_t0);
             self.updateActiveLayerMask();
         }
 
@@ -5819,14 +5818,14 @@ pub fn processEvents(self: *FileWidget) void {
         }
 
         if (self.init_options.file.editor.transform == null) {
-            const tool_t0 = pixi_mod.perf.toolProcessBegin();
+            const tool_t0 = pixi.perf.toolProcessBegin();
             switch (runtime.state().tools.current) {
                 .bucket => self.processFill(),
                 .pencil, .eraser => self.processStroke(),
                 .selection => self.processSelection(),
                 else => {},
             }
-            pixi_mod.perf.toolProcessEnd(tool_t0);
+            pixi.perf.toolProcessEnd(tool_t0);
         }
     } else if (self.hovered() and self.init_options.file.editor.canvas.gestureActive()) {
         // A 2-finger gesture (or its pending evaluation) just took over. Make sure any
@@ -5881,10 +5880,10 @@ pub fn processEvents(self: *FileWidget) void {
     }
 
     // Draw shadows for the scroll container
-    pixi_mod.core.dvui.drawEdgeShadow(self.init_options.file.editor.canvas.scroll_container.data().rectScale(), .top, .{ .opacity = 0.15 });
-    pixi_mod.core.dvui.drawEdgeShadow(self.init_options.file.editor.canvas.scroll_container.data().rectScale(), .bottom, .{});
-    pixi_mod.core.dvui.drawEdgeShadow(self.init_options.file.editor.canvas.scroll_container.data().rectScale(), .left, .{ .opacity = 0.15 });
-    pixi_mod.core.dvui.drawEdgeShadow(self.init_options.file.editor.canvas.scroll_container.data().rectScale(), .right, .{});
+    pixi.core.dvui.drawEdgeShadow(self.init_options.file.editor.canvas.scroll_container.data().rectScale(), .top, .{ .opacity = 0.15 });
+    pixi.core.dvui.drawEdgeShadow(self.init_options.file.editor.canvas.scroll_container.data().rectScale(), .bottom, .{});
+    pixi.core.dvui.drawEdgeShadow(self.init_options.file.editor.canvas.scroll_container.data().rectScale(), .left, .{ .opacity = 0.15 });
+    pixi.core.dvui.drawEdgeShadow(self.init_options.file.editor.canvas.scroll_container.data().rectScale(), .right, .{});
 
     self.drawTransform();
     self.processSample();
@@ -5903,7 +5902,7 @@ pub fn deinit(self: *FileWidget) void {
 }
 
 pub fn hovered(self: *FileWidget) bool {
-    if (pixi_mod.core.dvui.canvasPointerInputSuppressed()) return false;
+    if (pixi.core.dvui.canvasPointerInputSuppressed()) return false;
     return self.init_options.file.editor.canvas.hovered;
 }
 
@@ -5957,7 +5956,7 @@ fn tempBrushRect(point: dvui.Point, stroke_size: usize, img_w: u32, img_h: u32) 
 }
 
 /// Data-space rect of the on-screen canvas, outset by brush size so edge stamps are not clipped.
-fn tempStrokePreviewClipRect(canvas: *CanvasWidget, file: *const pixi_mod.internal.File, stroke_size: usize) dvui.Rect {
+fn tempStrokePreviewClipRect(canvas: *CanvasWidget, file: *const pixi.internal.File, stroke_size: usize) dvui.Rect {
     const vis = canvas.dataFromScreenRect(canvas.rect);
     const m: f32 = @floatFromInt(stroke_size);
     const inflated = vis.outsetAll(m);
@@ -5966,7 +5965,7 @@ fn tempStrokePreviewClipRect(canvas: *CanvasWidget, file: *const pixi_mod.intern
     return dvui.Rect.intersect(inflated, .{ .x = 0, .y = 0, .w = iw, .h = ih });
 }
 
-fn expandTempGpuDirtyRect(editor: *pixi_mod.internal.File.EditorData, rect: dvui.Rect) void {
+fn expandTempGpuDirtyRect(editor: *pixi.internal.File.EditorData, rect: dvui.Rect) void {
     if (editor.temp_gpu_dirty_rect) |existing| {
         editor.temp_gpu_dirty_rect = existing.unionWith(rect);
     } else {
@@ -5980,10 +5979,10 @@ fn expandTempGpuDirtyRect(editor: *pixi_mod.internal.File.EditorData, rect: dvui
 /// Clears the pixels covered by the current temp preview dirty rect, then
 /// resets the tracking state. Used before redrawing the brush preview at a
 /// new position.
-fn clearTempPreview(editor: *pixi_mod.internal.File.EditorData) void {
+fn clearTempPreview(editor: *pixi.internal.File.EditorData) void {
     if (editor.temp_preview_dirty_rect) |dirty| {
         if (dirty.w > 0 and dirty.h > 0) {
-            pixi_mod.image.clearRect(editor.temporary_layer.source, dirty);
+            pixi.image.clearRect(editor.temporary_layer.source, dirty);
             expandTempGpuDirtyRect(editor, dirty);
         }
     }
@@ -5991,10 +5990,10 @@ fn clearTempPreview(editor: *pixi_mod.internal.File.EditorData) void {
 }
 
 /// Clears the temporary brush preview layer and marks GPU/composite dirty.
-fn resetTempLayerPreview(editor: *pixi_mod.internal.File.EditorData) void {
+fn resetTempLayerPreview(editor: *pixi.internal.File.EditorData) void {
     if (editor.temp_preview_dirty_rect) |dirty| {
         if (dirty.w > 0 and dirty.h > 0) {
-            pixi_mod.image.clearRect(editor.temporary_layer.source, dirty);
+            pixi.image.clearRect(editor.temporary_layer.source, dirty);
             expandTempGpuDirtyRect(editor, dirty);
         }
         editor.temp_preview_dirty_rect = null;

@@ -1,11 +1,11 @@
-//! Sprite copy/paste for the pixel-art plugin. Backs the `pixi_mod.copy` / `pixi_mod.paste`
+//! Sprite copy/paste for the pixel-art plugin. Backs the `pixi.copy` / `pixi.paste`
 //! commands and pixel-art's own canvas handlers; the shell never owns this logic.
 const std = @import("std");
 const dvui = @import("dvui");
-const pixi_mod = @import("../pixi.zig");
+const pixi = @import("pixi.zig");
 const runtime = @import("runtime.zig");
-const State = pixi_mod.State;
-const Internal = pixi_mod.internal;
+const State = pixi.State;
+const Internal = pixi.internal;
 
 fn activeFile(st: *State) ?*Internal.File {
     const doc = st.host.activeDoc() orelse return null;
@@ -17,7 +17,7 @@ pub fn copy(st: *State) !void {
     if (file.editor.transform != null) return;
 
     if (st.sprite_clipboard) |*clipboard| {
-        runtime.allocator().free(pixi_mod.image.bytes(clipboard.source));
+        runtime.allocator().free(pixi.image.bytes(clipboard.source));
         st.sprite_clipboard = null;
     }
 
@@ -89,7 +89,7 @@ pub fn copy(st: *State) !void {
         const gpa = runtime.allocator();
 
         st.sprite_clipboard = .{
-            .source = pixi_mod.image.fromPixelsPMA(
+            .source = pixi.image.fromPixelsPMA(
                 @ptrCast(file.editor.transform_layer.pixelsFromRect(gpa, reduced_data_rect)),
                 @intFromFloat(reduced_data_rect.w),
                 @intFromFloat(reduced_data_rect.h),
@@ -98,7 +98,7 @@ pub fn copy(st: *State) !void {
             .offset = reduced_data_rect.topLeft().diff(sprite_tl),
         };
 
-        const id_mutex = dvui.toastAdd(dvui.currentWindow(), @src(), 0, file.editor.canvas.id, pixi_mod.core.dvui.toastDisplay, 2_000_000);
+        const id_mutex = dvui.toastAdd(dvui.currentWindow(), @src(), 0, file.editor.canvas.id, pixi.core.dvui.toastDisplay, 2_000_000);
         const id = id_mutex.id;
         const message = std.fmt.allocPrint(dvui.currentWindow().arena(), "Copied selection", .{}) catch "Copied selection.";
         dvui.dataSetSlice(dvui.currentWindow(), id, "_message", message);
@@ -111,7 +111,7 @@ pub fn paste(st: *State) !void {
         const file = activeFile(st) orelse return;
     const active_layer = file.layers.get(file.selected_layer_index);
 
-    var dst_rect: dvui.Rect = .fromSize(pixi_mod.image.size(clipboard.source));
+    var dst_rect: dvui.Rect = .fromSize(pixi.image.size(clipboard.source));
 
     var sprite_iterator = file.editor.selected_sprites.iterator(.{ .kind = .set, .direction = .forward });
     while (sprite_iterator.next()) |sprite_index| {
@@ -121,7 +121,7 @@ pub fn paste(st: *State) !void {
         dst_rect.y = sprite_rect.y + clipboard.offset.y;
 
         file.editor.transform = .{
-            .target_texture = dvui.textureCreateTarget(.{ .width = file.width(), .height = file.height(), .format = pixi_mod.render.compositeTargetPixelFormat(), .interpolation = .nearest }) catch {
+            .target_texture = dvui.textureCreateTarget(.{ .width = file.width(), .height = file.height(), .format = pixi.render.compositeTargetPixelFormat(), .interpolation = .nearest }) catch {
                 dvui.log.err("Failed to create target texture", .{});
                 return;
             },
@@ -164,7 +164,7 @@ pub fn paste(st: *State) !void {
             dst_rect.y = rect.y + clipboard.offset.y;
 
             file.editor.transform = .{
-                .target_texture = dvui.textureCreateTarget(.{ .width = file.width(), .height = file.height(), .format = pixi_mod.render.compositeTargetPixelFormat(), .interpolation = .nearest }) catch {
+                .target_texture = dvui.textureCreateTarget(.{ .width = file.width(), .height = file.height(), .format = pixi.render.compositeTargetPixelFormat(), .interpolation = .nearest }) catch {
                     dvui.log.err("Failed to create target texture", .{});
                     return;
                 },
@@ -193,7 +193,7 @@ pub fn paste(st: *State) !void {
     }
 
     file.editor.transform = .{
-        .target_texture = dvui.textureCreateTarget(.{ .width = file.width(), .height = file.height(), .format = pixi_mod.render.compositeTargetPixelFormat(), .interpolation = .nearest }) catch {
+        .target_texture = dvui.textureCreateTarget(.{ .width = file.width(), .height = file.height(), .format = pixi.render.compositeTargetPixelFormat(), .interpolation = .nearest }) catch {
             dvui.log.err("Failed to create target texture", .{});
             return;
         },

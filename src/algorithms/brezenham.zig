@@ -1,6 +1,6 @@
 const std = @import("std");
 const dvui = @import("dvui");
-const pixi_mod = @import("../../pixi.zig");
+const pixi = @import("../pixi.zig");
 const runtime = @import("../runtime.zig");
 
 pub fn process(start: dvui.Point, end: dvui.Point) ![]dvui.Point {

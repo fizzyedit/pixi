@@ -1,9 +1,9 @@
 //! Begin a transform on the active document (selection → transform handles).
 const dvui = @import("dvui");
-const pixi_mod = @import("../pixi.zig");
+const pixi = @import("pixi.zig");
 const runtime = @import("runtime.zig");
-const State = pixi_mod.State;
-const Internal = pixi_mod.internal;
+const State = pixi.State;
+const Internal = pixi.internal;
 
 fn activeFile(st: *State) ?*Internal.File {
     const doc = st.host.activeDoc() orelse return null;
@@ -91,7 +91,7 @@ pub fn begin(st: *State) !void {
         defer file.editor.selection_layer.clearMask();
         const gpa = runtime.allocator();
         file.editor.transform = .{
-            .target_texture = dvui.textureCreateTarget(.{ .width = file.width(), .height = file.height(), .format = pixi_mod.render.compositeTargetPixelFormat(), .interpolation = .nearest }) catch {
+            .target_texture = dvui.textureCreateTarget(.{ .width = file.width(), .height = file.height(), .format = pixi.render.compositeTargetPixelFormat(), .interpolation = .nearest }) catch {
                 dvui.log.err("Failed to create target texture", .{});
                 return;
             },
@@ -105,7 +105,7 @@ pub fn begin(st: *State) !void {
                 reduced_data_rect.center(),
                 reduced_data_rect.center(),
             },
-            .source = pixi_mod.image.fromPixelsPMA(
+            .source = pixi.image.fromPixelsPMA(
                 @ptrCast(file.editor.transform_layer.pixelsFromRect(gpa, reduced_data_rect)),
                 @intFromFloat(reduced_data_rect.w),
                 @intFromFloat(reduced_data_rect.h),

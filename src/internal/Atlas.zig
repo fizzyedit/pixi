@@ -3,14 +3,14 @@ const dvui = @import("dvui");
 
 const Atlas = @This();
 const ExternalAtlas = @import("../Atlas.zig");
-const pixi_mod = @import("../../pixi.zig");
+const pixi = @import("../pixi.zig");
 const runtime = @import("../runtime.zig");
 
 const alpha_checkerboard_count: u32 = 8;
 
 /// The packed atlas texture
 source: dvui.ImageSource,
-canvas: pixi_mod.core.dvui.CanvasWidget = .{},
+canvas: pixi.core.dvui.CanvasWidget = .{},
 
 /// Checkerboard tile for the project-tab atlas preview (not tied to open files).
 checkerboard_tile: ?dvui.Texture = null,
@@ -23,11 +23,11 @@ data: ExternalAtlas,
 
 pub fn initCheckerboardTile(atlas: *Atlas) void {
     deinitCheckerboardTile(atlas);
-    atlas.checkerboard_tile = pixi_mod.image.checkerboardTile(
+    atlas.checkerboard_tile = pixi.image.checkerboardTile(
         alpha_checkerboard_count,
         alpha_checkerboard_count,
-        runtime.state().settings.checker_color_even,
-        runtime.state().settings.checker_color_odd,
+        runtime.state().checker_color_even,
+        runtime.state().checker_color_odd,
     );
 }
 
@@ -56,9 +56,9 @@ pub fn save(atlas: Atlas, path: []const u8, selector: Selector) !void {
                 var out = std.Io.Writer.Allocating.init(allocator);
                 errdefer out.deinit();
                 if (std.mem.eql(u8, ext, ".png")) {
-                    try pixi_mod.image.writePngToWriter(atlas.source, &out.writer, 72);
+                    try pixi.image.writePngToWriter(atlas.source, &out.writer, 72);
                 } else if (std.mem.eql(u8, ext, ".jpg") or std.mem.eql(u8, ext, ".jpeg")) {
-                    try pixi_mod.image.writeJpgPpiToWriter(atlas.source, &out.writer, 72);
+                    try pixi.image.writeJpgPpiToWriter(atlas.source, &out.writer, 72);
                 } else {
                     std.log.debug("File name must end with .png, .jpg, or .jpeg extension!", .{});
                     return error.InvalidExtension;
@@ -87,9 +87,9 @@ pub fn save(atlas: Atlas, path: []const u8, selector: Selector) !void {
             const write_path = std.fmt.allocPrintSentinel(runtime.state().host.arena(), "{s}", .{path}, 0) catch unreachable;
 
             if (std.mem.eql(u8, ext, ".png")) {
-                try pixi_mod.image.writeToPng(atlas.source, write_path);
+                try pixi.image.writeToPng(atlas.source, write_path);
             } else if (std.mem.eql(u8, ext, ".jpg") or std.mem.eql(u8, ext, ".jpeg")) {
-                try pixi_mod.image.writeToJpg(atlas.source, write_path);
+                try pixi.image.writeToJpg(atlas.source, write_path);
             } else {
                 std.log.debug("File name must end with .png, .jpg, or .jpeg extension!", .{});
                 return error.InvalidExtension;

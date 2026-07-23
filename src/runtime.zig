@@ -1,6 +1,6 @@
 //! Runtime accessors — backed by `sdk.runtime` and shell-owned state.
 const std = @import("std");
-const sdk = @import("sdk");
+const sdk = @import("fizzy_sdk");
 const core = @import("core");
 const State = @import("State.zig");
 const Packer = @import("Packer.zig");

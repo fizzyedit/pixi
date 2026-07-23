@@ -2,9 +2,9 @@
 const std = @import("std");
 const dvui = @import("dvui");
 const icons = @import("icons");
-const pixi_mod = @import("../pixi.zig");
+const pixi = @import("pixi.zig");
 const runtime = @import("runtime.zig");
-const Tools = pixi_mod.Tools;
+const Tools = pixi.Tools;
 
 pub fn visible() bool {
     return runtime.state().tools.radial_menu.visible;
@@ -149,16 +149,16 @@ pub fn draw() !void {
         runtime.state().tools.drawTooltip(tool, button.data().rectScale().r, i) catch {};
 
         const selection_sprite = switch (runtime.state().tools.selection_mode) {
-            .box => ui_atlas.sprites[pixi_mod.atlas.sprites.box_selection_default],
-            .pixel => ui_atlas.sprites[pixi_mod.atlas.sprites.pixel_selection_default],
-            .color => ui_atlas.sprites[pixi_mod.atlas.sprites.color_selection_default],
+            .box => ui_atlas.sprites[pixi.atlas.sprites.box_selection_default],
+            .pixel => ui_atlas.sprites[pixi.atlas.sprites.pixel_selection_default],
+            .color => ui_atlas.sprites[pixi.atlas.sprites.color_selection_default],
         };
 
         const sprite = switch (tool) {
-            .pointer => ui_atlas.sprites[pixi_mod.atlas.sprites.cursor_default],
-            .pencil => ui_atlas.sprites[pixi_mod.atlas.sprites.pencil_default],
-            .eraser => ui_atlas.sprites[pixi_mod.atlas.sprites.eraser_default],
-            .bucket => ui_atlas.sprites[pixi_mod.atlas.sprites.bucket_default],
+            .pointer => ui_atlas.sprites[pixi.atlas.sprites.cursor_default],
+            .pencil => ui_atlas.sprites[pixi.atlas.sprites.pencil_default],
+            .eraser => ui_atlas.sprites[pixi.atlas.sprites.eraser_default],
+            .bucket => ui_atlas.sprites[pixi.atlas.sprites.bucket_default],
             .selection => selection_sprite,
         };
 

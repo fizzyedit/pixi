@@ -1,15 +1,15 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const dvui = @import("dvui");
-const pixi_mod = @import("../pixi.zig");
+const pixi = @import("pixi.zig");
 const runtime = @import("runtime.zig");
-const perf = pixi_mod.perf;
+const perf = pixi.perf;
 
 /// Monotonic frame counter, incremented once per frame from Editor.tick.
 pub var frame_index: u64 = 0;
 
 pub const RenderFileOptions = struct {
-    file: *pixi_mod.internal.File,
+    file: *pixi.internal.File,
     rs: dvui.RectScale,
     color_mod: dvui.Color = .white,
     fade: f32 = 0.0,
@@ -61,7 +61,7 @@ fn flushPendingLayerTextureUploads(init_opts: RenderFileOptions) void {
                 uploadSubRectAndSyncCache(
                     source_key,
                     &tex,
-                    pixi_mod.image.bytes(source).ptr,
+                    pixi.image.bytes(source).ptr,
                     @intFromFloat(dirty.x),
                     @intFromFloat(dirty.y),
                     @intFromFloat(dirty.w),
@@ -85,7 +85,7 @@ fn flushPendingLayerTextureUploads(init_opts: RenderFileOptions) void {
                     uploadSubRectAndSyncCache(
                         temp_key,
                         &tex,
-                        pixi_mod.image.bytes(temp_source).ptr,
+                        pixi.image.bytes(temp_source).ptr,
                         @intFromFloat(dirty.x),
                         @intFromFloat(dirty.y),
                         @intFromFloat(dirty.w),
@@ -123,11 +123,11 @@ fn layerViewStateForRender(init_opts: RenderFileOptions) struct { min_layer_inde
 }
 
 /// Non-null while layer list DnD preview is active (`File.editor.layer_drag_preview_*`); maps list position → storage index.
-fn layerOrderBufForDragPreview(file: *pixi_mod.internal.File, buf: []usize) ?[]const usize {
+fn layerOrderBufForDragPreview(file: *pixi.internal.File, buf: []usize) ?[]const usize {
     const r = file.editor.layer_drag_preview_removed orelse return null;
     const ins = file.editor.layer_drag_preview_insert_before orelse return null;
     if (file.layers.len == 0 or file.layers.len > buf.len) return null;
-    pixi_mod.internal.File.layerOrderAfterMove(file.layers.len, r, ins, buf[0..file.layers.len]);
+    pixi.internal.File.layerOrderAfterMove(file.layers.len, r, ins, buf[0..file.layers.len]);
     return buf[0..file.layers.len];
 }
 
@@ -371,7 +371,7 @@ fn splitCompositeEligible(
 /// Pixel size of the flattened layer stack — prefers the first layer (`canvasPixelSize`) so the
 /// composite matches bitmap data even when `columns × column_width` / `rows × row_height` disagree
 /// (slice/grid previews use the canvas as the locked image rect).
-fn layerCompositeExtent(file: *pixi_mod.internal.File) struct { w: u32, h: u32 } {
+fn layerCompositeExtent(file: *pixi.internal.File) struct { w: u32, h: u32 } {
     const c = file.canvasPixelSize();
     if (c.w > 0 and c.h > 0) return .{ .w = c.w, .h = c.h };
     const w = file.width();
@@ -390,7 +390,7 @@ pub fn compositeTargetPixelFormat() dvui.enums.TexturePixelFormat {
 
 /// Rebuilds the full-canvas flattened layer texture (all layers included).
 /// Used when NOT actively drawing.
-pub fn syncLayerComposite(file: *pixi_mod.internal.File) !void {
+pub fn syncLayerComposite(file: *pixi.internal.File) !void {
     const ce = layerCompositeExtent(file);
     const w = ce.w;
     const h = ce.h;
@@ -442,7 +442,7 @@ pub fn syncLayerComposite(file: *pixi_mod.internal.File) !void {
 /// The "below" target flattens layers visually below (higher index), and
 /// the "above" target flattens layers visually above (lower index).
 /// Only rebuilt when the split layer changes or a structural change occurs.
-fn syncSplitComposite(file: *pixi_mod.internal.File) !void {
+fn syncSplitComposite(file: *pixi.internal.File) !void {
     const ce = layerCompositeExtent(file);
     const w = ce.w;
     const h = ce.h;
@@ -527,7 +527,7 @@ fn syncSplitComposite(file: *pixi_mod.internal.File) !void {
 /// Pre-builds split-composite GPU targets and touches temp/selection textures so the first
 /// stroke does not pay allocation + flatten cost. Safe to call once after open or when
 /// selecting a drawing tool; no-op if composites are already current.
-pub fn warmupDrawingComposites(file: *pixi_mod.internal.File) !void {
+pub fn warmupDrawingComposites(file: *pixi.internal.File) !void {
     const w0 = perf.nanoTimestamp();
     try syncSplitComposite(file);
     _ = file.editor.temporary_layer.source.getTexture() catch null;
@@ -540,7 +540,7 @@ pub fn warmupDrawingComposites(file: *pixi_mod.internal.File) !void {
 /// from high index (visually bottom) to low index (visually top). An optional
 /// `skip_index` excludes a single layer.
 fn renderLayersIntoTarget(
-    file: *pixi_mod.internal.File,
+    file: *pixi.internal.File,
     target: dvui.Texture.Target,
     min_index: usize,
     max_index: usize,
@@ -597,7 +597,7 @@ fn renderLayersIntoTarget(
 /// sprite panel then draws each card (front and reflection) as a single textured
 /// pass sampling this, instead of replaying the whole stack as several
 /// overlapping alpha-blended fills per card. Rebuilt at most once per frame.
-pub fn syncPreviewComposite(file: *pixi_mod.internal.File) !void {
+pub fn syncPreviewComposite(file: *pixi.internal.File) !void {
     const ce = layerCompositeExtent(file);
     const w = ce.w;
     const h = ce.h;
@@ -701,7 +701,7 @@ pub fn syncPreviewComposite(file: *pixi_mod.internal.File) !void {
 /// Returns the baked cover-flow preview composite texture for single-pass card
 /// drawing, or null when the fast path isn't eligible (peek / isolate / dimming /
 /// active drawing / transform). Callers fall back to the multi-pass stack.
-pub fn spritePreviewComposite(file: *pixi_mod.internal.File) ?dvui.Texture {
+pub fn spritePreviewComposite(file: *pixi.internal.File) ?dvui.Texture {
     if (file.peek_layer_index != null) return null;
     if (file.editor.isolate_layer) return null;
     if (file.editor.transform != null) return null;
@@ -713,7 +713,7 @@ pub fn spritePreviewComposite(file: *pixi_mod.internal.File) ?dvui.Texture {
     return dvui.Texture.fromTargetTemp(t) catch null;
 }
 
-pub fn destroyLayerCompositeResources(file: *pixi_mod.internal.File) void {
+pub fn destroyLayerCompositeResources(file: *pixi.internal.File) void {
     if (file.editor.layer_composite_target) |t| {
         t.destroyLater();
         file.editor.layer_composite_target = null;
@@ -729,7 +729,7 @@ pub fn destroyLayerCompositeResources(file: *pixi_mod.internal.File) void {
     destroySplitCompositeResources(file);
 }
 
-pub fn destroySplitCompositeResources(file: *pixi_mod.internal.File) void {
+pub fn destroySplitCompositeResources(file: *pixi.internal.File) void {
     if (file.editor.split_composite_below) |t| {
         t.destroyLater();
         file.editor.split_composite_below = null;
@@ -773,7 +773,7 @@ pub fn renderLayers(init_opts: RenderFileOptions) !void {
         qpath.addPoint(q[1]);
         qpath.addPoint(q[2]);
         qpath.addPoint(q[3]);
-        break :blk try pixi_mod.sprite_render.pathToSubdividedQuad(qpath.build(), runtime.allocator(), .{
+        break :blk try pixi.sprite_render.pathToSubdividedQuad(qpath.build(), runtime.allocator(), .{
             .subdivisions = init_opts.quad_subdivisions,
             .uv = init_opts.uv,
             .color_mod = init_opts.color_mod,

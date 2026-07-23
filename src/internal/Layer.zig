@@ -1,7 +1,7 @@
 const std = @import("std");
 const dvui = @import("dvui");
 const zip = @import("zip");
-const pixi_mod = @import("../../pixi.zig");
+const pixi = @import("../pixi.zig");
 const runtime = @import("../runtime.zig");
 
 const Layer = @This();
@@ -55,7 +55,7 @@ pub fn init(id: u64, name: []const u8, width: u32, height: u32, default_color: d
 }
 
 pub fn fromImageFilePath(id: u64, name: []const u8, path: []const u8, invalidation: dvui.ImageSource.InvalidationStrategy) !Layer {
-    const source = pixi_mod.image.fromImageFilePath(name, path, invalidation) catch return error.ErrorCreatingImageSource;
+    const source = pixi.image.fromImageFilePath(name, path, invalidation) catch return error.ErrorCreatingImageSource;
     const mask = std.DynamicBitSet.initEmpty(runtime.allocator(), pixelCountForSource(source)) catch return error.MemoryAllocationFailed;
 
     return .{
@@ -67,7 +67,7 @@ pub fn fromImageFilePath(id: u64, name: []const u8, path: []const u8, invalidati
 }
 
 pub fn fromImageFileBytes(id: u64, name: []const u8, image_bytes: []const u8, invalidation: dvui.ImageSource.InvalidationStrategy) !Layer {
-    const source = pixi_mod.image.fromImageFileBytes(name, image_bytes, invalidation) catch return error.ErrorCreatingImageSource;
+    const source = pixi.image.fromImageFileBytes(name, image_bytes, invalidation) catch return error.ErrorCreatingImageSource;
     const mask = std.DynamicBitSet.initEmpty(runtime.allocator(), pixelCountForSource(source)) catch return error.MemoryAllocationFailed;
 
     return .{
@@ -80,7 +80,7 @@ pub fn fromImageFileBytes(id: u64, name: []const u8, image_bytes: []const u8, in
 
 pub fn fromPixelsPMA(id: u64, name: []const u8, pixel_data: []dvui.Color.PMA, width: u32, height: u32, invalidation: dvui.ImageSource.InvalidationStrategy) !Layer {
     if (pixel_data.len != width * height) return error.InvalidPixelDataLength;
-    const source = pixi_mod.image.fromPixelsPMA(pixel_data, width, height, invalidation) catch return error.ErrorCreatingImageSource;
+    const source = pixi.image.fromPixelsPMA(pixel_data, width, height, invalidation) catch return error.ErrorCreatingImageSource;
     const mask = std.DynamicBitSet.initEmpty(runtime.allocator(), @as(usize, @intCast(width * height))) catch return error.MemoryAllocationFailed;
 
     return .{
@@ -93,7 +93,7 @@ pub fn fromPixelsPMA(id: u64, name: []const u8, pixel_data: []dvui.Color.PMA, wi
 
 pub fn fromPixels(id: u64, name: []const u8, pixel_data: []u8, width: u32, height: u32, invalidation: dvui.ImageSource.InvalidationStrategy) !Layer {
     if (pixel_data.len != width * height) return error.InvalidPixelDataLength;
-    const source = pixi_mod.image.fromPixels(pixel_data, width, height, invalidation) catch return error.ErrorCreatingImageSource;
+    const source = pixi.image.fromPixels(pixel_data, width, height, invalidation) catch return error.ErrorCreatingImageSource;
     const mask = std.DynamicBitSet.initEmpty(runtime.allocator(), @as(usize, @intCast(width * height))) catch return error.MemoryAllocationFailed;
 
     return .{
@@ -105,7 +105,7 @@ pub fn fromPixels(id: u64, name: []const u8, pixel_data: []u8, width: u32, heigh
 }
 
 pub fn fromTexture(id: u64, name: []const u8, texture: dvui.Texture, invalidation: dvui.ImageSource.InvalidationStrategy) Layer {
-    const source = pixi_mod.fs.sourceFromTexture(name, texture, invalidation) catch return error.ErrorCreatingImageSource;
+    const source = pixi.fs.sourceFromTexture(name, texture, invalidation) catch return error.ErrorCreatingImageSource;
     const mask = std.DynamicBitSet.initEmpty(runtime.allocator(), pixelCountForSource(source)) catch return error.MemoryAllocationFailed;
 
     return .{
@@ -134,41 +134,41 @@ pub fn deinit(self: *Layer) void {
 
 /// Casts the source pixels into a slice of [4]u8
 pub fn pixels(self: *const Layer) [][4]u8 {
-    return pixi_mod.image.pixels(self.source);
+    return pixi.image.pixels(self.source);
 }
 
 /// Caller owns memory that must be freed!
 pub fn pixelsFromRect(self: *const Layer, allocator: std.mem.Allocator, rect: dvui.Rect) ?[][4]u8 {
-    return pixi_mod.image.pixelsFromRect(allocator, self.source, rect);
+    return pixi.image.pixelsFromRect(allocator, self.source, rect);
 }
 
 /// Casts the source pixels into a slice of bytes
 pub fn bytes(self: *const Layer) []u8 {
-    return pixi_mod.image.bytes(self.source);
+    return pixi.image.bytes(self.source);
 }
 
 /// Returns the index of the pixel at the given point
 /// returns null if the point is out of bounds
 pub fn pixelIndex(self: *Layer, p: dvui.Point) ?usize {
-    return pixi_mod.image.pixelIndex(self.source, p);
+    return pixi.image.pixelIndex(self.source, p);
 }
 
 /// Returns the point at the given index
 /// returns null if the index is out of bounds
 pub fn point(self: *Layer, index: usize) ?dvui.Point {
-    return pixi_mod.image.point(self.source, index);
+    return pixi.image.point(self.source, index);
 }
 
 /// Returns the color at the given point
 /// returns null if the point is out of bounds
 pub fn pixel(self: *Layer, p: dvui.Point) ?[4]u8 {
-    return pixi_mod.image.pixel(self.source, p);
+    return pixi.image.pixel(self.source, p);
 }
 
 /// Sets the color at the given point
 /// does not invalidate the layer
 pub fn setPixel(self: *Layer, p: dvui.Point, color: [4]u8) void {
-    pixi_mod.image.setPixel(self.source, p, color);
+    pixi.image.setPixel(self.source, p, color);
 }
 
 /// Sets the mask at the given point
@@ -250,7 +250,7 @@ pub fn floodMaskPoint(layer: *Layer, p: dvui.Point, bounds: dvui.Rect, value: bo
 }
 
 pub fn setPixelIndex(self: *Layer, index: usize, color: [4]u8) void {
-    pixi_mod.image.setPixelIndex(self.source, index, color);
+    pixi.image.setPixelIndex(self.source, index, color);
 }
 
 pub const ShapeOffsetResult = struct {
@@ -323,15 +323,15 @@ pub fn getIndexShapeOffset(self: *Layer, origin: dvui.Point, current_index: usiz
 /// Porter–Duff "source over" for premultiplied RGBA (`pixelsPMA` byte layout).
 /// `top` is composited over `bottom`. The implementation is generic byte math and
 /// lives in `core` math; re-exported here for the pixel-art call sites.
-pub const blendPmaSrcOver = pixi_mod.math.blendPmaSrcOver;
+pub const blendPmaSrcOver = pixi.math.blendPmaSrcOver;
 
 pub fn clearRect(self: *Layer, rect: dvui.Rect) void {
-    pixi_mod.image.clearRect(self.source, rect);
+    pixi.image.clearRect(self.source, rect);
     self.invalidate();
 }
 
 pub fn setRect(self: *Layer, rect: dvui.Rect, color: [4]u8) void {
-    pixi_mod.image.setRect(self.source, rect, color);
+    pixi.image.setRect(self.source, rect, color);
     self.invalidate();
 }
 
@@ -415,8 +415,8 @@ pub fn writeSourceToZip(
 
     var writer = std.Io.Writer.Allocating.init(runtime.state().host.arena());
 
-    try pixi_mod.image.ensurePngWriterBuffer(&writer.writer);
-    try dvui.PNGEncoder.writeWithResolution(&writer.writer, pixi_mod.image.bytes(source), @intCast(w), @intCast(h), resolution);
+    try pixi.image.ensurePngWriterBuffer(&writer.writer);
+    try dvui.PNGEncoder.writeWithResolution(&writer.writer, pixi.image.bytes(source), @intCast(w), @intCast(h), resolution);
 
     if (@as(?*zip.struct_zip_t, @ptrCast(zip_file))) |z| {
         _ = zip.zip_entry_write(z, writer.written().ptr, @as(usize, writer.written().len));
@@ -424,7 +424,7 @@ pub fn writeSourceToZip(
 }
 
 pub fn writeSourceToPng(layer: *const Layer, path: []const u8) !void {
-    return pixi_mod.fs.writeSourceToPng(layer.source, path);
+    return pixi.fs.writeSourceToPng(layer.source, path);
 }
 
 pub fn resize(layer: *Layer, new_size: dvui.Size) !void {
@@ -461,14 +461,14 @@ pub fn resize(layer: *Layer, new_size: dvui.Size) !void {
 /// Tighten `src` to the smallest sub-rect of this layer containing every opaque pixel.
 /// Returns null when `src` is empty, off-layer, or covers only fully-transparent pixels.
 ///
-/// Pure scalar logic lives in `pixi_mod.algorithms.reduce.reduce` so it can be exercised by
+/// Pure scalar logic lives in `pixi.algorithms.reduce.reduce` so it can be exercised by
 /// unit tests without dvui / fizzy globals — see that module for the contract details.
 pub fn reduce(layer: *Layer, src: dvui.Rect) ?dvui.Rect {
     const sz = layer.size();
     const layer_w: u32 = @intFromFloat(sz.w);
     const layer_h: u32 = @intFromFloat(sz.h);
 
-    const r = pixi_mod.algorithms.reduce.reduce(layer.pixels(), layer_w, layer_h, .{
+    const r = pixi.algorithms.reduce.reduce(layer.pixels(), layer_w, layer_h, .{
         .x = @intFromFloat(src.x),
         .y = @intFromFloat(src.y),
         .w = @intFromFloat(src.w),

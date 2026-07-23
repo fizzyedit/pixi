@@ -3,11 +3,11 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const dvui = @import("dvui");
-const pixi_mod = @import("../pixi.zig");
+const pixi = @import("pixi.zig");
 const runtime = @import("runtime.zig");
-const State = pixi_mod.State;
+const State = pixi.State;
 const PackJob = @import("PackJob.zig");
-const Internal = pixi_mod.internal;
+const Internal = pixi.internal;
 
 fn showPackToast(message: []const u8, canvas_id: ?dvui.Id) void {
     const anchor = canvas_id orelse blk: {
@@ -16,7 +16,7 @@ fn showPackToast(message: []const u8, canvas_id: ?dvui.Id) void {
         }
         break :blk dvui.currentWindow().data().id;
     };
-    const id_mutex = dvui.toastAdd(dvui.currentWindow(), @src(), 0, anchor, pixi_mod.core.dvui.toastDisplay, 2_500_000);
+    const id_mutex = dvui.toastAdd(dvui.currentWindow(), @src(), 0, anchor, pixi.core.dvui.toastDisplay, 2_500_000);
     const id = id_mutex.id;
     const msg_copy = std.fmt.allocPrint(dvui.currentWindow().arena(), "{s}", .{message}) catch message;
     dvui.dataSetSlice(dvui.currentWindow(), id, "_message", msg_copy);
@@ -183,7 +183,7 @@ pub fn tick(st: *State) void {
             for (current_atlas.data.animations) |*anim| gpa.free(anim.name);
             gpa.free(current_atlas.data.sprites);
             gpa.free(current_atlas.data.animations);
-            gpa.free(pixi_mod.image.bytes(current_atlas.source));
+            gpa.free(pixi.image.bytes(current_atlas.source));
 
             current_atlas.source = new_atlas.source;
             current_atlas.data = new_atlas.data;
@@ -192,9 +192,9 @@ pub fn tick(st: *State) void {
             runtime.packer().atlas = new_atlas;
             runtime.packer().atlas.?.initCheckerboardTile();
         }
-        runtime.packer().last_packed_at_ns = pixi_mod.perf.nanoTimestamp();
+        runtime.packer().last_packed_at_ns = pixi.perf.nanoTimestamp();
         job.result_consumed = true;
-        st.host.setActiveSidebarView("pixi_mod.project");
+        st.host.setActiveSidebarView("pixi.project");
         const toast_canvas: ?dvui.Id = if (st.host.activeDoc()) |doc|
             if (st.docs.fileById(doc.id)) |file| file.editor.canvas.id else null
         else

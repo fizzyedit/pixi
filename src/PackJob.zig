@@ -19,9 +19,9 @@
 const std = @import("std");
 const dvui = @import("dvui");
 const zstbi = @import("zstbi");
-const perf = pixi_mod.perf;
+const perf = pixi.perf;
 const reduce_alg = @import("algorithms/reduce.zig");
-const pixi_mod = @import("../pixi.zig");
+const pixi = @import("pixi.zig");
 const runtime = @import("runtime.zig");
 
 const PackJob = @This();
@@ -61,7 +61,7 @@ pub const PackSprite = struct {
 
 pub const PackAnimation = struct {
     name: []u8,
-    frames: []pixi_mod.Animation.Frame,
+    frames: []pixi.Animation.Frame,
 
     fn deinit(self: *PackAnimation, allocator: std.mem.Allocator) void {
         allocator.free(self.name);
@@ -82,7 +82,7 @@ pub const PackFile = struct {
 
     /// Deep-copy the pack-relevant fields of an in-memory file. Caller must run on the main
     /// thread (reads the file's pixel buffers, which the editor may otherwise mutate).
-    pub fn fromOpenFile(allocator: std.mem.Allocator, file: *const pixi_mod.internal.File) !PackFile {
+    pub fn fromOpenFile(allocator: std.mem.Allocator, file: *const pixi.internal.File) !PackFile {
         const src_layers = file.layers.slice();
 
         var layers = try allocator.alloc(PackLayer, src_layers.len);
@@ -98,7 +98,7 @@ pub const PackFile = struct {
             const sz = dvui.imageSize(layer.source) catch dvui.Size{ .w = 0, .h = 0 };
             const layer_w: u32 = @intFromFloat(sz.w);
             const layer_h: u32 = @intFromFloat(sz.h);
-            const src_pixels = pixi_mod.image.pixels(layer.source);
+            const src_pixels = pixi.image.pixels(layer.source);
 
             const name_copy = try allocator.dupe(u8, layer.name);
             errdefer allocator.free(name_copy);
@@ -136,7 +136,7 @@ pub const PackFile = struct {
             const anim = src_anims.get(a);
             const name_copy = try allocator.dupe(u8, anim.name);
             errdefer allocator.free(name_copy);
-            const frames_copy = try allocator.dupe(pixi_mod.Animation.Frame, anim.frames);
+            const frames_copy = try allocator.dupe(pixi.Animation.Frame, anim.frames);
             anims[a] = .{ .name = name_copy, .frames = frames_copy };
             anims_initialized = a + 1;
         }
@@ -156,7 +156,7 @@ pub const PackFile = struct {
 
     /// Build a snapshot by loading the file from disk. Safe to call from any thread.
     pub fn fromPath(allocator: std.mem.Allocator, path: []const u8) !?PackFile {
-        const maybe_file = try pixi_mod.internal.File.fromPath(path);
+        const maybe_file = try pixi.internal.File.fromPath(path);
         var file = maybe_file orelse return null;
         defer file.deinit();
         return try PackFile.fromOpenFile(allocator, &file);
@@ -214,7 +214,7 @@ done: std.atomic.Value(bool) = .init(false),
 /// Worker output. Read only after `done.load(.acquire)`. The main thread takes ownership of
 /// the inner allocations when it consumes the job; subsequent `destroy()` will leave the
 /// fields alone.
-result_atlas: ?pixi_mod.internal.Atlas = null,
+result_atlas: ?pixi.internal.Atlas = null,
 
 /// Set to `true` once the main thread has consumed `result_atlas` (so `destroy()` knows not
 /// to free the moved-out atlas allocations).
@@ -243,7 +243,7 @@ pub fn destroy(job: *PackJob) void {
     // allocations and we must not double-free.
     if (job.result_atlas != null and !job.result_consumed) {
         const atlas = job.result_atlas.?;
-        a.free(pixi_mod.image.bytes(atlas.source));
+        a.free(pixi.image.bytes(atlas.source));
         for (atlas.data.animations) |*anim| a.free(anim.name);
         a.free(atlas.data.animations);
         a.free(atlas.data.sprites);
@@ -404,7 +404,7 @@ pub fn workerMain(job: *PackJob) void {
 
     if (job.cancelled.load(.monotonic)) {
         // Free the atlas we just built since the consumer won't take it.
-        runtime.allocator().free(pixi_mod.image.bytes(atlas.source));
+        runtime.allocator().free(pixi.image.bytes(atlas.source));
         for (atlas.data.animations) |*anim| runtime.allocator().free(anim.name);
         runtime.allocator().free(atlas.data.animations);
         runtime.allocator().free(atlas.data.sprites);
@@ -441,7 +441,7 @@ const WorkerSprite = struct {
 
 const WorkerAnimation = struct {
     name: []u8,
-    frames: []pixi_mod.Animation.Frame,
+    frames: []pixi.Animation.Frame,
 
     fn deinit(self: *WorkerAnimation, allocator: std.mem.Allocator) void {
         allocator.free(self.name);
@@ -591,7 +591,7 @@ const WorkerState = struct {
                         if (anim.frames.len == 0) continue;
                         if (anim.frames[0].sprite_index != sprite_index) continue;
 
-                        const frames = try self.allocator.alloc(pixi_mod.Animation.Frame, anim.frames.len);
+                        const frames = try self.allocator.alloc(pixi.Animation.Frame, anim.frames.len);
                         for (frames, anim.frames, 0..) |*current_frame, src_frame, i| {
                             current_frame.* = .{
                                 .sprite_index = new_sprite_index + i,
@@ -669,7 +669,7 @@ const WorkerState = struct {
     /// and panics off the main thread. Build the atlas as a plain pixel buffer + raw
     /// `pixelsPMA` ImageSource directly; first use of the source on the main thread will pick
     /// up a fresh texture-cache key because `.invalidation = .ptr` keys on the pixel pointer.
-    fn buildAtlas(self: *WorkerState, tex_size: [2]u16) !pixi_mod.internal.Atlas {
+    fn buildAtlas(self: *WorkerState, tex_size: [2]u16) !pixi.internal.Atlas {
         const num_pixels: usize = @as(usize, tex_size[0]) * @as(usize, tex_size[1]);
         const pixels = try runtime.allocator().alloc([4]u8, num_pixels);
         errdefer runtime.allocator().free(pixels);
@@ -699,14 +699,14 @@ const WorkerState = struct {
             }
         }
 
-        const sprites_out = try runtime.allocator().alloc(pixi_mod.Atlas.Sprite, self.sprites.items.len);
+        const sprites_out = try runtime.allocator().alloc(pixi.Atlas.Sprite, self.sprites.items.len);
         errdefer runtime.allocator().free(sprites_out);
         for (sprites_out, self.sprites.items, self.frames.items) |*dst, src, src_rect| {
             dst.source = .{ src_rect.x, src_rect.y, src_rect.w, src_rect.h };
             dst.origin = src.origin;
         }
 
-        const animations_out = try runtime.allocator().alloc(pixi_mod.Animation, self.animations.items.len);
+        const animations_out = try runtime.allocator().alloc(pixi.Animation, self.animations.items.len);
         var anims_initialized: usize = 0;
         errdefer {
             for (animations_out[0..anims_initialized]) |*anim| runtime.allocator().free(anim.name);
@@ -715,7 +715,7 @@ const WorkerState = struct {
         for (animations_out, self.animations.items) |*dst, src| {
             dst.name = try runtime.allocator().dupe(u8, src.name);
             errdefer runtime.allocator().free(dst.name);
-            dst.frames = try runtime.allocator().dupe(pixi_mod.Animation.Frame, src.frames);
+            dst.frames = try runtime.allocator().dupe(pixi.Animation.Frame, src.frames);
             anims_initialized += 1;
         }
 

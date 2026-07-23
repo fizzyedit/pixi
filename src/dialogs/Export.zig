@@ -6,7 +6,7 @@ const zstbi = @import("zstbi");
 
 const DimensionsLabel = @import("dimensions_label.zig");
 const WebFileIo = @import("../web_file_io.zig");
-const pixi_mod = @import("../../pixi.zig");
+const pixi = @import("../pixi.zig");
 const runtime = @import("../runtime.zig");
 
 const ExportImageFormat = enum { png, jpg };
@@ -38,7 +38,7 @@ pub const min_scale: u32 = 1;
 pub var anim_frame_index: usize = 0;
 
 /// Animation to export/preview: uses the animation selected in the editor.
-fn exportAnimationIndex(file: *pixi_mod.internal.File) ?usize {
+fn exportAnimationIndex(file: *pixi.internal.File) ?usize {
     const idx = file.selected_animation_index orelse return null;
     if (idx >= file.animations.len) return null;
     return idx;
@@ -282,7 +282,7 @@ pub fn callAfter(_: dvui.Id, response: dvui.enums.DialogResponse) anyerror!void 
 
                     runtime.state().host.showSaveDialog(
                         saveAnimationCallback,
-                        &[_]pixi_mod.sdk.SaveDialogFilter{.{ .name = "GIF", .pattern = "gif" }},
+                        &[_]pixi.sdk.SaveDialogFilter{.{ .name = "GIF", .pattern = "gif" }},
                         default,
                         null, // Passing null here means use the last save folder location
                     );
@@ -305,7 +305,7 @@ pub fn callAfter(_: dvui.Id, response: dvui.enums.DialogResponse) anyerror!void 
 
                     runtime.state().host.showSaveDialog(
                         exportCurrentSpriteCallback,
-                        &[_]pixi_mod.sdk.SaveDialogFilter{
+                        &[_]pixi.sdk.SaveDialogFilter{
                             .{ .name = "PNG", .pattern = "png" },
                             .{ .name = "JPEG", .pattern = "jpg;jpeg" },
                         },
@@ -329,7 +329,7 @@ pub fn callAfter(_: dvui.Id, response: dvui.enums.DialogResponse) anyerror!void 
 
                     runtime.state().host.showSaveDialog(
                         exportLayerCallback,
-                        &[_]pixi_mod.sdk.SaveDialogFilter{
+                        &[_]pixi.sdk.SaveDialogFilter{
                             .{ .name = "PNG", .pattern = "png" },
                             .{ .name = "JPEG", .pattern = "jpg;jpeg" },
                         },
@@ -353,7 +353,7 @@ pub fn callAfter(_: dvui.Id, response: dvui.enums.DialogResponse) anyerror!void 
 
                     runtime.state().host.showSaveDialog(
                         exportAllCallback,
-                        &[_]pixi_mod.sdk.SaveDialogFilter{
+                        &[_]pixi.sdk.SaveDialogFilter{
                             .{ .name = "PNG", .pattern = "png" },
                             .{ .name = "JPEG", .pattern = "jpg;jpeg" },
                         },
@@ -371,7 +371,7 @@ pub fn callAfter(_: dvui.Id, response: dvui.enums.DialogResponse) anyerror!void 
 /// One call site for the export preview scroll+tile so widget ids (and first-frame layout) stay
 /// stable when switching between Single and Animation. Otherwise `renderLayers` early-outs for
 /// one frame with `content_rs.s == 0` on a fresh scroll id.
-fn renderExportPreviewSprite(file: *pixi_mod.internal.File, sprite_index: usize) void {
+fn renderExportPreviewSprite(file: *pixi.internal.File, sprite_index: usize) void {
     const sprite_rect = file.spriteRect(sprite_index);
     const max_size_content: dvui.Size = .{
         .w = (dvui.currentWindow().rect_pixels.w / dvui.currentWindow().natural_scale) / 2,
@@ -412,7 +412,7 @@ fn renderExportPreviewSprite(file: *pixi_mod.internal.File, sprite_index: usize)
         const local_natural = dvui.Rect{ .x = 0, .y = 0, .w = sprite_rect.w * scale, .h = sprite_rect.h * scale };
         drawCheckerboardCell(file, sprite_index, local_natural, box.data().rectScale());
 
-        pixi_mod.render.renderLayers(.{
+        pixi.render.renderLayers(.{
             .file = file,
             .rs = box.data().rectScale(),
             .uv = uv,
@@ -496,7 +496,7 @@ fn exportCheckerboardVertexColor(
     return tone.lerp(c_corner, t);
 }
 
-fn exportSpriteAnimationPaletteColor(file: *pixi_mod.internal.File, sprite_index: usize) ?dvui.Color {
+fn exportSpriteAnimationPaletteColor(file: *pixi.internal.File, sprite_index: usize) ?dvui.Color {
     if (runtime.state().colors.file_tree_palette) |*palette| {
         var animation_index: ?usize = null;
 
@@ -529,7 +529,7 @@ fn exportSpriteAnimationPaletteColor(file: *pixi_mod.internal.File, sprite_index
 }
 
 fn exportCheckerboardCellCornerColor(
-    file: *pixi_mod.internal.File,
+    file: *pixi.internal.File,
     sprite_index: usize,
     pal: CheckerboardPalette,
     u: f32,
@@ -557,7 +557,7 @@ fn exportCheckerboardCellCornerColor(
 fn appendCheckerboardCellQuad(
     builder: *dvui.Triangles.Builder,
     quad_idx: *usize,
-    file: *pixi_mod.internal.File,
+    file: *pixi.internal.File,
     sprite_index: usize,
     pal: CheckerboardPalette,
     geometry_natural: dvui.Rect,
@@ -596,7 +596,7 @@ fn appendCheckerboardCellQuad(
 }
 
 fn drawCheckerboardCell(
-    file: *pixi_mod.internal.File,
+    file: *pixi.internal.File,
     sprite_index: usize,
     geometry_natural: dvui.Rect,
     rs_box: dvui.RectScale,
@@ -618,7 +618,7 @@ fn drawCheckerboardCell(
     };
 }
 
-fn drawCheckerboardFileGrid(file: *pixi_mod.internal.File, rs_box: dvui.RectScale) void {
+fn drawCheckerboardFileGrid(file: *pixi.internal.File, rs_box: dvui.RectScale) void {
     const n = file.spriteCount();
     if (n == 0) return;
 
@@ -644,13 +644,13 @@ fn drawCheckerboardFileGrid(file: *pixi_mod.internal.File, rs_box: dvui.RectScal
 
 /// Full-canvas preview at 1:1 logical pixels: checkerboard + either the selected layer only or the
 /// flattened composite (all visible layers). One scroll + box `call site for stable widget ids.
-fn renderExportPreview(file: *pixi_mod.internal.File, kind: ExportFullPreviewKind) void {
+fn renderExportPreview(file: *pixi.internal.File, kind: ExportFullPreviewKind) void {
     const w = file.width();
     const h = file.height();
     if (w == 0 or h == 0) return;
 
     if (kind == .composite) {
-        pixi_mod.render.syncLayerComposite(file) catch {
+        pixi.render.syncLayerComposite(file) catch {
             dvui.log.err("Export preview: failed to build layer composite", .{});
             return;
         };
@@ -726,8 +726,8 @@ fn writeImageToPath(source: dvui.ImageSource, path: []const u8, format: ExportIm
         var out = std.Io.Writer.Allocating.init(runtime.allocator());
         errdefer out.deinit();
         switch (format) {
-            .png => try pixi_mod.image.writePngToWriter(source, &out.writer, 0),
-            .jpg => try pixi_mod.image.writeJpgPpiToWriter(source, &out.writer, 0),
+            .png => try pixi.image.writePngToWriter(source, &out.writer, 0),
+            .jpg => try pixi.image.writeJpgPpiToWriter(source, &out.writer, 0),
         }
         const bytes = try out.toOwnedSlice();
         defer runtime.allocator().free(bytes);
@@ -735,8 +735,8 @@ fn writeImageToPath(source: dvui.ImageSource, path: []const u8, format: ExportIm
         return;
     }
     switch (format) {
-        .png => try pixi_mod.image.writeToPngResolution(source, path, 0),
-        .jpg => try pixi_mod.image.writeToJpgPpi(source, path, 0),
+        .png => try pixi.image.writeToPngResolution(source, path, 0),
+        .jpg => try pixi.image.writeToJpgPpi(source, path, 0),
     }
 }
 
@@ -750,7 +750,7 @@ fn writeGifBytes(path: []const u8, data: []const u8) !void {
 
 /// Flatten visible layers for one sprite tile. Layer index `0` is the front (drawn last on canvas);
 /// higher indices sit behind. `blitData` composites its **first** buffer (upper) over the **second** (lower).
-fn compositedSpritePixels(allocator: std.mem.Allocator, file: *pixi_mod.internal.File, sprite_index: usize) ![][4]u8 {
+fn compositedSpritePixels(allocator: std.mem.Allocator, file: *pixi.internal.File, sprite_index: usize) ![][4]u8 {
     const sprite_rect = file.spriteRect(sprite_index);
     const w: usize = @intFromFloat(sprite_rect.w);
     const h: usize = @intFromFloat(sprite_rect.h);
@@ -771,7 +771,7 @@ fn compositedSpritePixels(allocator: std.mem.Allocator, file: *pixi_mod.internal
             const layer_pixels = lower.pixelsFromRect(allocator, sprite_rect) orelse continue;
             defer allocator.free(layer_pixels);
 
-            pixi_mod.image.blitData(pixels, w, h, layer_pixels, sprite_rect.justSize(), true);
+            pixi.image.blitData(pixels, w, h, layer_pixels, sprite_rect.justSize(), true);
         }
 
         return pixels;
@@ -922,7 +922,7 @@ pub fn exportAllToPath(path: []const u8) anyerror!void {
     const h = file.height();
     if (w == 0 or h == 0) return error.InvalidImageSize;
 
-    try pixi_mod.render.syncLayerComposite(file);
+    try pixi.render.syncLayerComposite(file);
     const target = file.editor.layer_composite_target orelse {
         return error.NoLayerComposite;
     };
@@ -933,7 +933,7 @@ pub fn exportAllToPath(path: []const u8) anyerror!void {
         runtime.allocator().free(@as([*]u8, @ptrCast(pma_read.ptr))[0..byte_len]);
     }
 
-    var tmp_layer: pixi_mod.internal.Layer = try .fromPixelsPMA(0, "export", pma_read, w, h, .ptr);
+    var tmp_layer: pixi.internal.Layer = try .fromPixelsPMA(0, "export", pma_read, w, h, .ptr);
     defer tmp_layer.deinit();
 
     const format: ExportImageFormat = if (is_png) .png else .jpg;
@@ -961,7 +961,7 @@ pub fn createAnimationGif(path: []const u8) anyerror!void {
 
     const animation_index = exportAnimationIndex(file) orelse return error.NoSelectedAnimation;
     {
-        const anim: pixi_mod.internal.Animation = file.animations.get(animation_index);
+        const anim: pixi.internal.Animation = file.animations.get(animation_index);
 
         var export_width = file.column_width;
         var export_height = file.row_height;

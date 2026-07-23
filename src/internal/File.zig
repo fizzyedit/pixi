@@ -10,8 +10,8 @@ const File = @This();
 const Layer = @import("Layer.zig");
 const Sprite = @import("Sprite.zig");
 const Animation = @import("Animation.zig");
-const pixi_mod = @import("../../pixi.zig");
-const plugin = @import("../plugin.zig");
+const pixi = @import("../pixi.zig");
+const plugin = @import("../../plugin.zig");
 const runtime = @import("../runtime.zig");
 
 const alpha_checkerboard_count: u32 = 8;
@@ -64,7 +64,7 @@ pub const EditorData = struct {
     /// Set by the shell each frame before draw: request the canvas recenter this frame
     /// (true while a workspace/panel pane is mid-animation). Read by the document render.
     center: bool = false,
-    canvas: pixi_mod.core.dvui.CanvasWidget = .{},
+    canvas: pixi.core.dvui.CanvasWidget = .{},
     layers_scroll_info: dvui.ScrollInfo = .{ .horizontal = .auto },
     sprites_scroll_info: dvui.ScrollInfo = .{ .horizontal = .auto },
     animations_scroll_info: dvui.ScrollInfo = .{ .horizontal = .auto },
@@ -186,7 +186,7 @@ pub const EditorData = struct {
     was_saving: bool = false,
     /// Set from any thread in `setSaving(false)`; main-thread `tickSaveDoneFlash` arms the flash.
     save_complete: std.atomic.Value(bool) = .init(false),
-    /// Monotonic deadline (`pixi_mod.perf.nanoTimestamp`): save-complete affordance in tab / tree.
+    /// Monotonic deadline (`pixi.perf.nanoTimestamp`): save-complete affordance in tab / tree.
     save_complete_show_duration: ?i128 = null,
     /// Set with `save_complete_show_duration` when the flash arms (`isSaving` → false).
     save_complete_show_start: ?i128 = null,
@@ -202,16 +202,16 @@ pub const InitOptions = struct {
     row_height: u32,
 };
 
-pub fn init(path: []const u8, options: InitOptions) !pixi_mod.internal.File {
-    var internal: pixi_mod.internal.File = .{
+pub fn init(path: []const u8, options: InitOptions) !pixi.internal.File {
+    var internal: pixi.internal.File = .{
         .id = runtime.state().host.allocDocId(),
         .path = try runtime.allocator().dupe(u8, path),
         .columns = options.columns,
         .rows = options.rows,
         .column_width = options.column_width,
         .row_height = options.row_height,
-        .history = pixi_mod.internal.File.History.init(runtime.allocator()),
-        .buffers = pixi_mod.internal.File.Buffers.init(runtime.allocator()),
+        .history = pixi.internal.File.History.init(runtime.allocator()),
+        .buffers = pixi.internal.File.Buffers.init(runtime.allocator()),
     };
 
     // Initialize editor layers and selected sprites
@@ -223,7 +223,7 @@ pub fn init(path: []const u8, options: InitOptions) !pixi_mod.internal.File {
     internal.editor.checkerboard = try std.DynamicBitSet.initEmpty(runtime.allocator(), internal.width() * internal.height());
     // Create a layer-sized checkerboard pattern for selection tools
     for (0..internal.width() * internal.height()) |i| {
-        const value = pixi_mod.math.checker(.{ .w = @floatFromInt(internal.width()), .h = @floatFromInt(internal.height()) }, i);
+        const value = pixi.math.checker(.{ .w = @floatFromInt(internal.width()), .h = @floatFromInt(internal.height()) }, i);
         internal.editor.checkerboard.setValue(i, value);
     }
 
@@ -262,11 +262,11 @@ pub fn checkerboardTileTexture(file: *File) ?dvui.Texture {
         dvui.textureDestroyLater(t);
         file.editor.checkerboard_tile = null;
     }
-    file.editor.checkerboard_tile = pixi_mod.image.checkerboardTile(
+    file.editor.checkerboard_tile = pixi.image.checkerboardTile(
         want.w,
         want.h,
-        runtime.state().settings.checker_color_even,
-        runtime.state().settings.checker_color_odd,
+        runtime.state().checker_color_even,
+        runtime.state().checker_color_odd,
     );
     return file.editor.checkerboard_tile;
 }
@@ -294,7 +294,7 @@ pub fn setSaving(file: *File, v: bool) void {
     } else {
         // Arm the finish animation immediately so synchronous wasm saves (and any save
         // that completes between frames) don't leave `save_complete` stuck true.
-        const now = pixi_mod.perf.nanoTimestamp();
+        const now = pixi.perf.nanoTimestamp();
         file.editor.save_complete_show_start = now;
         file.editor.save_complete_show_duration = now + save_done_flash_duration_ns;
         file.editor.save_complete.store(false, .monotonic);
@@ -320,7 +320,7 @@ const save_done_flash_duration_ns: i128 = 2 * std.time.ns_per_s;
 /// Call once per frame from the main thread. Arms save-complete feedback when
 /// `isSaving()` falls from true to false.
 pub fn tickSaveDoneFlash(file: *File) void {
-    const now = pixi_mod.perf.nanoTimestamp();
+    const now = pixi.perf.nanoTimestamp();
     const saving = file.isSaving();
     const pending = file.editor.save_complete.swap(false, .monotonic);
     if (!saving and (pending or file.editor.was_saving) and file.editor.save_complete_show_duration == null) {
@@ -351,12 +351,12 @@ pub fn showSaveDoneFlash(file: *const File) bool {
     return timeSinceSaveComplete(file) != null;
 }
 
-/// Nanoseconds since save finished (`null` when inactive). Drives [`pixi_mod.core.dvui.bubbleSpinner`]'s
+/// Nanoseconds since save finished (`null` when inactive). Drives [`pixi.core.dvui.bubbleSpinner`]'s
 /// finish animation (sync → pop → check).
 pub fn timeSinceSaveComplete(file: *const File) ?i128 {
     const until = file.editor.save_complete_show_duration orelse return null;
     const st = file.editor.save_complete_show_start orelse return null;
-    const now = pixi_mod.perf.nanoTimestamp();
+    const now = pixi.perf.nanoTimestamp();
     if (now >= until) return null;
     return @max(@as(i128, 0), now - st);
 }
@@ -388,7 +388,7 @@ pub fn invalidateActiveLayerTransparencyMaskCache(file: *File) void {
 pub const layerOrderAfterMove = @import("layer_order.zig").layerOrderAfterMove;
 
 /// Load from in-memory bytes (browser file picker). `path` is used for extension detection and display name.
-pub fn fromBytes(path: []const u8, file_bytes: []const u8) !?pixi_mod.internal.File {
+pub fn fromBytes(path: []const u8, file_bytes: []const u8) !?pixi.internal.File {
     const extension = std.fs.path.extension(path);
     if (isFlatImageExtension(extension)) {
         return fromBytesFlatImage(path, file_bytes);
@@ -400,7 +400,7 @@ pub fn fromBytes(path: []const u8, file_bytes: []const u8) !?pixi_mod.internal.F
 }
 
 /// Attempts to load a file from the given path to create a new file
-pub fn fromPath(path: []const u8) !?pixi_mod.internal.File {
+pub fn fromPath(path: []const u8) !?pixi.internal.File {
     const extension = std.fs.path.extension(path[0..path.len]);
     if (isFlatImageExtension(extension)) {
         const file = fromPathFlatImage(path) catch |err| {
@@ -427,15 +427,15 @@ pub fn isFizzyExtension(ext: []const u8) bool {
     return std.mem.eql(u8, ext, ".fiz") or std.mem.eql(u8, ext, ".pixi");
 }
 
-pub fn fromPathFizzy(path: []const u8) !?pixi_mod.internal.File {
+pub fn fromPathFizzy(path: []const u8) !?pixi.internal.File {
     return loadFizzyZip(path, null);
 }
 
-pub fn fromBytesFizzy(path: []const u8, file_bytes: []const u8) !?pixi_mod.internal.File {
+pub fn fromBytesFizzy(path: []const u8, file_bytes: []const u8) !?pixi.internal.File {
     return loadFizzyZip(path, file_bytes);
 }
 
-fn loadFizzyZip(path: []const u8, file_bytes: ?[]const u8) !?pixi_mod.internal.File {
+fn loadFizzyZip(path: []const u8, file_bytes: ?[]const u8) !?pixi.internal.File {
     if (!isFizzyExtension(std.fs.path.extension(path[0..path.len])))
         return error.InvalidExtension;
 
@@ -476,16 +476,16 @@ fn loadFizzyZip(path: []const u8, file_bytes: ?[]const u8) !?pixi_mod.internal.F
             .ignore_unknown_fields = true,
         };
 
-        var try_parse: ?std.json.Parsed(pixi_mod.File) = null;
-        try_parse = std.json.parseFromSlice(pixi_mod.File, runtime.allocator(), content, options) catch null;
+        var try_parse: ?std.json.Parsed(pixi.File) = null;
+        try_parse = std.json.parseFromSlice(pixi.File, runtime.allocator(), content, options) catch null;
 
-        var ext: pixi_mod.File = if (try_parse) |parsed| parsed.value else undefined;
+        var ext: pixi.File = if (try_parse) |parsed| parsed.value else undefined;
 
         if (try_parse == null) {
             // If we are here, we have tried to load the file but hit an issue because the old animation format
-            if (std.json.parseFromSlice(pixi_mod.File.FileV3, runtime.allocator(), content, options) catch null) |old_file| {
+            if (std.json.parseFromSlice(pixi.File.FileV3, runtime.allocator(), content, options) catch null) |old_file| {
                 std.log.info("Loading file v3: {s}", .{path});
-                const animations = try runtime.allocator().alloc(pixi_mod.Animation, old_file.value.animations.len);
+                const animations = try runtime.allocator().alloc(pixi.Animation, old_file.value.animations.len);
                 for (animations, old_file.value.animations) |*animation, old_animation| {
                     animation.name = try runtime.allocator().dupe(u8, old_animation.name);
                     animation.frames = try runtime.allocator().alloc(Animation.Frame, old_animation.frames.len);
@@ -505,9 +505,9 @@ fn loadFizzyZip(path: []const u8, file_bytes: ?[]const u8) !?pixi_mod.internal.F
                     .sprites = old_file.value.sprites,
                     .animations = animations,
                 };
-            } else if (std.json.parseFromSlice(pixi_mod.File.FileV2, runtime.allocator(), content, options) catch null) |old_file| {
+            } else if (std.json.parseFromSlice(pixi.File.FileV2, runtime.allocator(), content, options) catch null) |old_file| {
                 std.log.info("Loading file v2: {s}", .{path});
-                const animations = try runtime.allocator().alloc(pixi_mod.Animation, old_file.value.animations.len);
+                const animations = try runtime.allocator().alloc(pixi.Animation, old_file.value.animations.len);
                 for (animations, old_file.value.animations) |*animation, old_animation| {
                     animation.name = try runtime.allocator().dupe(u8, old_animation.name);
                     animation.frames = try runtime.allocator().alloc(Animation.Frame, old_animation.frames.len);
@@ -527,9 +527,9 @@ fn loadFizzyZip(path: []const u8, file_bytes: ?[]const u8) !?pixi_mod.internal.F
                     .sprites = old_file.value.sprites,
                     .animations = animations,
                 };
-            } else if (std.json.parseFromSlice(pixi_mod.File.FileV1, runtime.allocator(), content, options) catch null) |old_file| {
+            } else if (std.json.parseFromSlice(pixi.File.FileV1, runtime.allocator(), content, options) catch null) |old_file| {
                 std.log.info("Loading file v1: {s}", .{path});
-                const animations = try runtime.allocator().alloc(pixi_mod.Animation, old_file.value.animations.len);
+                const animations = try runtime.allocator().alloc(pixi.Animation, old_file.value.animations.len);
                 for (animations, 0..) |*animation, i| {
                     animation.name = try runtime.allocator().dupe(u8, old_file.value.animations[i].name);
                     animation.frames = try runtime.allocator().alloc(Animation.Frame, old_file.value.animations[i].length);
@@ -556,15 +556,15 @@ fn loadFizzyZip(path: []const u8, file_bytes: ?[]const u8) !?pixi_mod.internal.F
 
         //defer parsed.deinit();
 
-        var internal: pixi_mod.internal.File = .{
+        var internal: pixi.internal.File = .{
             .id = runtime.state().host.allocDocId(),
             .path = try runtime.allocator().dupe(u8, path),
             .columns = ext.columns,
             .rows = ext.rows,
             .column_width = ext.column_width,
             .row_height = ext.row_height,
-            .history = pixi_mod.internal.File.History.init(runtime.allocator()),
-            .buffers = pixi_mod.internal.File.Buffers.init(runtime.allocator()),
+            .history = pixi.internal.File.History.init(runtime.allocator()),
+            .buffers = pixi.internal.File.Buffers.init(runtime.allocator()),
         };
 
         //Initialize editor layers and selected sprites
@@ -578,7 +578,7 @@ fn loadFizzyZip(path: []const u8, file_bytes: ?[]const u8) !?pixi_mod.internal.F
         internal.editor.checkerboard = try std.DynamicBitSet.initEmpty(runtime.allocator(), internal.width() * internal.height());
         // Create a layer-sized checkerboard pattern for selection tools
         for (0..internal.width() * internal.height()) |i| {
-            const value = pixi_mod.math.checker(.{ .w = @floatFromInt(internal.width()), .h = @floatFromInt(internal.height()) }, i);
+            const value = pixi.math.checker(.{ .w = @floatFromInt(internal.width()), .h = @floatFromInt(internal.height()) }, i);
             internal.editor.checkerboard.setValue(i, value);
         }
 
@@ -669,7 +669,7 @@ fn loadFizzyZip(path: []const u8, file_bytes: ?[]const u8) !?pixi_mod.internal.F
     //     var file_name_buffer: [std.fs.max_path_bytes]u8 = undefined;
     //     var link_name_buffer: [std.fs.max_path_bytes]u8 = undefined;
 
-    //     if (pixi_mod.fs.read(runtime.allocator(), path) catch null) |file_bytes| {
+    //     if (pixi.fs.read(runtime.allocator(), path) catch null) |file_bytes| {
     //         std.log.debug("Read file bytes!", .{});
     //         var input = std.io.fixedBufferStream(file_bytes);
     //         var iter = std.tar.iterator(input.reader(), .{
@@ -692,23 +692,23 @@ fn loadFizzyZip(path: []const u8, file_bytes: ?[]const u8) !?pixi_mod.internal.F
     //             .ignore_unknown_fields = true,
     //         };
 
-    //         if (std.json.parseFromSlice(pixi_mod.File, runtime.allocator(), json_content.items, options) catch null) |parsed| {
+    //         if (std.json.parseFromSlice(pixi.File, runtime.allocator(), json_content.items, options) catch null) |parsed| {
     //             defer parsed.deinit();
 
     //             std.log.debug("Parsed fizzydata.json!", .{});
 
     //             const ext = parsed.value;
 
-    //             var internal: pixi_mod.internal.File = .{
+    //             var internal: pixi.internal.File = .{
     //                 .id = runtime.state().host.allocDocId(),
     //                 .path = try runtime.allocator().dupe(u8, path),
     //                 .width = ext.width,
     //                 .height = ext.height,
     //                 .tile_width = ext.tile_width,
     //                 .tile_height = ext.tile_height,
-    //                 .history = pixi_mod.internal.File.History.init(runtime.allocator()),
-    //                 .buffers = pixi_mod.internal.File.Buffers.init(runtime.allocator()),
-    //                 .checkerboard = pixi_mod.image.init(
+    //                 .history = pixi.internal.File.History.init(runtime.allocator()),
+    //                 .buffers = pixi.internal.File.Buffers.init(runtime.allocator()),
+    //                 .checkerboard = pixi.image.init(
     //                     ext.tile_width * 2,
     //                     ext.tile_height * 2,
     //                     .{ .r = 0, .g = 0, .b = 0, .a = 0 },
@@ -743,7 +743,7 @@ fn loadFizzyZip(path: []const u8, file_bytes: ?[]const u8) !?pixi_mod.internal.F
     //                         var layer_content = std.array_list.Managed(u8).init(runtime.allocator());
     //                         try entry.writeAll(layer_content.writer());
 
-    //                         var cond: ?pixi_mod.Layer = pixi_mod.Layer.fromPixels(internal.newID(), runtime.allocator().dupe(u8, ext_layer.name) catch ext_layer.name, layer_content.items, ext.width, ext.height, .ptr) catch null;
+    //                         var cond: ?pixi.Layer = pixi.Layer.fromPixels(internal.newID(), runtime.allocator().dupe(u8, ext_layer.name) catch ext_layer.name, layer_content.items, ext.width, ext.height, .ptr) catch null;
 
     //                         if (cond) |*new_layer| {
     //                             new_layer.visible = ext_layer.visible;
@@ -794,7 +794,7 @@ pub fn shouldConfirmFlatRasterSave(self: File) bool {
     return requiresFizzyCompatibleSave(self);
 }
 
-pub fn fromBytesFlatImage(path: []const u8, file_bytes: []const u8) !?pixi_mod.internal.File {
+pub fn fromBytesFlatImage(path: []const u8, file_bytes: []const u8) !?pixi.internal.File {
     if (!isFlatImageExtension(std.fs.path.extension(path[0..path.len])))
         return error.InvalidExtension;
 
@@ -809,7 +809,7 @@ pub fn fromBytesFlatImage(path: []const u8, file_bytes: []const u8) !?pixi_mod.i
 
 /// Loads a PNG or JPEG as the first layer of a new file, and retains the path
 /// when saved; layers will be flattened to that file
-pub fn fromPathFlatImage(path: []const u8) !?pixi_mod.internal.File {
+pub fn fromPathFlatImage(path: []const u8) !?pixi.internal.File {
     if (!isFlatImageExtension(std.fs.path.extension(path[0..path.len])))
         return error.InvalidExtension;
 
@@ -817,20 +817,20 @@ pub fn fromPathFlatImage(path: []const u8) !?pixi_mod.internal.File {
     return finishFlatImageFile(path, image_layer);
 }
 
-fn finishFlatImageFile(path: []const u8, image_layer: Layer) !?pixi_mod.internal.File {
+fn finishFlatImageFile(path: []const u8, image_layer: Layer) !?pixi.internal.File {
     const size = image_layer.size();
     const column_width: u32 = @intFromFloat(size.w);
     const row_height: u32 = @intFromFloat(size.h);
 
-    var internal: pixi_mod.internal.File = .{
+    var internal: pixi.internal.File = .{
         .id = runtime.state().host.allocDocId(),
         .path = try runtime.allocator().dupe(u8, path),
         .columns = 1,
         .rows = 1,
         .column_width = column_width,
         .row_height = row_height,
-        .history = pixi_mod.internal.File.History.init(runtime.allocator()),
-        .buffers = pixi_mod.internal.File.Buffers.init(runtime.allocator()),
+        .history = pixi.internal.File.History.init(runtime.allocator()),
+        .buffers = pixi.internal.File.Buffers.init(runtime.allocator()),
     };
 
     internal.layers.append(runtime.allocator(), image_layer) catch return error.LayerCreateError;
@@ -844,7 +844,7 @@ fn finishFlatImageFile(path: []const u8, image_layer: Layer) !?pixi_mod.internal
     internal.editor.checkerboard = try std.DynamicBitSet.initEmpty(runtime.allocator(), internal.width() * internal.height());
     // Create a layer-sized checkerboard pattern for selection tools
     for (0..internal.width() * internal.height()) |i| {
-        const value = pixi_mod.math.checker(.{ .w = @floatFromInt(internal.width()), .h = @floatFromInt(internal.height()) }, i);
+        const value = pixi.math.checker(.{ .w = @floatFromInt(internal.width()), .h = @floatFromInt(internal.height()) }, i);
         internal.editor.checkerboard.setValue(i, value);
     }
 
@@ -856,7 +856,7 @@ pub const ResizeOptions = struct {
     rows: u32,
     history: bool = true, // If true, layer data will be recorded for undo/redo
     layer_data: ?[][][4]u8 = null, // If provided, the layer data will be applied to the layers after resizing
-    animation_data: ?[][]pixi_mod.Animation.Frame = null, // If provided, the animation data will be applied to the animations after resizing
+    animation_data: ?[][]pixi.Animation.Frame = null, // If provided, the animation data will be applied to the animations after resizing
     sprite_data: ?[][2]f32 = null, // If provided, the sprite data will be applied to the sprites after resizing
 };
 
@@ -887,10 +887,10 @@ pub fn resize(file: *File, options: ResizeOptions) !void {
         file.history.undo_layer_data_stack.append(layer_data) catch return error.MemoryAllocationFailed;
 
         // Store all the animations before the resize event
-        var anim_data = try runtime.allocator().alloc([]pixi_mod.Animation.Frame, file.animations.len);
+        var anim_data = try runtime.allocator().alloc([]pixi.Animation.Frame, file.animations.len);
         for (0..file.animations.len) |anim_index| {
             const animation = file.animations.get(anim_index);
-            anim_data[anim_index] = runtime.allocator().dupe(pixi_mod.Animation.Frame, animation.frames) catch return error.MemoryAllocationFailed;
+            anim_data[anim_index] = runtime.allocator().dupe(pixi.Animation.Frame, animation.frames) catch return error.MemoryAllocationFailed;
         }
         file.history.undo_animation_data_stack.append(anim_data) catch return error.MemoryAllocationFailed;
 
@@ -985,7 +985,7 @@ pub fn resize(file: *File, options: ResizeOptions) !void {
 
     file.editor.checkerboard.resize(new_width * new_height, false) catch return error.MemoryAllocationFailed;
     for (0..new_width * new_height) |i| {
-        const value = pixi_mod.math.checker(.{ .w = @floatFromInt(new_width), .h = @floatFromInt(new_height) }, i);
+        const value = pixi.math.checker(.{ .w = @floatFromInt(new_width), .h = @floatFromInt(new_height) }, i);
         file.editor.checkerboard.setValue(i, value);
     }
 
@@ -1313,7 +1313,7 @@ pub fn reorderRows(file: *File, removed_row_index: usize, insert_before_row_inde
 }
 
 pub fn deinit(file: *File) void {
-    pixi_mod.render.destroyLayerCompositeResources(file);
+    pixi.render.destroyLayerCompositeResources(file);
 
     strokeUndoFreeSnapshot(file);
 
@@ -1740,7 +1740,7 @@ pub fn selectLine(file: *File, point1: dvui.Point, point2: dvui.Point, select_op
         }
     }
 
-    if (pixi_mod.algorithms.brezenham.process(point1, point2) catch null) |points| {
+    if (pixi.algorithms.brezenham.process(point1, point2) catch null) |points| {
         for (points, 0..) |point, point_i| {
             if (select_options.stroke_size < Tools.min_full_stroke_size) {
                 selectPoint(file, point, select_options);
@@ -1807,7 +1807,7 @@ pub fn selectColorFloodFromPoint(file: *File, p: dvui.Point, value: bool) !void 
     const bounds = dvui.Rect.fromSize(.{ .w = @floatFromInt(file.width()), .h = @floatFromInt(file.height()) });
     if (!bounds.contains(p)) return;
 
-    const start_idx = pixi_mod.image.pixelIndex(read_layer.source, p) orelse return;
+    const start_idx = pixi.image.pixelIndex(read_layer.source, p) orelse return;
     const original_color = read_layer.pixels()[start_idx];
 
     const n = read_layer.pixels().len;
@@ -1830,7 +1830,7 @@ pub fn selectColorFloodFromPoint(file: *File, p: dvui.Point, value: bool) !void 
     };
 
     while (queue.pop()) |qp| {
-        const idx = pixi_mod.image.pixelIndex(read_layer.source, qp) orelse continue;
+        const idx = pixi.image.pixelIndex(read_layer.source, qp) orelse continue;
         if (!std.meta.eql(original_color, read_layer.pixels()[idx])) continue;
 
         selection_layer.mask.setValue(idx, value);
@@ -1838,7 +1838,7 @@ pub fn selectColorFloodFromPoint(file: *File, p: dvui.Point, value: bool) !void 
         for (directions) |direction| {
             const np = qp.plus(direction);
             if (!bounds.contains(np)) continue;
-            if (pixi_mod.image.pixelIndex(read_layer.source, np)) |ni| {
+            if (pixi.image.pixelIndex(read_layer.source, np)) |ni| {
                 if (visited.isSet(ni)) continue;
                 if (!std.meta.eql(original_color, read_layer.pixels()[ni])) continue;
                 visited.set(ni);
@@ -2443,7 +2443,7 @@ pub fn drawLine(file: *File, point1: dvui.Point, point2: dvui.Point, layer: Draw
         }
     }
 
-    if (pixi_mod.algorithms.brezenham.process(point1, point2) catch null) |points| {
+    if (pixi.algorithms.brezenham.process(point1, point2) catch null) |points| {
         for (points, 0..) |point, point_i| {
             if (clip_rect) |cr| {
                 const br = brushRect(point, draw_options.stroke_size, iw, ih);
@@ -2836,7 +2836,7 @@ pub fn saveTar(self: *File, window: *dvui.Window) !void {
     try wrt.finish();
 
     {
-        const id_mutex = dvui.toastAdd(window, @src(), 0, pixi_mod.core.dvui.save_toast_subwindow_id, pixi_mod.core.dvui.saveCompleteToastDisplay, 2_500_000);
+        const id_mutex = dvui.toastAdd(window, @src(), 0, pixi.core.dvui.save_toast_subwindow_id, pixi.core.dvui.saveCompleteToastDisplay, 2_500_000);
         const id = id_mutex.id;
         const message = std.fmt.allocPrint(window.arena(), "Saved {s}", .{std.fs.path.basename(self.path)}) catch "Saved file";
         dvui.dataSetSlice(window, id, "_message", message);
@@ -2853,7 +2853,7 @@ fn writeFlattenedLayersToPath(self: *File, out_path: []const u8, window: *dvui.W
     const h = self.height();
     if (w == 0 or h == 0) return error.InvalidImageSize;
 
-    try pixi_mod.render.syncLayerComposite(self);
+    try pixi.render.syncLayerComposite(self);
     const target = self.editor.layer_composite_target orelse return error.NoLayerComposite;
 
     const pma_read: []dvui.Color.PMA = try dvui.Texture.readTarget(runtime.allocator(), target);
@@ -2868,11 +2868,11 @@ fn writeFlattenedLayersToPath(self: *File, out_path: []const u8, window: *dvui.W
     switch (kind) {
         .png => {
             const r: u32 = @intFromFloat(@round(window.natural_scale * 72.0 / 0.0254));
-            try pixi_mod.image.writeToPngResolution(tmp_layer.source, out_path, r);
+            try pixi.image.writeToPngResolution(tmp_layer.source, out_path, r);
         },
         .jpg => {
             const ppi: u16 = @intFromFloat(@round(window.natural_scale * 72.0));
-            try pixi_mod.image.writeToJpgPpi(tmp_layer.source, out_path, ppi);
+            try pixi.image.writeToJpgPpi(tmp_layer.source, out_path, ppi);
         },
     }
 }
@@ -2887,7 +2887,7 @@ pub fn savePng(self: *File, window: *dvui.Window) !void {
     {
         // `id_extra` is `usize` (u32 on wasm32). File IDs are session-local monotonic
         // u64s; in practice they fit, so an `@intCast` is safe and panics if not.
-        const id_mutex = dvui.toastAdd(window, @src(), @as(usize, @intCast(self.id)), pixi_mod.core.dvui.save_toast_subwindow_id, pixi_mod.core.dvui.saveCompleteToastDisplay, 2_500_000);
+        const id_mutex = dvui.toastAdd(window, @src(), @as(usize, @intCast(self.id)), pixi.core.dvui.save_toast_subwindow_id, pixi.core.dvui.saveCompleteToastDisplay, 2_500_000);
         const id = id_mutex.id;
         const message = std.fmt.allocPrint(window.arena(), "Saved {s} to disk", .{std.fs.path.basename(self.path)}) catch "Saved file";
         dvui.dataSetSlice(window, id, "_message", message);
@@ -2908,7 +2908,7 @@ pub fn saveJpg(self: *File, window: *dvui.Window) !void {
     {
         // `id_extra` is `usize` (u32 on wasm32). File IDs are session-local monotonic
         // u64s; in practice they fit, so an `@intCast` is safe and panics if not.
-        const id_mutex = dvui.toastAdd(window, @src(), @as(usize, @intCast(self.id)), pixi_mod.core.dvui.save_toast_subwindow_id, pixi_mod.core.dvui.saveCompleteToastDisplay, 2_500_000);
+        const id_mutex = dvui.toastAdd(window, @src(), @as(usize, @intCast(self.id)), pixi.core.dvui.save_toast_subwindow_id, pixi.core.dvui.saveCompleteToastDisplay, 2_500_000);
         const id = id_mutex.id;
         const message = std.fmt.allocPrint(window.arena(), "Saved {s} to disk", .{std.fs.path.basename(self.path)}) catch "Saved file";
         dvui.dataSetSlice(window, id, "_message", message);
@@ -2938,7 +2938,7 @@ pub fn saveZip(self: *File, window: *dvui.Window) !void {
 /// `*File`, so user edits during the save can't tear `self.layers` mid-iteration
 /// (manifested as MultiArrayList slice OOB / corrupt layer.name).
 pub const SaveSnapshot = struct {
-    ext: pixi_mod.File,
+    ext: pixi.File,
     layer_bytes: [][]u8,
     layer_entry_names: [][:0]const u8,
     null_terminated_path: [:0]u8,
@@ -3111,7 +3111,7 @@ fn saveQueueWorker() void {
 /// jobs. Must run on the same thread that owns `docs.files` mutations
 /// (`registerOpenDocument`/`unregisterDocument`) since this is the only place
 /// the save queue's completions touch that map.
-pub fn drainCompletedSaves(docs: *pixi_mod.Docs) void {
+pub fn drainCompletedSaves(docs: *pixi.DocumentRegistry) void {
     if (comptime @import("builtin").target.cpu.arch == .wasm32) return;
     save_queue.mutex.lockUncancelable(dvui.io);
     var completed = save_queue.completed;
@@ -3216,7 +3216,7 @@ pub fn saveToDownload(self: *File, window: *dvui.Window) !void {
     }
 
     self.history.bookmark = 0;
-    const id_mutex = dvui.toastAdd(window, @src(), 0, pixi_mod.core.dvui.save_toast_subwindow_id, pixi_mod.core.dvui.saveCompleteToastDisplay, 2_500_000);
+    const id_mutex = dvui.toastAdd(window, @src(), 0, pixi.core.dvui.save_toast_subwindow_id, pixi.core.dvui.saveCompleteToastDisplay, 2_500_000);
     const id = id_mutex.id;
     const message = std.fmt.allocPrint(window.arena(), "Downloaded {s}", .{basename}) catch "Downloaded file";
     dvui.dataSetSlice(window, id, "_message", message);
@@ -3228,7 +3228,7 @@ fn flattenedImageBytes(self: *File, window: *dvui.Window, comptime kind: enum { 
     const h = self.height();
     if (w == 0 or h == 0) return error.InvalidImageSize;
 
-    try pixi_mod.render.syncLayerComposite(self);
+    try pixi.render.syncLayerComposite(self);
     const target = self.editor.layer_composite_target orelse return error.NoLayerComposite;
 
     const pma_read: []dvui.Color.PMA = try dvui.Texture.readTarget(runtime.allocator(), target);
@@ -3245,11 +3245,11 @@ fn flattenedImageBytes(self: *File, window: *dvui.Window, comptime kind: enum { 
     switch (kind) {
         .png => {
             const r: u32 = @intFromFloat(@round(window.natural_scale * 72.0 / 0.0254));
-            try pixi_mod.image.writePngToWriter(tmp_layer.source, &out.writer, r);
+            try pixi.image.writePngToWriter(tmp_layer.source, &out.writer, r);
         },
         .jpg => {
             const ppi: u16 = @intFromFloat(@round(window.natural_scale * 72.0));
-            try pixi_mod.image.writeJpgPpiToWriter(tmp_layer.source, &out.writer, ppi);
+            try pixi.image.writeJpgPpiToWriter(tmp_layer.source, &out.writer, ppi);
         },
     }
     return out.toOwnedSlice();
@@ -3331,7 +3331,7 @@ fn reinitEditorSurfaceForFlatDocument(self: *File) !void {
 
     self.editor.checkerboard = try std.DynamicBitSet.initEmpty(runtime.allocator(), self.width() * self.height());
     for (0..self.width() * self.height()) |i| {
-        const value = pixi_mod.math.checker(.{ .w = @floatFromInt(self.width()), .h = @floatFromInt(self.height()) }, i);
+        const value = pixi.math.checker(.{ .w = @floatFromInt(self.width()), .h = @floatFromInt(self.height()) }, i);
         self.editor.checkerboard.setValue(i, value);
     }
     self.editor.selected_layer_indices.clearRetainingCapacity();
@@ -3353,7 +3353,7 @@ pub fn saveAsFlattened(self: *File, output_path: []const u8, window: *dvui.Windo
         return error.InvalidImageSize;
     }
 
-    try pixi_mod.render.syncLayerComposite(self);
+    try pixi.render.syncLayerComposite(self);
     const target = self.editor.layer_composite_target orelse {
         self.setSaving(false);
         return error.NoLayerComposite;
@@ -3381,13 +3381,13 @@ pub fn saveAsFlattened(self: *File, output_path: []const u8, window: *dvui.Windo
             const r: u32 = @intFromFloat(@round(window.natural_scale * 72.0 / 0.0254));
             var out = std.Io.Writer.Allocating.init(runtime.allocator());
             errdefer out.deinit();
-            try pixi_mod.image.writePngToWriter(single_layer.source, &out.writer, r);
+            try pixi.image.writePngToWriter(single_layer.source, &out.writer, r);
             break :blk try out.toOwnedSlice();
         } else blk: {
             const ppi: u16 = @intFromFloat(@round(window.natural_scale * 72.0));
             var out = std.Io.Writer.Allocating.init(runtime.allocator());
             errdefer out.deinit();
-            try pixi_mod.image.writeJpgPpiToWriter(single_layer.source, &out.writer, ppi);
+            try pixi.image.writeJpgPpiToWriter(single_layer.source, &out.writer, ppi);
             break :blk try out.toOwnedSlice();
         };
         defer runtime.allocator().free(bytes);
@@ -3395,14 +3395,14 @@ pub fn saveAsFlattened(self: *File, output_path: []const u8, window: *dvui.Windo
         try @import("../web_file_io.zig").downloadBytesWithExtension(std.fs.path.basename(output_path), dl_ext, bytes);
     } else if (is_png) {
         const r: u32 = @intFromFloat(@round(window.natural_scale * 72.0 / 0.0254));
-        try pixi_mod.image.writeToPngResolution(single_layer.source, output_path, r);
+        try pixi.image.writeToPngResolution(single_layer.source, output_path, r);
     } else {
         const ppi: u16 = @intFromFloat(@round(window.natural_scale * 72.0));
-        try pixi_mod.image.writeToJpgPpi(single_layer.source, output_path, ppi);
+        try pixi.image.writeToJpgPpi(single_layer.source, output_path, ppi);
     }
 
-    pixi_mod.render.destroyLayerCompositeResources(self);
-    pixi_mod.render.destroySplitCompositeResources(self);
+    pixi.render.destroyLayerCompositeResources(self);
+    pixi.render.destroySplitCompositeResources(self);
 
     deinitAllUserLayers(self);
     clearAnimationsForSaveAs(self);
@@ -3438,7 +3438,7 @@ pub fn saveAsFlattened(self: *File, output_path: []const u8, window: *dvui.Windo
     {
         // `id_extra` is `usize` (u32 on wasm32). File IDs are session-local monotonic
         // u64s; in practice they fit, so an `@intCast` is safe and panics if not.
-        const id_mutex = dvui.toastAdd(window, @src(), @as(usize, @intCast(self.id)), pixi_mod.core.dvui.save_toast_subwindow_id, pixi_mod.core.dvui.saveCompleteToastDisplay, 2_500_000);
+        const id_mutex = dvui.toastAdd(window, @src(), @as(usize, @intCast(self.id)), pixi.core.dvui.save_toast_subwindow_id, pixi.core.dvui.saveCompleteToastDisplay, 2_500_000);
         const id = id_mutex.id;
         const message = std.fmt.allocPrint(window.arena(), "Saved {s} to disk", .{std.fs.path.basename(self.path)}) catch "Saved file";
         dvui.dataSetSlice(window, id, "_message", message);
@@ -3452,7 +3452,7 @@ pub const GridLayoutOptions = struct {
     row_height: u32,
     columns: u32,
     rows: u32,
-    anchor: pixi_mod.math.layout_anchor.LayoutAnchor,
+    anchor: pixi.math.layout_anchor.LayoutAnchor,
     /// When true (default), `applyGridLayout` snapshots the previous state and pushes a
     /// `grid_layout` change to the file's history before mutating. Internal callers driving
     /// undo/redo restoration should pass `false` so the swap doesn't loop into itself.
@@ -3563,7 +3563,7 @@ pub fn applyGridLayoutSnapshot(file: *File, snap: History.Change.GridLayout) !vo
     file.editor.checkerboard.deinit();
     file.editor.checkerboard = std.DynamicBitSet.initEmpty(runtime.allocator(), total) catch return error.MemoryAllocationFailed;
     for (0..total) |idx| {
-        const value = pixi_mod.math.checker(.{ .w = @floatFromInt(new_w), .h = @floatFromInt(new_h) }, idx);
+        const value = pixi.math.checker(.{ .w = @floatFromInt(new_w), .h = @floatFromInt(new_h) }, idx);
         file.editor.checkerboard.setValue(idx, value);
     }
 
@@ -3579,7 +3579,7 @@ pub fn applyGridLayoutSnapshot(file: *File, snap: History.Change.GridLayout) !vo
     file.columns = snap.columns;
     file.rows = snap.rows;
 
-    pixi_mod.render.destroyLayerCompositeResources(file);
+    pixi.render.destroyLayerCompositeResources(file);
     file.invalidateActiveLayerTransparencyMaskCache();
 }
 
@@ -3656,7 +3656,7 @@ pub fn applyGridSliceOnly(file: *File, options: GridSliceOptions) !void {
     file.columns = new_cols;
     file.rows = new_rows;
 
-    pixi_mod.render.destroyLayerCompositeResources(file);
+    pixi.render.destroyLayerCompositeResources(file);
     file.invalidateActiveLayerTransparencyMaskCache();
 
     if (snapshot_opt) |snap| {
@@ -3744,7 +3744,7 @@ pub fn applyGridLayout(file: *File, options: GridLayoutOptions) !void {
             while (nrow < @min(new_rows, old_rows)) : (nrow += 1) {
                 var ncol: u32 = 0;
                 while (ncol < @min(new_cols, old_cols)) : (ncol += 1) {
-                    const blk = pixi_mod.math.layout_anchor.cellAnchoredBlit(old_cw, old_rh, new_cw, new_rh, options.anchor);
+                    const blk = pixi.math.layout_anchor.cellAnchoredBlit(old_cw, old_rh, new_cw, new_rh, options.anchor);
                     if (blk.sw == 0 or blk.sh == 0) continue;
 
                     const src_x0: u32 = ncol * old_cw + blk.sx;
@@ -3792,7 +3792,7 @@ pub fn applyGridLayout(file: *File, options: GridLayoutOptions) !void {
     file.editor.checkerboard.deinit();
     file.editor.checkerboard = std.DynamicBitSet.initEmpty(runtime.allocator(), @as(usize, new_w) * @as(usize, new_h)) catch return error.MemoryAllocationFailed;
     for (0..@as(usize, new_w) * @as(usize, new_h)) |idx| {
-        const value = pixi_mod.math.checker(.{ .w = @floatFromInt(new_w), .h = @floatFromInt(new_h) }, idx);
+        const value = pixi.math.checker(.{ .w = @floatFromInt(new_w), .h = @floatFromInt(new_h) }, idx);
         file.editor.checkerboard.setValue(idx, value);
     }
 
@@ -3807,7 +3807,7 @@ pub fn applyGridLayout(file: *File, options: GridLayoutOptions) !void {
     file.columns = new_cols;
     file.rows = new_rows;
 
-    pixi_mod.render.destroyLayerCompositeResources(file);
+    pixi.render.destroyLayerCompositeResources(file);
     file.invalidateActiveLayerTransparencyMaskCache();
 
     if (snapshot_opt) |snap| {
@@ -3876,10 +3876,10 @@ pub fn saveAsync(self: *File) !void {
     }
 }
 
-pub fn external(self: File, allocator: std.mem.Allocator) !pixi_mod.File {
-    const layers = try allocator.alloc(pixi_mod.Layer, self.layers.slice().len);
-    const sprites = try allocator.alloc(pixi_mod.Sprite, self.sprites.slice().len);
-    const animations = try allocator.alloc(pixi_mod.Animation, self.animations.slice().len);
+pub fn external(self: File, allocator: std.mem.Allocator) !pixi.File {
+    const layers = try allocator.alloc(pixi.Layer, self.layers.slice().len);
+    const sprites = try allocator.alloc(pixi.Sprite, self.sprites.slice().len);
+    const animations = try allocator.alloc(pixi.Animation, self.animations.slice().len);
 
     for (layers, 0..) |*working_layer, i| {
         working_layer.name = try allocator.dupe(u8, self.layers.items(.name)[i]);
@@ -3897,7 +3897,7 @@ pub fn external(self: File, allocator: std.mem.Allocator) !pixi_mod.File {
     }
 
     return .{
-        .version = pixi_mod.version,
+        .version = pixi.version,
         .columns = self.columns,
         .rows = self.rows,
         .column_width = self.column_width,
