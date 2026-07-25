@@ -57,6 +57,7 @@ const vtable: sdk.Plugin.VTable = .{
     .createDocument = createDocument,
     .isDirty = isDirty,
     .saveDocument = saveDocument,
+    .reloadDocument = reloadDocument,
     .closeDocument = closeDocument,
     .undo = undo,
     .redo = redo,
@@ -115,37 +116,43 @@ fn fileTypePriority(_: *anyopaque, ext: []const u8) ?u8 {
     return null;
 }
 
-/// Doubles the atlas sprites' native pixel size for icon drawing — the raw `misc.pixi` art reads
-/// too small at 1:1 next to the file tree's other (vector, resolution-independent) icons.
+/// Natural size reported for an atlas sprite icon, as a multiple of its native pixel size.
+///
+/// With `expand = .ratio` (see `host_slot_fit`) this no longer decides how big the icon *renders*
+/// — the host's slot does that, and a ratio fit is invariant under a uniform scale of the
+/// requested size. It only sets the min size reported upward for hosts that lay out around it.
 const file_icon_sprite_scale: f32 = 2.0;
+
+/// Fill the slot the host reserved for us.
+///
+/// The shell reserves a fixed rect per tree row (`core.dvui.treeRowGlyph`) and every icon —
+/// vector, sprite, or letter — is expected to fit itself into it with `expand = .ratio`. Drawing
+/// at a size of our own choosing instead makes pixi's rows taller than everyone else's and knocks
+/// the labels out of alignment, which is exactly what the hard-coded scales below used to do.
+const host_slot_fit: dvui.Options = .{
+    .expand = .ratio,
+    .gravity_x = 0.5,
+    .gravity_y = 0.5,
+    .padding = dvui.Rect.all(0),
+    .margin = dvui.Rect.all(0),
+};
 
 /// Draw the file-tree icon for the file types pixi owns: its own `ui_atlas` sprites for
 /// `.fiz` (the `fiz` animation in `assets/src/misc.pixi`) and `.pixi` (the `pixi` animation),
-/// drawn at `file_icon_sprite_scale` so the pixel art stays crisp (integer-scaled) but readable,
 /// plus a generic vector icon for flat images. Returns false for anything else so the workbench
 /// falls back to a generic icon.
 fn drawFileIcon(_: ?*anyopaque, ext: []const u8, _: []const u8, color: dvui.Color) bool {
     const ui_atlas = runtime.uiAtlas();
     if (std.mem.eql(u8, ext, ".fiz")) {
-        _ = ui_atlas.sprites[internal.atlas.sprites.fiz_default].draw(@src(), ui_atlas.source, file_icon_sprite_scale, .{
-            .gravity_y = 0.5,
-            .padding = dvui.Rect.all(3),
-        });
+        _ = ui_atlas.sprites[internal.atlas.sprites.fiz_default].draw(@src(), ui_atlas.source, file_icon_sprite_scale, host_slot_fit);
         return true;
     }
     if (std.mem.eql(u8, ext, ".pixi")) {
-        _ = ui_atlas.sprites[internal.atlas.sprites.pixi_default].draw(@src(), ui_atlas.source, file_icon_sprite_scale, .{
-            .gravity_y = 0.5,
-            .padding = dvui.Rect.all(3),
-        });
+        _ = ui_atlas.sprites[internal.atlas.sprites.pixi_default].draw(@src(), ui_atlas.source, file_icon_sprite_scale, host_slot_fit);
         return true;
     }
     if (Internal.File.isFlatImageExtension(ext)) {
-        dvui.icon(@src(), "PixiFileIcon", dvui.entypo.image, .{ .stroke_color = color, .fill_color = color }, .{
-            .gravity_y = 0.5,
-            .padding = dvui.Rect.all(3),
-            .background = false,
-        });
+        dvui.icon(@src(), "PixiFileIcon", dvui.entypo.image, .{ .stroke_color = color, .fill_color = color }, host_slot_fit.override(.{ .background = false }));
         return true;
     }
     return false;
@@ -153,11 +160,7 @@ fn drawFileIcon(_: ?*anyopaque, ext: []const u8, _: []const u8, color: dvui.Colo
 
 fn drawPluginIcon(_: ?*anyopaque) void {
     const ui_atlas = runtime.uiAtlas();
-    _ = ui_atlas.sprites[internal.atlas.sprites.pixi_default].draw(@src(), ui_atlas.source, 5.0, .{
-        .gravity_x = 0.5,
-        .gravity_y = 0.5,
-        .padding = dvui.Rect.all(2),
-    });
+    _ = ui_atlas.sprites[internal.atlas.sprites.pixi_default].draw(@src(), ui_atlas.source, file_icon_sprite_scale, host_slot_fit);
 }
 
 /// Load `path` into the plugin-owned `*Internal.File` at `out_doc`. Runs on the shell's
@@ -184,6 +187,12 @@ fn isDirty(_: *anyopaque, doc: DocHandle) bool {
 /// policy before routing here; this just runs the pixel-art async save.
 fn saveDocument(_: *anyopaque, doc: DocHandle) anyerror!void {
     try docFile(doc).saveAsync();
+}
+
+/// Reload from disk when the shell's document watcher sees an external change on a
+/// clean tab (or the user picks Discard in the on-disk conflict dialog).
+fn reloadDocument(_: *anyopaque, doc: DocHandle) anyerror!void {
+    try docFile(doc).reloadFromDisk();
 }
 
 /// Release the document's resources. The shell removes it from `open_files` and
@@ -327,9 +336,9 @@ fn drawProjectView(_: ?*anyopaque, pane: *sdk.WorkbenchPaneView) anyerror!void {
     }
 }
 
-fn drawDocumentInfobar(state: *anyopaque, doc: DocHandle) anyerror!void {
+fn drawDocumentInfobar(state: *anyopaque, doc: DocHandle, rect: dvui.Rect) anyerror!void {
     const st: *State = @ptrCast(@alignCast(state));
-    return infobar_status.drawDocumentInfobar(st, doc);
+    return infobar_status.drawDocumentInfobar(st, doc, rect);
 }
 
 fn undo(_: *anyopaque, doc: DocHandle) anyerror!void {

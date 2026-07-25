@@ -13,10 +13,12 @@ fn docFile(st: *State, doc: DocHandle) ?*Internal.File {
     return st.docs.fileById(doc.id);
 }
 
-pub fn drawDocumentInfobar(st: *State, doc: DocHandle) !void {
+pub fn drawDocumentInfobar(st: *State, doc: DocHandle, rect: dvui.Rect) !void {
+    _ = rect; // shell-sized/clipped slot; draw into the current parent
     const file = docFile(st, doc) orelse return;
     const font = dvui.Font.theme(.body).larger(-1.0);
-    const font_mono = dvui.Font.theme(.mono);
+    // Match body-1 line height so hover/status text fits the fixed infobar slot.
+    const font_mono = dvui.Font.theme(.mono).larger(-1.0);
 
     dvui.icon(
         @src(),

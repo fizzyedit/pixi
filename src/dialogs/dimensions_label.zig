@@ -14,7 +14,7 @@ pub fn drawDimensionsLabel(src: std.builtin.SourceLocation, width: u32, height: 
             .font = font,
             .margin = .{ .x = 1, .w = 1 },
             .padding = .all(0),
-            .gravity_y = 1.0,
+            .gravity_y = 0.5,
             .id_extra = 1,
         },
     );

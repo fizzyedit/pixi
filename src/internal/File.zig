@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const zip = @import("zip");
 const dvui = @import("dvui");
 
@@ -1356,6 +1357,31 @@ pub fn dirty(self: File) bool {
     // Never-saved buffers use a path with no extension (e.g. `untitled-1`); treat as unsaved even at bookmark 0.
     if (std.fs.path.extension(self.path).len == 0) return true;
     return self.history.bookmark != 0;
+}
+
+/// Replace in-memory contents from disk (shell document watcher / discard-on-conflict).
+/// Preserves shell identity (`id`) and workbench pane binding (`grouping` + canvas handle).
+pub fn reloadFromDisk(self: *File) !void {
+    if (comptime builtin.target.cpu.arch == .wasm32) return error.Unsupported;
+    if (self.isSaving()) return error.Busy;
+
+    const keep_id = self.id;
+    const keep_grouping = self.editor.grouping;
+    const keep_canvas = self.editor.canvas;
+    const keep_workspace = self.editor.workspace_handle;
+    // `deinit` frees `path`; load from a temporary copy.
+    const path_copy = try runtime.allocator().dupe(u8, self.path);
+    defer runtime.allocator().free(path_copy);
+
+    var fresh = (try fromPath(path_copy)) orelse return error.InvalidFile;
+    errdefer fresh.deinit();
+
+    self.deinit();
+    self.* = fresh;
+    self.id = keep_id;
+    self.editor.grouping = keep_grouping;
+    self.editor.canvas = keep_canvas;
+    self.editor.workspace_handle = keep_workspace;
 }
 
 pub fn newAnimationID(file: *File) u64 {
