@@ -15,7 +15,7 @@
     .dependencies = .{
         .fizzy = .{
             .url = "https://github.com/fizzyedit/fizzy/releases/download/sdk-v0.1.43/fizzy-sdk-v0.1.43.tar.gz",
-            .hash = "fizzy-0.1.43-SGBwY6gzCwDgmdo-vLNlF1XkzeC2dANDNirqKoINJq_q",
+            .hash = "fizzy-0.1.43-SGBwY9k1CwCRclkQqz-gZIUf_g0r2I4qwaz0SBtxuTX4",
         },
         .assetpack = .{
             .url = "https://github.com/foxnne/assetpack/archive/ac7592f3f5988857840d0df4610e1e1fad690e2e.tar.gz",
