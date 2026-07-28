@@ -1912,7 +1912,8 @@ fn applyFrameClick(
     const primary_for_tree: ?usize = if (mode == .extend and
         file.editor.playing and
         file.editor.frame_selection_anchor == null and
-        file.editor.selected_frame_indices.items.len > 0) blk: {
+        file.editor.selected_frame_indices.items.len > 0)
+    blk: {
         break :blk file.editor.selected_frame_indices.items[0];
     } else file.selected_animation_frame_index;
 

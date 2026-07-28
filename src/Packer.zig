@@ -4,9 +4,6 @@ const dvui = @import("dvui");
 const pixi = @import("pixi.zig");
 const runtime = @import("runtime.zig");
 
-
-pub const LDTKTileset = @import("LDTKTileset.zig");
-
 const Packer = @This();
 
 pub const Image = struct {
@@ -44,9 +41,6 @@ atlas: ?pixi.internal.Atlas = null,
 /// Monotonic time (`pixi.perf.nanoTimestamp`) when the current in-memory atlas was last installed.
 last_packed_at_ns: ?i128 = null,
 
-ldtk: bool = false,
-ldtk_tilesets: std.array_list.Managed(LDTKTileset),
-
 pub const PackTarget = enum {
     project,
     all_open,
@@ -65,7 +59,6 @@ pub fn init(allocator: std.mem.Allocator) !Packer {
         .animations = std.array_list.Managed(pixi.Animation).init(allocator),
         .open_files = std.array_list.Managed(pixi.internal.File).init(allocator),
         .placeholder = .{ .width = 2, .height = 2, .pixels = pixels },
-        .ldtk_tilesets = std.array_list.Managed(LDTKTileset).init(allocator),
     };
 }
 
@@ -81,7 +74,6 @@ pub fn deinit(self: *Packer) void {
     self.sprites.deinit();
     self.frames.deinit();
     self.animations.deinit();
-    self.ldtk_tilesets.deinit();
 }
 
 pub fn clearAndFree(self: *Packer) void {
@@ -91,18 +83,10 @@ pub fn clearAndFree(self: *Packer) void {
     for (self.animations.items) |*animation| {
         runtime.allocator().free(animation.name);
     }
-    for (self.ldtk_tilesets.items) |*tileset| {
-        for (tileset.layer_paths) |path| {
-            runtime.allocator().free(path);
-        }
-        runtime.allocator().free(tileset.sprites);
-        runtime.allocator().free(tileset.layer_paths);
-    }
     self.frames.clearAndFree();
     self.sprites.clearAndFree();
     self.animations.clearAndFree();
     self.contains_height = false;
-    self.ldtk_tilesets.clearAndFree();
 
     for (self.open_files.items) |*file| {
         file.deinit();

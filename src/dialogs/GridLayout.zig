@@ -246,7 +246,7 @@ fn drawCheckerboardPreviewTiled(
     if (cell_w <= 0 or cell_h <= 0 or cols == 0 or rows == 0) return;
 
     const pal = previewCheckerboardPalette();
-    const te = runtime.state().settings.transparency_effect;
+    const te = runtime.state().settings.transparency_effect.get();
     const cols_f = @max(@as(f32, @floatFromInt(cols)), 1.0);
     const rows_f = @max(@as(f32, @floatFromInt(rows)), 1.0);
     const nw = cell_w * cols_f;

@@ -21,6 +21,7 @@ const infobar_status = @import("src/infobar_status.zig");
 const GridLayout = @import("src/dialogs/GridLayout.zig");
 const FlatRasterSaveWarning = @import("src/dialogs/FlatRasterSaveWarning.zig");
 const NewFile = @import("src/dialogs/NewFile.zig");
+const Export = @import("src/dialogs/Export.zig");
 
 const DocHandle = sdk.DocHandle;
 const Internal = internal.internal;
@@ -222,7 +223,7 @@ fn drawDocument(_: *anyopaque, doc: DocHandle) anyerror!void {
 
     internal.perf.canvasPaneDrawn();
 
-    if (runtime.state().settings.show_rulers and !dvui.firstFrame(container.id)) {
+    if (runtime.state().settings.show_rulers.get() and !dvui.firstFrame(container.id)) {
         defer internal.core.dvui.drawEdgeShadow(container.rectScale(), .top, .{});
         canvas.drawRuler(file, .horizontal);
     }
@@ -230,7 +231,7 @@ fn drawDocument(_: *anyopaque, doc: DocHandle) anyerror!void {
     var canvas_hbox = dvui.box(@src(), .{ .dir = .horizontal }, .{ .expand = .both });
     defer canvas_hbox.deinit();
 
-    if (runtime.state().settings.show_rulers and !dvui.firstFrame(container.id)) {
+    if (runtime.state().settings.show_rulers.get() and !dvui.firstFrame(container.id)) {
         defer internal.core.dvui.drawEdgeShadow(container.rectScale(), .left, .{});
         canvas.drawRuler(file, .vertical);
     }
@@ -418,8 +419,17 @@ pub fn register(host: *sdk.Host) !void {
         .title = "Grid Layout…",
         .run = gridLayoutCommand,
     });
+    // Dispatched by the shell keymap (owner-scoped `mod+p`) — not by `tickKeybinds`, so it
+    // no longer races Quick Open / the command palette on the same chord.
     try host.registerCommand(.{
-        .id = "internal.packProject",
+        .id = "pixi.export",
+        .owner = &plugin,
+        .title = "Export…",
+        .run = exportCommand,
+        .isEnabled = exportEnabled,
+    });
+    try host.registerCommand(.{
+        .id = "pixi.packProject",
         .owner = &plugin,
         .title = "Pack Project",
         .run = packProjectCommand,
@@ -445,11 +455,15 @@ pub fn register(host: *sdk.Host) !void {
         .owner = &plugin,
         .draw = drawEditMenuSection,
     });
+    // Naming the command on each native item is what puts its chord on the macOS menu, and keeps
+    // it there across a rebind; `run` is still the click path.
     try host.registerNativeMenuItem(.{
         .id = "pixi.native.transform",
         .owner = &plugin,
         .parent_menu_id = "shell.menu.edit",
         .title = "Transform",
+        .command = "pixi.transform",
+        .sf_symbol = "arrow.up.left.and.down.right.magnifyingglass",
         .run = nativeTransform,
     });
     try host.registerNativeMenuItem(.{
@@ -457,6 +471,8 @@ pub fn register(host: *sdk.Host) !void {
         .owner = &plugin,
         .parent_menu_id = "shell.menu.edit",
         .title = "Grid Layout…",
+        .command = "pixi.gridLayout",
+        .sf_symbol = "square.grid.3x3",
         .run = nativeGridLayout,
     });
 }
@@ -470,35 +486,26 @@ fn activeDocIsOurs() bool {
 
 /// In-app "Edit" menu section (see `Host.registerMenuSection`) — only draws while a pixi
 /// document is focused, so the item disappears entirely rather than sitting there disabled.
+///
+/// Both rows go through `Host.drawMenuItem`, naming the command each one runs: the shell draws
+/// that command's current chord as the accelerator, so rebinding Transform / Grid Layout in the
+/// Keyboard Shortcuts pane updates the menu. The hand-rolled row this replaced looked the chord
+/// up by dvui *bind name* (`"transform"`, `"grid_layout"`) — names these commands have no entry
+/// under — so it always drew a blank accelerator, and it built dvui menu widgets inside the
+/// plugin dylib, which `EditorAPI.VTable.drawMenuItem`'s doc comment spells out is unsafe.
 fn drawEditMenuSection(_: ?*anyopaque) anyerror!void {
     if (!activeDocIsOurs()) return;
 
-    _ = dvui.separator(@src(), .{ .expand = .horizontal });
-    if (editMenuItem(@src(), "Transform", "transform")) {
+    if (runtime.state().host.drawMenuItem("Transform", "pixi.transform")) {
         runtime.state().host.runCommand("pixi.transform") catch |err| {
             dvui.log.err("Transform command failed: {s}", .{@errorName(err)});
         };
     }
-    _ = dvui.separator(@src(), .{ .expand = .horizontal });
-    if (editMenuItem(@src(), "Grid Layout…", "grid_layout")) {
+    if (runtime.state().host.drawMenuItem("Grid Layout…", "pixi.gridLayout")) {
         runtime.state().host.runCommand("pixi.gridLayout") catch |err| {
             dvui.log.err("Grid layout command failed: {s}", .{@errorName(err)});
         };
     }
-}
-
-fn editMenuItem(src: std.builtin.SourceLocation, label_str: []const u8, keybind_name: []const u8) bool {
-    var mi = dvui.menuItem(src, .{}, .{ .expand = .horizontal });
-    defer mi.deinit();
-    const clicked = mi.activeRect() != null;
-    internal.core.dvui.labelWithKeybind(
-        label_str,
-        dvui.currentWindow().keybinds.get(keybind_name) orelse .{},
-        true,
-        .{ .expand = .horizontal },
-        .{ .expand = .horizontal },
-    );
-    return clicked;
 }
 
 /// The native macOS Edit menu is a static bar rebuilt only on plugin load/unload, so these two
@@ -716,6 +723,26 @@ fn gridLayoutCommand(_: *anyopaque) anyerror!void {
     GridLayout.request(doc.id);
 }
 
+fn exportEnabled(_: *anyopaque) bool {
+    return activeDocIsOurs();
+}
+
+fn exportCommand(_: *anyopaque) anyerror!void {
+    if (!activeDocIsOurs()) return;
+    var mutex = internal.core.dvui.dialog(@src(), .{
+        .displayFn = Export.dialog,
+        .callafterFn = Export.callAfter,
+        .title = "Export...",
+        .ok_label = "Export",
+        .cancel_label = "Cancel",
+        .resizeable = false,
+        .modal = false,
+        .header_kind = .info,
+        .default = .ok,
+    });
+    mutex.mutex.unlock(dvui.io);
+}
+
 fn requestSaveConfirmation(_: *anyopaque, doc: DocHandle, mode: sdk.Plugin.SaveConfirmMode, from_save_all_quit: bool) void {
     FlatRasterSaveWarning.request(doc.id, mode, from_save_all_quit);
 }
@@ -730,13 +757,13 @@ fn beginFrame(state: *anyopaque) void {
     if (comptime @import("builtin").target.cpu.arch == .wasm32) pack_project.runWasmWorkers(st);
 }
 
-/// Command body for `internal.packProject`.
+/// Command body for `pixi.packProject`.
 fn packProjectCommand(state: *anyopaque) anyerror!void {
     const st: *State = @ptrCast(@alignCast(state));
     try pack_project.start(st);
 }
 
-/// `internal.packProject` is enabled only when no pack is already in flight.
+/// `pixi.packProject` is enabled only when no pack is already in flight.
 fn packProjectEnabled(state: *anyopaque) bool {
     const st: *State = @ptrCast(@alignCast(state));
     return !pack_project.isActive(st);
@@ -809,7 +836,9 @@ fn contributeKeybinds(state: *anyopaque, win: *dvui.Window) anyerror!void {
         try win.keybinds.putNoClobber(win.gpa, "sample", .{ .control = true });
         try win.keybinds.putNoClobber(win.gpa, "transform", .{ .command = true, .key = .t });
         try win.keybinds.putNoClobber(win.gpa, "grid_layout", .{ .command = true, .key = .g });
-        try win.keybinds.putNoClobber(win.gpa, "export", .{ .command = true, .key = .p });
+        // shift=false so this never matches Cmd+Shift+P (command palette). Dispatch of Export
+        // itself goes through the shell keymap (`pixi.export`); this entry is only for menu hints.
+        try win.keybinds.putNoClobber(win.gpa, "export", .{ .command = true, .key = .p, .shift = false });
         try win.keybinds.putNoClobber(win.gpa, "delete_selection_contents", .{ .key = .backspace });
     } else {
         try win.keybinds.putNoClobber(win.gpa, "undo", .{ .key = .z, .control = true, .shift = false });
@@ -817,7 +846,7 @@ fn contributeKeybinds(state: *anyopaque, win: *dvui.Window) anyerror!void {
         try win.keybinds.putNoClobber(win.gpa, "sample", .{ .alt = true });
         try win.keybinds.putNoClobber(win.gpa, "transform", .{ .control = true, .key = .t });
         try win.keybinds.putNoClobber(win.gpa, "grid_layout", .{ .control = true, .key = .g });
-        try win.keybinds.putNoClobber(win.gpa, "export", .{ .control = true, .key = .p });
+        try win.keybinds.putNoClobber(win.gpa, "export", .{ .control = true, .key = .p, .shift = false });
         try win.keybinds.putNoClobber(win.gpa, "delete_selection_contents", .{ .key = .delete });
     }
 

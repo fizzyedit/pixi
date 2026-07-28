@@ -843,8 +843,8 @@ pub fn drawEditPill(self: *CanvasData, container: *dvui.WidgetData) void {
     // shrinks, and once it's narrower than the pill we bail and draw nothing this frame —
     // so closing splits cleanly hides the menu.
     const wb = container.rectScale().r.toNatural();
-    const ruler_top: f32 = if (runtime.state().settings.show_rulers) self.horizontal_ruler_height else 0;
-    const ruler_left: f32 = if (runtime.state().settings.show_rulers) self.vertical_ruler_width else 0;
+    const ruler_top: f32 = if (runtime.state().settings.show_rulers.get()) self.horizontal_ruler_height else 0;
+    const ruler_left: f32 = if (runtime.state().settings.show_rulers.get()) self.vertical_ruler_width else 0;
     const canvas_nat = dvui.Rect{
         .x = wb.x + ruler_left,
         .y = wb.y + ruler_top,
@@ -1083,8 +1083,8 @@ pub fn drawSampleButton(self: *CanvasData, container: *dvui.WidgetData) void {
 
     // Anchor against the same canvas-scroll-area rect the pill uses.
     const wb = container.rectScale().r.toNatural();
-    const ruler_top: f32 = if (runtime.state().settings.show_rulers) self.horizontal_ruler_height else 0;
-    const ruler_left: f32 = if (runtime.state().settings.show_rulers) self.vertical_ruler_width else 0;
+    const ruler_top: f32 = if (runtime.state().settings.show_rulers.get()) self.horizontal_ruler_height else 0;
+    const ruler_left: f32 = if (runtime.state().settings.show_rulers.get()) self.vertical_ruler_width else 0;
     const canvas_nat = dvui.Rect{
         .x = wb.x + ruler_left,
         .y = wb.y + ruler_top,

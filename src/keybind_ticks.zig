@@ -1,10 +1,9 @@
-//! Global keybind handlers for pixel-art editing (tool shortcuts, radial menu, export).
+//! Global keybind handlers for pixel-art editing (tool shortcuts, radial menu).
 const std = @import("std");
 const dvui = @import("dvui");
 const pixi = @import("pixi.zig");
 const runtime = @import("runtime.zig");
 const Tools = pixi.Tools;
-const Export = @import("dialogs/Export.zig");
 
 pub fn tick() !void {
     for (dvui.events()) |e| {
@@ -38,20 +37,8 @@ pub fn tick() !void {
                     }
                 }
 
-                if (ke.matchBind("export") and ke.action == .down) {
-                    var mutex = pixi.core.dvui.dialog(@src(), .{
-                        .displayFn = Export.dialog,
-                        .callafterFn = Export.callAfter,
-                        .title = "Export...",
-                        .ok_label = "Export",
-                        .cancel_label = "Cancel",
-                        .resizeable = false,
-                        .modal = false,
-                        .header_kind = .info,
-                        .default = .ok,
-                    });
-                    mutex.mutex.unlock(dvui.io);
-                }
+                // Export is a Host command (`pixi.export`) dispatched by the shell keymap with
+                // active-owner scoping — do not matchBind it here or it races Quick Open.
 
                 if (ke.matchBind("decrease_stroke_size") and (ke.action == .down or ke.action == .repeat)) {
                     if (runtime.state().tools.current != .selection or runtime.state().tools.selection_mode == .pixel) {

@@ -535,7 +535,7 @@ fn exportCheckerboardCellCornerColor(
     u: f32,
     v: f32,
 ) dvui.Color {
-    switch (runtime.state().settings.transparency_effect) {
+    switch (runtime.state().settings.transparency_effect.get()) {
         .none => return pal.tone,
         .rainbow => return exportCheckerboardVertexColor(pal.c_tl, pal.c_tr, pal.c_bl, pal.c_br, u, v, 0.5, 0.5, pal.tone),
         .animation => {

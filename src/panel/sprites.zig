@@ -806,7 +806,7 @@ pub fn draw(self: *Sprites) !void {
 /// Side cards lift away during playback, while a drawing tool is active, or when
 /// `settings.scrolling_cards` is off (focus mode; toggled in settings or the sprites pane).
 fn sideCardsFlown(playing: bool) bool {
-    return playing or drawingToolActive() or !runtime.state().settings.scrolling_cards;
+    return playing or drawingToolActive() or !runtime.state().settings.scrolling_cards.get();
 }
 
 /// Pencil, eraser, and bucket — not pointer (navigate) or selection (marquee).
@@ -1240,7 +1240,7 @@ pub fn drawAnimationControlsDialog(_: *Sprites) void {
             !fly_forced,
             flown,
         ) and !fly_forced) {
-            runtime.state().settings.scrolling_cards = !runtime.state().settings.scrolling_cards;
+            runtime.state().settings.scrolling_cards.set(!runtime.state().settings.scrolling_cards.get());
             runtime.state().saveSettings(runtime.state().host);
             dvui.refresh(null, @src(), dvui.parentGet().data().id);
         }
