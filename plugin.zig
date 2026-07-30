@@ -4,6 +4,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const dvui = @import("dvui");
+const icons = @import("icons");
 const internal = @import("src/pixi.zig");
 const sdk = internal.sdk;
 const runtime = @import("src/runtime.zig");
@@ -418,6 +419,8 @@ pub fn register(host: *sdk.Host) !void {
         .owner = &plugin,
         .title = "Grid Layout…",
         .run = gridLayoutCommand,
+        .isEnabled = editActionEnabled,
+        .icon = icons.tvg.lucide.@"grid-3x3",
     });
     // Dispatched by the shell keymap (owner-scoped `mod+p`) — not by `tickKeybinds`, so it
     // no longer races Quick Open / the command palette on the same chord.
@@ -439,9 +442,9 @@ pub fn register(host: *sdk.Host) !void {
     // Editing verbs the shell's Edit menu / keybinds dispatch to per active-doc owner
     // (`<owner_id>.<action>`, i.e. `pixi.<action>` since `plugin.id == "pixi"`). These are
     // pixel-art's answers; another editor registers its own under its own id.
-    try host.registerCommand(.{ .id = "pixi.copy", .owner = &plugin, .title = "Copy", .run = pluginCopy });
-    try host.registerCommand(.{ .id = "pixi.paste", .owner = &plugin, .title = "Paste", .run = pluginPaste });
-    try host.registerCommand(.{ .id = "pixi.transform", .owner = &plugin, .title = "Transform", .run = pluginTransform });
+    try host.registerCommand(.{ .id = "pixi.copy", .owner = &plugin, .title = "Copy", .run = pluginCopy, .icon = icons.tvg.lucide.copy });
+    try host.registerCommand(.{ .id = "pixi.paste", .owner = &plugin, .title = "Paste", .run = pluginPaste, .icon = icons.tvg.lucide.@"clipboard-paste" });
+    try host.registerCommand(.{ .id = "pixi.transform", .owner = &plugin, .title = "Transform", .run = pluginTransform, .isEnabled = editActionEnabled, .icon = icons.tvg.lucide.move });
     try host.registerCommand(.{ .id = "pixi.acceptEdit", .owner = &plugin, .title = "Accept Edit", .run = pluginAcceptEdit });
     try host.registerCommand(.{ .id = "pixi.cancelEdit", .owner = &plugin, .title = "Cancel Edit", .run = pluginCancelEdit });
     try host.registerCommand(.{ .id = "pixi.deleteSelection", .owner = &plugin, .title = "Delete Selection", .run = pluginDeleteSelection });
@@ -451,7 +454,7 @@ pub fn register(host: *sdk.Host) !void {
     // native), only doing anything while the focused document is one of ours.
     try host.registerMenuSection(.{
         .id = "pixi.menu.edit_section",
-        .parent_menu_id = "shell.menu.edit",
+        .parent_menu_id = "fizzy.menu.edit",
         .owner = &plugin,
         .draw = drawEditMenuSection,
     });
@@ -460,7 +463,7 @@ pub fn register(host: *sdk.Host) !void {
     try host.registerNativeMenuItem(.{
         .id = "pixi.native.transform",
         .owner = &plugin,
-        .parent_menu_id = "shell.menu.edit",
+        .parent_menu_id = "fizzy.menu.edit",
         .title = "Transform",
         .command = "pixi.transform",
         .sf_symbol = "arrow.up.left.and.down.right.magnifyingglass",
@@ -469,7 +472,7 @@ pub fn register(host: *sdk.Host) !void {
     try host.registerNativeMenuItem(.{
         .id = "pixi.native.gridLayout",
         .owner = &plugin,
-        .parent_menu_id = "shell.menu.edit",
+        .parent_menu_id = "fizzy.menu.edit",
         .title = "Grid Layout…",
         .command = "pixi.gridLayout",
         .sf_symbol = "square.grid.3x3",
@@ -484,8 +487,20 @@ fn activeDocIsOurs() bool {
     return doc.owner == &plugin;
 }
 
-/// In-app "Edit" menu section (see `Host.registerMenuSection`) — only draws while a pixi
-/// document is focused, so the item disappears entirely rather than sitting there disabled.
+/// `Command.isEnabled` for `pixi.transform`/`pixi.gridLayout`. Naming this on the command (rather
+/// than each call site re-deriving it) is what lets both the in-app dvui menu row
+/// (`Host.drawMenuItem`, via `Host.commandEnabled`) and the native macOS row
+/// (`FizzyNativeMenuGenericActionEnabled`, via the same lookup) grey themselves out for a
+/// non-pixi document without either side special-casing pixi.
+fn editActionEnabled(_: *anyopaque) bool {
+    return activeDocIsOurs();
+}
+
+/// In-app "Edit" menu section (see `Host.registerMenuSection`). Always drawn — greying for a
+/// non-pixi document comes from `editActionEnabled` above via `Host.drawMenuItem`, not from an
+/// early return here. An early return used to make both rows disappear entirely from this menu
+/// while the *native* macOS one (a static bar with no per-row enabled hook of its own) kept
+/// showing them regardless, so the two disagreed on every non-pixi document.
 ///
 /// Both rows go through `Host.drawMenuItem`, naming the command each one runs: the shell draws
 /// that command's current chord as the accelerator, so rebinding Transform / Grid Layout in the
@@ -494,8 +509,6 @@ fn activeDocIsOurs() bool {
 /// under — so it always drew a blank accelerator, and it built dvui menu widgets inside the
 /// plugin dylib, which `EditorAPI.VTable.drawMenuItem`'s doc comment spells out is unsafe.
 fn drawEditMenuSection(_: ?*anyopaque) anyerror!void {
-    if (!activeDocIsOurs()) return;
-
     if (runtime.state().host.drawMenuItem("Transform", "pixi.transform")) {
         runtime.state().host.runCommand("pixi.transform") catch |err| {
             dvui.log.err("Transform command failed: {s}", .{@errorName(err)});
@@ -508,9 +521,10 @@ fn drawEditMenuSection(_: ?*anyopaque) anyerror!void {
     }
 }
 
-/// The native macOS Edit menu is a static bar rebuilt only on plugin load/unload, so these two
-/// items are always present once pixi is loaded — this guard is what actually keeps them inert
-/// for a non-pixi document, matching the in-app menu's behavior.
+/// AppKit now greys these two rows for a non-pixi document too (`FizzyNativeMenuGenericActionEnabled`
+/// reads `editActionEnabled` off the named command, same as the in-app menu), so this guard
+/// shouldn't fire in the ordinary click path anymore — kept as a backstop against any other way
+/// `run` could be reached (e.g. a future direct dispatch that skips menu validation).
 fn nativeTransform(_: ?*anyopaque) anyerror!void {
     if (!activeDocIsOurs()) return;
     try runtime.state().host.runCommand("pixi.transform");
