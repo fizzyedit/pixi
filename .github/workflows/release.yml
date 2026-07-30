@@ -10,7 +10,7 @@ on:
 
 jobs:
   build:
-    uses: fizzyedit/plugin-build-action/.github/workflows/build.yml@v3
+    uses: fizzyedit/plugin-build-action/.github/workflows/build.yml@v4
     permissions:
       contents: write
     with:
