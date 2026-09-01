@@ -86,7 +86,7 @@ const vtable: sdk.Plugin.VTable = .{
     .resetDocumentSaveUIState = resetDocumentSaveUIState,
     .requestNewDocumentDialog = requestNewDocumentDialog,
     .drawDocument = drawDocument,
-    .drawDocumentInfobar = drawDocumentInfobar,
+    .infobarEntries = infobarEntries,
     // universal per-frame phases (pixel-art does its raster/canvas work inside them)
     .beginFrame = beginFrame,
     .prepareFrame = warmupActiveDocumentComposites,
@@ -338,9 +338,9 @@ fn drawProjectView(_: ?*anyopaque, pane: *sdk.WorkbenchPaneView) anyerror!void {
     }
 }
 
-fn drawDocumentInfobar(state: *anyopaque, doc: DocHandle, rect: dvui.Rect) anyerror!void {
+fn infobarEntries(state: *anyopaque, active_doc: ?DocHandle) []const sdk.infobar.Entry {
     const st: *State = @ptrCast(@alignCast(state));
-    return infobar_status.drawDocumentInfobar(st, doc, rect);
+    return infobar_status.infobarEntries(st, active_doc);
 }
 
 fn undo(_: *anyopaque, doc: DocHandle) anyerror!void {
