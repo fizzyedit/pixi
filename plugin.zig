@@ -47,7 +47,7 @@ var plugin: sdk.Plugin = .{
 const vtable: sdk.Plugin.VTable = .{
     .deinit = pluginDeinit,
     .initPlugin = pluginInit,
-    .fileTypePriority = fileTypePriority,
+    .fileTypes = fileTypes,
     .contributeKeybinds = contributeKeybinds,
     .loadDocument = loadDocument,
     .loadDocumentFromBytes = loadDocumentFromBytes,
@@ -109,13 +109,12 @@ fn docFile(doc: DocHandle) *Internal.File {
     return runtime.state().docs.fileById(doc.id).?;
 }
 
-/// Priority for opening `ext` (lower wins). pixi owns its native `.pixi`/`.fiz`
-/// and flat-image `.png`/`.jpg`/`.jpeg`; native formats win over flat images when
-/// some future plugin also claims an image type.
-fn fileTypePriority(_: *anyopaque, ext: []const u8) ?u8 {
-    if (Internal.File.isFizzyExtension(ext)) return 0;
-    if (Internal.File.isFlatImageExtension(ext)) return 90;
-    return null;
+/// Extensions pixi offers to open: its native `.pixi`/`.fiz` plus the flat images it can
+/// import and export. This is an *offer*, not a claim — which plugin actually opens a given
+/// extension is the user's persisted choice (fizzy prompts when two plugins offer the same one
+/// and surfaces the result in Settings > File Types). There is no numeric priority to win.
+fn fileTypes(_: *anyopaque) []const []const u8 {
+    return &.{ ".pixi", ".fiz", ".png", ".jpg", ".jpeg" };
 }
 
 /// Natural size reported for an atlas sprite icon, as a multiple of its native pixel size.

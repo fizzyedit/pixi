@@ -184,6 +184,11 @@ pub fn drawTools() !void {
             .bucket => runtime.uiAtlas().sprites[pixi.atlas.sprites.bucket_default],
             .selection => selection_sprite,
         };
+        // Rest fill is the hover colour at zero alpha, not `.transparent`: dvui fades `.fill` ->
+        // `.fill_hover` with a straight (non-premultiplied) RGBA lerp, so a transparent-*black*
+        // rest dips through a dark wash before reaching the tint. Same RGB ramps alpha only.
+        const hover_fill = dvui.themeGet().color(.content, .fill).lighten(if (dvui.themeGet().dark) 10.0 else -10.0);
+
         var button: dvui.ButtonWidget = undefined;
         button.init(@src(), .{}, .{
             .expand = .none,
@@ -191,8 +196,8 @@ pub fn drawTools() !void {
             .id_extra = id_extra,
             .background = true,
             .corners = .round(1000),
-            .color_fill = if (selected) dvui.themeGet().color(.content, .fill) else .transparent,
-            .color_fill_hover = dvui.themeGet().color(.content, .fill).lighten(if (dvui.themeGet().dark) 10.0 else -10.0),
+            .color_fill = if (selected) dvui.themeGet().color(.content, .fill) else hover_fill.opacity(0),
+            .color_fill_hover = hover_fill,
             .box_shadow = if (selected) .{
                 .color = .black,
                 .offset = .{ .x = -2.5, .y = 2.5 },

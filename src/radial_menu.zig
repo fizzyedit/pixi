@@ -129,12 +129,18 @@ pub fn draw() !void {
         rect.y -= rect.h / 2.0;
 
         const tool = @as(Tools.Tool, @enumFromInt(i));
+        // Rest fill is the hover colour at zero alpha, not `.transparent`: dvui fades `.fill` ->
+        // `.fill_hover` with a straight (non-premultiplied) RGBA lerp, so a transparent-*black*
+        // rest dips through a dark wash before reaching the tint. Same RGB ramps alpha only.
+        const hover_fill = dvui.themeGet().color(.content, .fill).lighten(if (dvui.themeGet().dark) 10.0 else -10.0);
+
         var button: dvui.ButtonWidget = undefined;
         button.init(@src(), .{}, .{
             .rect = rect,
             .id_extra = i,
             .corners = .round(1000.0),
-            .color_fill = if (tool == runtime.state().tools.current) dvui.themeGet().color(.content, .fill) else .transparent,
+            .color_fill = if (tool == runtime.state().tools.current) dvui.themeGet().color(.content, .fill) else hover_fill.opacity(0),
+            .color_fill_hover = hover_fill,
             .box_shadow = if (tool == runtime.state().tools.current) .{
                 .color = .black,
                 .offset = .{ .x = -2.5, .y = 2.5 },

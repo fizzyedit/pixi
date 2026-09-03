@@ -13,10 +13,6 @@
     },
     .fingerprint = 0xdef5a52dbae70684,
     .dependencies = .{
-        .fizzy = .{
-            .url = "https://github.com/fizzyedit/fizzy/releases/download/sdk-v0.1.50/fizzy-sdk-v0.1.50.tar.gz",
-            .hash = "fizzy-0.1.50-SGBwY0IKDQAV2eW05TlOZbWQMAi0j3SFDLv4geR9AKfw",
-        },
         .assetpack = .{
             .url = "https://github.com/foxnne/assetpack/archive/ac7592f3f5988857840d0df4610e1e1fad690e2e.tar.gz",
             .hash = "assetpack-0.2.0-5DA2d1ZkAADJanNVdWrUBOGMhOzUENhrUiqXcHADxY2x",
@@ -25,6 +21,10 @@
             .url = "https://github.com/foxnne/zig-lib-icons/archive/db034786a1286ab28dc35aba534c098aa4f1a3aa.tar.gz",
             .hash = "icons-0.0.0-iJxA-VvGMwAgiKSXRe_Y0O7RpasdtEJhBfVx8IGGEBl_",
             .lazy = true,
+        },
+        .fizzy = .{
+            .url = "https://github.com/fizzyedit/fizzy/releases/download/sdk-v0.1.51/fizzy-sdk-v0.1.51.tar.gz",
+            .hash = "fizzy-0.1.51-SGBwY_MoDQAaQRD9W0axvl7I1t7egfhA78eSsyiYtvy7",
         },
     },
 }
