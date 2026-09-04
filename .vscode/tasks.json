@@ -1,0 +1,117 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build Plugin",
+      "type": "shell",
+      "command": "zig build",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "detail": "compiles and installs the dylib into the fizzy plugins dir",
+      "group": "build",
+      "problemMatcher": [
+        "$zig"
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      }
+    },
+    {
+      "label": "Build Plugin (release-fast)",
+      "type": "shell",
+      "command": "zig build -Doptimize=ReleaseFast",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": "build",
+      "problemMatcher": [
+        "$zig"
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      }
+    },
+    {
+      "label": "Build Plugin (release-safe)",
+      "type": "shell",
+      "command": "zig build -Doptimize=ReleaseSafe",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": "build",
+      "problemMatcher": [
+        "$zig"
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      }
+    },
+    {
+      "label": "fizzy sdk: use local",
+      "type": "shell",
+      "command": "./scripts/fizzy-sdk.sh local",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "detail": "Point build.zig.zon at ../../fizzy/sdk for testing unreleased SDK changes",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      }
+    },
+    {
+      "label": "fizzy sdk: use latest release",
+      "type": "shell",
+      "command": "./scripts/fizzy-sdk.sh latest",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "detail": "Repin build.zig.zon to the newest published SDK release (required before publishing)",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      }
+    },
+    {
+      "label": "release minor",
+      "type": "shell",
+      "command": "./scripts/release-plugin.sh minor",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "detail": "0.1.21 -> 0.1.22  - bump, commit, tag, push (asks first)",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      }
+    },
+    {
+      "label": "release major",
+      "type": "shell",
+      "command": "./scripts/release-plugin.sh major",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "detail": "0.1.21 -> 0.2.0  - bump, commit, tag, push (asks first)",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      }
+    }
+  ]
+}

@@ -1555,15 +1555,19 @@ pub fn windowFn(id: dvui.Id) anyerror!void {
         win.stopAutoSizing();
     }
 
+    // Matches `core.dvui.dialogWindow`: applied *before* the animation check rather than as an
+    // `else if` to it, so a destination published after the close already began re-aims the
+    // animation in flight instead of being dropped on the floor.
+    const close_override = pixi.core.dvui.takeDialogCloseRectOverride();
+    if (close_override) |close_rect| {
+        dvui.dataSet(null, win.data().id, "_close_rect", close_rect);
+    }
+
     if (dvui.animationGet(win.data().id, "_close_x")) |a| {
         if (a.done()) {
-            pixi.core.dvui.dialog_close_rect_override = null;
             dvui.dialogRemove(id);
         }
-    } else if (pixi.core.dvui.dialog_close_rect_override) |close_rect| {
-        dvui.dataSet(null, win.data().id, "_close_rect", close_rect);
-        pixi.core.dvui.dialog_close_rect_override = null;
-    } else {
+    } else if (close_override == null) {
         // Call `autoSize` only while opening. Doing it every frame leaves `auto_size` true and the
         // window keeps animating/snapping to content min size — user resize appears "locked".
         const open_done = dvui.dataGet(null, id, "_grid_dialog_open_done", bool) orelse false;

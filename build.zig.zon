@@ -23,8 +23,8 @@
             .lazy = true,
         },
         .fizzy = .{
-            .url = "https://github.com/fizzyedit/fizzy/releases/download/sdk-v0.1.51/fizzy-sdk-v0.1.51.tar.gz",
-            .hash = "fizzy-0.1.51-SGBwY_MoDQAaQRD9W0axvl7I1t7egfhA78eSsyiYtvy7",
+            .url = "https://github.com/fizzyedit/fizzy/releases/download/sdk-v0.1.52/fizzy-sdk-v0.1.52.tar.gz",
+            .hash = "fizzy-0.1.52-SGBwYw4-DQDl8HSdUHqFCu81zGqKOw5BFuJ_GitkTJAs",
         },
     },
 }
