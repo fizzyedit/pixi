@@ -250,7 +250,6 @@ fn drawDocument(_: *anyopaque, doc: DocHandle) anyerror!void {
     internal.perf.canvasPaneDrawn();
 
     if (runtime.state().settings.show_rulers.get() and !dvui.firstFrame(container.id)) {
-        defer internal.core.draw.drawEdgeShadow(container.rectScale(), .top, .{});
         canvas.drawRuler(file, .horizontal);
     }
 
@@ -258,7 +257,6 @@ fn drawDocument(_: *anyopaque, doc: DocHandle) anyerror!void {
     defer canvas_hbox.deinit();
 
     if (runtime.state().settings.show_rulers.get() and !dvui.firstFrame(container.id)) {
-        defer internal.core.draw.drawEdgeShadow(container.rectScale(), .left, .{});
         canvas.drawRuler(file, .vertical);
     }
 
