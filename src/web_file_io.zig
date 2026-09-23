@@ -17,9 +17,17 @@ fn downloadNameWithExtension(allocator: std.mem.Allocator, filename: []const u8,
     return try std.fmt.allocPrint(allocator, "{s}{s}", .{ stem, ext });
 }
 
+/// Pixi is a wasm side module whose dvui is the proxy backend, so `dvui.backend` has no
+/// `downloadData`. The page links side modules against dvui's JS imports
+/// (`web/index.html` → `dvui: dvuiApp.imports`), so call the web backend's import directly.
+/// TODO: replace with an SDK `EditorAPI` download hook once fizzy exposes one.
+const web = if (builtin.target.cpu.arch == .wasm32) struct {
+    extern "dvui" fn wasm_download_data(name_ptr: [*]const u8, name_len: usize, data_ptr: [*]const u8, data_len: usize) void;
+} else struct {};
+
 pub fn downloadBytes(filename: []const u8, data: []const u8) !void {
     if (comptime builtin.target.cpu.arch != .wasm32) return;
-    try dvui.backend.downloadData(filename, data);
+    web.wasm_download_data(filename.ptr, filename.len, data.ptr, data.len);
 }
 
 pub fn downloadBytesWithExtension(filename: []const u8, ext: []const u8, data: []const u8) !void {

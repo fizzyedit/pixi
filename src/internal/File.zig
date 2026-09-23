@@ -1,4 +1,5 @@
 const std = @import("std");
+const sdk = @import("fizzy_sdk");
 const builtin = @import("builtin");
 const zip = @import("zip");
 const dvui = @import("dvui");
@@ -65,7 +66,7 @@ pub const EditorData = struct {
     /// Set by the shell each frame before draw: request the canvas recenter this frame
     /// (true while a workspace/panel pane is mid-animation). Read by the document render.
     center: bool = false,
-    canvas: pixi.core.dvui.CanvasWidget = .{},
+    canvas: pixi.core.widgets.CanvasWidget = .{},
     layers_scroll_info: dvui.ScrollInfo = .{ .horizontal = .auto },
     sprites_scroll_info: dvui.ScrollInfo = .{ .horizontal = .auto },
     animations_scroll_info: dvui.ScrollInfo = .{ .horizontal = .auto },
@@ -352,7 +353,7 @@ pub fn showSaveDoneFlash(file: *const File) bool {
     return timeSinceSaveComplete(file) != null;
 }
 
-/// Nanoseconds since save finished (`null` when inactive). Drives [`pixi.core.dvui.bubbleSpinner`]'s
+/// Nanoseconds since save finished (`null` when inactive). Drives [`pixi.core.dialogs.bubbleSpinner`]'s
 /// finish animation (sync → pop → check).
 pub fn timeSinceSaveComplete(file: *const File) ?i128 {
     const until = file.editor.save_complete_show_duration orelse return null;
@@ -2711,7 +2712,7 @@ fn mergeLayerInternal(self: *File, kind: History.Change.LayerMerge.Kind, src_i: 
         .dest_pixels_before = dest_pixels_before,
         .dest_mask_before = dest_mask_before,
     } });
-    runtime.state().host.setActiveSidebarView(plugin.view_tools);
+    runtime.state().host.setSelectionFor(sdk.keywords.ide.sidebar, plugin.view_tools);
 }
 
 pub fn duplicateLayer(self: *File, index: usize) !u64 {
@@ -2862,7 +2863,7 @@ pub fn saveTar(self: *File, window: *dvui.Window) !void {
     try wrt.finish();
 
     {
-        const id_mutex = dvui.toastAdd(window, @src(), 0, pixi.core.dvui.save_toast_subwindow_id, pixi.core.dvui.saveCompleteToastDisplay, 2_500_000);
+        const id_mutex = dvui.toastAdd(window, @src(), 0, pixi.core.dialogs.save_toast_subwindow_id, pixi.core.dialogs.saveCompleteToastDisplay, 2_500_000);
         const id = id_mutex.id;
         const message = std.fmt.allocPrint(window.arena(), "Saved {s}", .{std.fs.path.basename(self.path)}) catch "Saved file";
         dvui.dataSetSlice(window, id, "_message", message);
@@ -2913,7 +2914,7 @@ pub fn savePng(self: *File, window: *dvui.Window) !void {
     {
         // `id_extra` is `usize` (u32 on wasm32). File IDs are session-local monotonic
         // u64s; in practice they fit, so an `@intCast` is safe and panics if not.
-        const id_mutex = dvui.toastAdd(window, @src(), @as(usize, @intCast(self.id)), pixi.core.dvui.save_toast_subwindow_id, pixi.core.dvui.saveCompleteToastDisplay, 2_500_000);
+        const id_mutex = dvui.toastAdd(window, @src(), @as(usize, @intCast(self.id)), pixi.core.dialogs.save_toast_subwindow_id, pixi.core.dialogs.saveCompleteToastDisplay, 2_500_000);
         const id = id_mutex.id;
         const message = std.fmt.allocPrint(window.arena(), "Saved {s} to disk", .{std.fs.path.basename(self.path)}) catch "Saved file";
         dvui.dataSetSlice(window, id, "_message", message);
@@ -2934,7 +2935,7 @@ pub fn saveJpg(self: *File, window: *dvui.Window) !void {
     {
         // `id_extra` is `usize` (u32 on wasm32). File IDs are session-local monotonic
         // u64s; in practice they fit, so an `@intCast` is safe and panics if not.
-        const id_mutex = dvui.toastAdd(window, @src(), @as(usize, @intCast(self.id)), pixi.core.dvui.save_toast_subwindow_id, pixi.core.dvui.saveCompleteToastDisplay, 2_500_000);
+        const id_mutex = dvui.toastAdd(window, @src(), @as(usize, @intCast(self.id)), pixi.core.dialogs.save_toast_subwindow_id, pixi.core.dialogs.saveCompleteToastDisplay, 2_500_000);
         const id = id_mutex.id;
         const message = std.fmt.allocPrint(window.arena(), "Saved {s} to disk", .{std.fs.path.basename(self.path)}) catch "Saved file";
         dvui.dataSetSlice(window, id, "_message", message);
@@ -3213,6 +3214,37 @@ fn writeSnapshotToZipBytes(snap: *const SaveSnapshot, allocator: std.mem.Allocat
     return owned;
 }
 
+/// The saved form of this document as bytes, for a host that does the writing itself — a
+/// mounted drive, the browser's download. Same encoders `saveZip`/`saveToDownload` use;
+/// caller owns the bytes (allocated with `allocator`).
+pub fn savedBytes(self: *File, allocator: std.mem.Allocator, window: *dvui.Window) ![]u8 {
+    const ext = std.fs.path.extension(self.path);
+    if (isFizzyExtension(ext)) {
+        var snap = try SaveSnapshot.fromFileOnGuiThread(self, runtime.allocator());
+        defer snap.deinit(runtime.allocator());
+        return try writeSnapshotToZipBytes(&snap, allocator);
+    }
+    const raw = if (std.mem.eql(u8, ext, ".png"))
+        try flattenedImageBytes(self, window, .png)
+    else if (std.mem.eql(u8, ext, ".jpg") or std.mem.eql(u8, ext, ".jpeg"))
+        try flattenedImageBytes(self, window, .jpg)
+    else
+        return error.UnsupportedSaveExtension;
+    defer runtime.allocator().free(raw);
+    return try allocator.dupe(u8, raw);
+}
+
+/// The host wrote `savedBytes` to `path`: the same bookkeeping a save of our own does.
+pub fn written(self: *File, path: []const u8) !void {
+    if (!std.mem.eql(u8, path, self.path)) {
+        const gpa = runtime.allocator();
+        const copy = try gpa.dupe(u8, path);
+        gpa.free(self.path);
+        self.path = copy;
+    }
+    self.history.bookmark = 0;
+}
+
 /// Browser save: encode in memory and trigger a download (no on-disk project folder).
 pub fn saveToDownload(self: *File, window: *dvui.Window) !void {
     if (comptime @import("builtin").target.cpu.arch != .wasm32) return;
@@ -3242,7 +3274,7 @@ pub fn saveToDownload(self: *File, window: *dvui.Window) !void {
     }
 
     self.history.bookmark = 0;
-    const id_mutex = dvui.toastAdd(window, @src(), 0, pixi.core.dvui.save_toast_subwindow_id, pixi.core.dvui.saveCompleteToastDisplay, 2_500_000);
+    const id_mutex = dvui.toastAdd(window, @src(), 0, pixi.core.dialogs.save_toast_subwindow_id, pixi.core.dialogs.saveCompleteToastDisplay, 2_500_000);
     const id = id_mutex.id;
     const message = std.fmt.allocPrint(window.arena(), "Downloaded {s}", .{basename}) catch "Downloaded file";
     dvui.dataSetSlice(window, id, "_message", message);
@@ -3464,7 +3496,7 @@ pub fn saveAsFlattened(self: *File, output_path: []const u8, window: *dvui.Windo
     {
         // `id_extra` is `usize` (u32 on wasm32). File IDs are session-local monotonic
         // u64s; in practice they fit, so an `@intCast` is safe and panics if not.
-        const id_mutex = dvui.toastAdd(window, @src(), @as(usize, @intCast(self.id)), pixi.core.dvui.save_toast_subwindow_id, pixi.core.dvui.saveCompleteToastDisplay, 2_500_000);
+        const id_mutex = dvui.toastAdd(window, @src(), @as(usize, @intCast(self.id)), pixi.core.dialogs.save_toast_subwindow_id, pixi.core.dialogs.saveCompleteToastDisplay, 2_500_000);
         const id = id_mutex.id;
         const message = std.fmt.allocPrint(window.arena(), "Saved {s} to disk", .{std.fs.path.basename(self.path)}) catch "Saved file";
         dvui.dataSetSlice(window, id, "_message", message);

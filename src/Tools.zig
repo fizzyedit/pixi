@@ -270,7 +270,7 @@ pub fn drawTooltip(_: Tools, tool: Tool, rect: dvui.Rect.Physical, id_extra: u64
         .interactive = if (tool == .selection) true else false,
     }, .{
         .id_extra = @intCast(id_extra),
-        .color_fill = dvui.themeGet().color(.content, .fill).opacity(0.9),
+        .color_fill = .{ .color = dvui.themeGet().color(.content, .fill).opacity(0.9) },
         .border = dvui.Rect.all(0),
         .box_shadow = .{
             .color = .black,
@@ -299,7 +299,7 @@ pub fn drawTooltip(_: Tools, tool: Tool, rect: dvui.Rect.Physical, id_extra: u64
         }));
         defer vbox2.deinit();
 
-        pixi.core.dvui.labelWithKeybind(
+        pixi.core.draw.labelWithKeybind(
             tool_name,
             switch (tool) {
                 .pointer => dvui.currentWindow().keybinds.get("pointer") orelse .{},
@@ -408,8 +408,8 @@ pub fn drawTooltip(_: Tools, tool: Tool, rect: dvui.Rect.Physical, id_extra: u64
                         .id_extra = @intCast(id_extra * 10 + mi + 1),
                         .background = true,
                         .corners = .round(1000),
-                        .color_fill = if (selected) dvui.themeGet().color(.content, .fill) else hover_fill.opacity(0),
-                        .color_fill_hover = hover_fill,
+                        .color_fill = .{ .color = if (selected) dvui.themeGet().color(.content, .fill) else hover_fill.opacity(0) },
+                        .color_fill_hover = .{ .color = hover_fill },
                         .box_shadow = if (selected) .{
                             .color = .black,
                             .offset = .{ .x = -2.5, .y = 2.5 },
@@ -422,7 +422,7 @@ pub fn drawTooltip(_: Tools, tool: Tool, rect: dvui.Rect.Physical, id_extra: u64
                     defer mode_button.deinit();
 
                     if (mode_button.hovered()) {
-                        mode_button.data().options.color_border = mode_color;
+                        mode_button.data().options.color_border = .{ .color = mode_color };
                     }
 
                     mode_button.processEvents();

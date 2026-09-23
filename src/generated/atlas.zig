@@ -1,6 +1,6 @@
 // This is a generated file, do not edit.
 
-// Sprites 
+// Sprites
 
 pub const sprites = struct {
     pub const cursor_default = 0;
@@ -24,58 +24,58 @@ pub const sprites = struct {
     pub const pixi_default = 18;
 };
 
-// Animations 
+// Animations
 
 pub const animations = struct {
-     pub var cursor_default = [_]usize {
+    pub var cursor_default = [_]usize{
         sprites.cursor_default,
     };
-     pub var pencil_default = [_]usize {
+    pub var pencil_default = [_]usize{
         sprites.pencil_default,
     };
-     pub var eraser_default = [_]usize {
+    pub var eraser_default = [_]usize{
         sprites.eraser_default,
     };
-     pub var bucket_default = [_]usize {
+    pub var bucket_default = [_]usize{
         sprites.bucket_default,
     };
-     pub var box_selection_default = [_]usize {
+    pub var box_selection_default = [_]usize{
         sprites.box_selection_default,
     };
-     pub var box_selection_add_default = [_]usize {
+    pub var box_selection_add_default = [_]usize{
         sprites.box_selection_add_default,
     };
-     pub var box_selection_rem_default = [_]usize {
+    pub var box_selection_rem_default = [_]usize{
         sprites.box_selection_rem_default,
     };
-     pub var dropper_default = [_]usize {
+    pub var dropper_default = [_]usize{
         sprites.dropper_default,
     };
-     pub var color_selection_default = [_]usize {
+    pub var color_selection_default = [_]usize{
         sprites.color_selection_default,
     };
-     pub var color_selection_add_default = [_]usize {
+    pub var color_selection_add_default = [_]usize{
         sprites.color_selection_add_default,
     };
-     pub var color_selection_rem_default = [_]usize {
+    pub var color_selection_rem_default = [_]usize{
         sprites.color_selection_rem_default,
     };
-     pub var pixel_selection_default = [_]usize {
+    pub var pixel_selection_default = [_]usize{
         sprites.pixel_selection_default,
     };
-     pub var pixel_selection_add_default = [_]usize {
+    pub var pixel_selection_add_default = [_]usize{
         sprites.pixel_selection_add_default,
     };
-     pub var pixel_selection_rem_default = [_]usize {
+    pub var pixel_selection_rem_default = [_]usize{
         sprites.pixel_selection_rem_default,
     };
-     pub var fox_default = [_]usize {
+    pub var fox_default = [_]usize{
         sprites.fox_default,
     };
-     pub var fiz_default = [_]usize {
+    pub var fiz_default = [_]usize{
         sprites.fiz_default,
     };
-     pub var pixi_default = [_]usize {
+    pub var pixi_default = [_]usize{
         sprites.pixi_default,
     };
 };

@@ -14,11 +14,12 @@ const ScrollContainerWidget = dvui.ScrollContainerWidget;
 const ScaleWidget = dvui.ScaleWidget;
 
 pub const FileWidget = @This();
-const CanvasWidget = pixi.core.dvui.CanvasWidget;
+const CanvasWidget = pixi.core.widgets.CanvasWidget;
 const CanvasBridge = @import("CanvasBridge.zig");
 const CanvasData = @import("../CanvasData.zig");
 const icons = @import("icons");
 const pixi = @import("../pixi.zig");
+const plugin = @import("../../plugin.zig");
 const runtime = @import("../runtime.zig");
 
 // ---- Canvas hooks: pixel-art reactions to off-artboard viewport gestures. The canvas is
@@ -1368,7 +1369,7 @@ pub fn drawSpriteBubble(
         if (accs) |a| {
             path.addPoint(bubble_rect_scale.r.topRight());
             path.addPoint(bubble_rect_scale.r.topLeft());
-            const tris = path.build().strokeTriangles(dvui.currentWindow().arena(), .{ .thickness = 1, .color = color }) catch return false;
+            const tris = path.build().strokeTriangles(dvui.currentWindow().arena(), .{ .thickness = 1, .color = .{ .color = color } }) catch return false;
             a.shadow.append(tris);
         }
         return false;
@@ -1402,21 +1403,21 @@ pub fn drawSpriteBubble(
             const shadow_color = dvui.Color.black.opacity(0.25);
             var shadow_path = dvui.Path.Builder.init(dvui.currentWindow().arena());
             shadow_path.addArc(arc_center, radius, dvui.math.pi + start_angle, dvui.math.pi + end_angle, false);
-            const shadow_tris = shadow_path.build().fillConvexTriangles(dvui.currentWindow().arena(), .{ .color = shadow_color, .fade = shadow_fade }) catch return false;
+            const shadow_tris = shadow_path.build().fillConvexTriangles(dvui.currentWindow().arena(), .{ .color = .{ .color = shadow_color }, .fade = shadow_fade }) catch return false;
             a.shadow.append(shadow_tris);
 
             if (self.init_options.file.editor.canvas.scale < 0.1) {
-                const fill_tris = built.fillConvexTriangles(dvui.currentWindow().arena(), .{ .color = cell_tint, .fade = 0.0 }) catch return false;
+                const fill_tris = built.fillConvexTriangles(dvui.currentWindow().arena(), .{ .color = .{ .color = cell_tint }, .fade = 0.0 }) catch return false;
                 a.fill.append(fill_tris);
             } else {
-                const fill_tris = built.fillConvexTriangles(dvui.currentWindow().arena(), .{ .color = cell_tint, .fade = 1.0 }) catch return false;
+                const fill_tris = built.fillConvexTriangles(dvui.currentWindow().arena(), .{ .color = .{ .color = cell_tint }, .fade = 1.0 }) catch return false;
                 a.fill.append(fill_tris);
-                var tex_tris = built.fillConvexTriangles(dvui.currentWindow().arena(), .{ .color = cell_tint, .fade = 0.0 }) catch return false;
+                var tex_tris = built.fillConvexTriangles(dvui.currentWindow().arena(), .{ .color = .{ .color = cell_tint }, .fade = 0.0 }) catch return false;
                 const h_ratio = arc_height / sprite_rect_scale.r.h;
                 tex_tris.uvFromRectuv(bubble_rect_scale.r, .{ .x = 0.0, .w = 1.0, .y = 1.0 - h_ratio, .h = h_ratio });
                 a.tex.append(tex_tris);
             }
-            const outline_tris = built.strokeTriangles(dvui.currentWindow().arena(), .{ .color = color, .thickness = dvui.currentWindow().natural_scale }) catch return false;
+            const outline_tris = built.strokeTriangles(dvui.currentWindow().arena(), .{ .color = .{ .color = color }, .thickness = dvui.currentWindow().natural_scale }) catch return false;
             a.outline.append(outline_tris);
 
             const mouse_data_pt = self.init_options.file.editor.canvas.dataFromScreenPoint(dvui.currentWindow().mouse_pt);
@@ -1500,8 +1501,8 @@ pub fn drawSpriteBubble(
             .margin = .all(0),
             .padding = .all(0),
             .id_extra = sprite_index,
-            .color_fill = dvui.themeGet().color(.control, .fill).lighten(if (dvui.themeGet().dark) 10.0 else -10.0),
-            //.color_border = dvui.themeGet().color(.control, .fill),
+            .color_fill = .{ .color = dvui.themeGet().color(.control, .fill).lighten(if (dvui.themeGet().dark) 10.0 else -10.0) },
+            //.color_border = .{ .color = dvui.themeGet().color(.control, .fill) },
             //.border = dvui.Rect.all(1).scale(1.0 / self.init_options.file.editor.canvas.scale, dvui.Rect),
             .box_shadow = .{
                 .color = .black,
@@ -1519,9 +1520,9 @@ pub fn drawSpriteBubble(
 
         if (button.hovered() or show_hint) {
             if (remove) {
-                button.data().options.color_border = dvui.themeGet().color(.err, .fill).opacity(0.75);
+                button.data().options.color_border = .{ .color = dvui.themeGet().color(.err, .fill).opacity(0.75) };
             } else {
-                button.data().options.color_border = dvui.themeGet().color(.highlight, .fill).opacity(0.75);
+                button.data().options.color_border = .{ .color = dvui.themeGet().color(.highlight, .fill).opacity(0.75) };
             }
         }
 
@@ -1633,7 +1634,7 @@ pub fn drawSpriteBubble(
                     self.init_options.file.collapseAnimationSelectionToPrimary();
                     self.init_options.file.editor.animations_scroll_to_index = anim_index;
                     runtime.state().sprites_pane.edit_anim_id = self.init_options.file.animations.items(.id)[anim_index];
-                    runtime.state().host.setActiveSidebarView("pixi.sprites");
+                    plugin.selectSidebar(runtime.state().host, plugin.view_sprites);
 
                     var anim = self.init_options.file.animations.get(anim_index);
                     if (anim.frames.len == 0) {
@@ -1712,7 +1713,7 @@ pub fn drawSpriteBubble(
                         .fade = (button_height / 10) * t,
                         .alpha = 0.35 * t,
                     },
-                    .color_fill = if (remove) dvui.themeGet().color(.err, .fill).opacity(0.75) else dvui.themeGet().color(.highlight, .fill).opacity(0.75),
+                    .color_fill = .{ .color = if (remove) dvui.themeGet().color(.err, .fill).opacity(0.75) else dvui.themeGet().color(.highlight, .fill).opacity(0.75) },
                 });
 
                 dvui.renderIcon("close", if (remove) icons.tvg.lucide.minus else icons.tvg.lucide.plus, .{ .r = icon_box.data().rectScale().r, .s = dvui.currentWindow().natural_scale }, .{}, .{}) catch {
@@ -1744,7 +1745,7 @@ pub fn drawSpriteBubble(
                                 .fade = (button_height / 10) * t,
                                 .alpha = 0.35 * t,
                             },
-                            .color_fill = if (remove) dvui.themeGet().color(.err, .fill).opacity(0.75) else dvui.themeGet().color(.highlight, .fill).opacity(0.75),
+                            .color_fill = .{ .color = if (remove) dvui.themeGet().color(.err, .fill).opacity(0.75) else dvui.themeGet().color(.highlight, .fill).opacity(0.75) },
                         });
                         defer fill_box.deinit();
 
@@ -1793,7 +1794,7 @@ pub fn drawSpriteSelection(self: *FileWidget) void {
         screen_selection_rect.fill(
             dvui.CornerRect.Physical.round(6 * dvui.currentWindow().natural_scale),
             .{
-                .color = selection_color,
+                .color = .{ .color = selection_color },
             },
         );
     }
@@ -1939,7 +1940,7 @@ fn drawBoxSelectionMarqueeOutline(self: *FileWidget) void {
 
     strokePolylineDashedPhysical(loop_buf, dash_px, gap_px, .{
         .thickness = stroke_w,
-        .color = outline_color,
+        .color = .{ .color = outline_color },
         .endcap_style = .none,
         .after = true,
     });
@@ -3069,12 +3070,12 @@ pub fn drawTransform(self: *FileWidget) void {
             centroid_screen_rect.y -= centroid_screen_rect.h / 2;
 
             centroid_screen_rect.fill(dvui.CornerRect.Physical.round(100000), .{
-                .color = dvui.themeGet().color(.control, .fill),
+                .color = .{ .color = dvui.themeGet().color(.control, .fill) },
             });
 
             centroid_screen_rect = centroid_screen_rect.insetAll(2 * dvui.currentWindow().natural_scale);
             centroid_screen_rect.fill(dvui.CornerRect.Physical.round(100000), .{
-                .color = dvui.themeGet().color(.window, .text),
+                .color = .{ .color = dvui.themeGet().color(.window, .text) },
             });
         }
 
@@ -3090,13 +3091,13 @@ pub fn drawTransform(self: *FileWidget) void {
                 rotate_path.addRect(outline_screen_rect, dvui.CornerRect.Physical.round(100000));
                 rotate_path.build().stroke(.{
                     .thickness = 4 * dvui.currentWindow().natural_scale,
-                    .color = dvui.themeGet().color(.control, .fill),
+                    .color = .{ .color = dvui.themeGet().color(.control, .fill) },
                     .closed = true,
                     .endcap_style = .square,
                 });
                 rotate_path.build().stroke(.{
                     .thickness = 2,
-                    .color = dvui.themeGet().color(.window, .text),
+                    .color = .{ .color = dvui.themeGet().color(.window, .text) },
                     .closed = true,
                     .endcap_style = .square,
                 });
@@ -3141,13 +3142,13 @@ pub fn drawTransform(self: *FileWidget) void {
 
                 outline_path.build().stroke(.{
                     .thickness = 4 * dvui.currentWindow().natural_scale,
-                    .color = dvui.themeGet().color(.control, .fill),
+                    .color = .{ .color = dvui.themeGet().color(.control, .fill) },
                     .closed = true,
                     .endcap_style = .square,
                 });
                 outline_path.build().stroke(.{
                     .thickness = 2,
-                    .color = if ((is_hovered and transform.active_point == null) or transform.dragging) dvui.themeGet().color(.highlight, .fill) else dvui.themeGet().color(.window, .text),
+                    .color = .{ .color = if ((is_hovered and transform.active_point == null) or transform.dragging) dvui.themeGet().color(.highlight, .fill) else dvui.themeGet().color(.window, .text) },
                     .closed = true,
                     .endcap_style = .square,
                 });
@@ -3435,7 +3436,7 @@ pub fn drawTransform(self: *FileWidget) void {
                 screen_rect.y -= screen_rect.h / 2;
 
                 screen_rect.fill(dvui.CornerRect.Physical.round(100000), .{
-                    .color = dvui.themeGet().color(.control, .fill),
+                    .color = .{ .color = dvui.themeGet().color(.control, .fill) },
                 });
 
                 screen_rect = screen_rect.inset(dvui.Rect.Physical.all(1 * dvui.currentWindow().natural_scale));
@@ -3451,12 +3452,12 @@ pub fn drawTransform(self: *FileWidget) void {
                 }
 
                 screen_rect.fill(dvui.CornerRect.Physical.round(100000), .{
-                    .color = color,
+                    .color = .{ .color = color },
                 });
 
                 screen_rect = screen_rect.inset(dvui.Rect.Physical.all(2 * dvui.currentWindow().natural_scale));
                 screen_rect.fill(dvui.CornerRect.Physical.round(100000), .{
-                    .color = dvui.themeGet().color(.control, .fill),
+                    .color = .{ .color = dvui.themeGet().color(.control, .fill) },
                 });
             }
         }
@@ -3492,7 +3493,7 @@ fn renderTransformDimLabel(font: dvui.Font, text: []const u8, center_phys: dvui.
     var outline_rect = text_rect.outsetAll(pad);
     const corner = @min(4 * ns, @min(outline_rect.w, outline_rect.h) * 0.48);
     outline_rect.fill(dvui.CornerRect.Physical.round(corner), .{
-        .color = dvui.themeGet().color(.control, .fill).opacity(0.85),
+        .color = .{ .color = dvui.themeGet().color(.control, .fill).opacity(0.85) },
     });
     dvui.renderText(.{
         .text = text,
@@ -3509,13 +3510,13 @@ fn doubleStroke(points: []const dvui.Point.Physical, color: dvui.Color, thicknes
         .points = points,
     }, .{
         .thickness = thickness * 2 * dvui.currentWindow().natural_scale,
-        .color = dvui.themeGet().color(.control, .fill),
+        .color = .{ .color = dvui.themeGet().color(.control, .fill) },
     });
     dvui.Path.stroke(.{
         .points = points,
     }, .{
         .thickness = thickness,
-        .color = color,
+        .color = .{ .color = color },
     });
 }
 
@@ -3526,13 +3527,13 @@ fn doubleStrokeDimensionLike(points: []const dvui.Point.Physical, thickness: f32
         .points = points,
     }, .{
         .thickness = thickness * 2 * ns,
-        .color = dvui.themeGet().color(.control, .fill),
+        .color = .{ .color = dvui.themeGet().color(.control, .fill) },
     });
     dvui.Path.stroke(.{
         .points = points,
     }, .{
         .thickness = inner_thickness,
-        .color = inner_color,
+        .color = .{ .color = inner_color },
     });
 }
 
@@ -4062,7 +4063,7 @@ pub fn active(self: *FileWidget) bool {
 }
 
 pub fn drawCursor(self: *FileWidget) void {
-    if (pixi.core.dvui.canvasPointerInputSuppressed()) return;
+    if (pixi.core.dialogs.canvasPointerInputSuppressed()) return;
     if (runtime.state().tools.current == .pointer and self.sample_data_point == null) return;
     if (runtime.state().tools.radial_menu.visible) return;
     if (self.init_options.file.editor.transform != null) return;
@@ -4148,7 +4149,7 @@ pub fn drawCursor(self: *FileWidget) void {
             .padding = .{ .x = 0, .y = 0 },
             .margin = .{ .x = 0, .y = 0 },
             .background = false,
-            .color_fill = dvui.themeGet().color(.err, .fill),
+            .color_fill = .{ .color = dvui.themeGet().color(.err, .fill) },
         });
         defer box.deinit();
 
@@ -4326,7 +4327,7 @@ fn drawSampleMagnifierPresent(
     defer shadow_path.deinit();
     shadow_path.addRect(shadow_rect, corner_frame_phys);
     dvui.Path.fillConvex(shadow_path.build(), .{
-        .color = dvui.Color.black.opacity(0.2),
+        .color = .{ .color = dvui.Color.black.opacity(0.2) },
         .fade = 15.0 / ns * content_rs.s,
     });
 
@@ -4334,7 +4335,7 @@ fn drawSampleMagnifierPresent(
     var bg_path = dvui.Path.Builder.init(dvui.currentWindow().arena());
     defer bg_path.deinit();
     bg_path.addRect(frame_phys, corner_frame_phys);
-    dvui.Path.fillConvex(bg_path.build(), .{ .color = window_fill, .fade = 0 });
+    dvui.Path.fillConvex(bg_path.build(), .{ .color = .{ .color = window_fill }, .fade = 0 });
 
     const tex = dvui.Texture.fromTargetTemp(composite) catch {
         dvui.log.err("Failed to get magnifier composite texture", .{});
@@ -4355,7 +4356,7 @@ fn drawSampleMagnifierPresent(
     const border_thickness = border_nat * content_rs.s;
     const half = border_thickness * 0.5;
     const border_stroke_rect = frame_phys.inset(dvui.Rect.Physical.all(half));
-    border_stroke_rect.stroke(corner_frame_phys, .{ .thickness = border_thickness, .color = border_color });
+    border_stroke_rect.stroke(corner_frame_phys, .{ .thickness = border_thickness, .color = .{ .color = border_color } });
 
     const center_x = content_rs.r.x + content_rs.r.w / 2;
     const center_y = content_rs.r.y + content_rs.r.h / 2;
@@ -4384,7 +4385,7 @@ fn drawSampleMagnifierPresent(
 
 pub fn drawSampleMagnifier(file: *pixi.internal.File, data_point: dvui.Point) void {
     const canvas = &file.editor.canvas;
-    if (pixi.core.dvui.canvasPointerInputSuppressed()) return;
+    if (pixi.core.dialogs.canvasPointerInputSuppressed()) return;
     if (!canvas.samplePointerInViewport(dvui.currentWindow().mouse_pt)) return;
 
     _ = dvui.cursorSet(.hidden);
@@ -4498,7 +4499,7 @@ pub fn drawLayers(self: *FileWidget) void {
 
         if (resize_data_point.x < layer_rect.x + layer_rect.w or resize_data_point.y < layer_rect.y + layer_rect.h) {
             const grid_thickness = std.math.clamp(dvui.currentWindow().natural_scale * self.init_options.file.editor.canvas.scale, 0, dvui.currentWindow().natural_scale);
-            self.init_options.file.editor.canvas.screenFromDataRect(layer_rect).fill(.all(0), .{ .color = dvui.themeGet().color(.err, .fill).opacity(0.5), .fade = 1.5 });
+            self.init_options.file.editor.canvas.screenFromDataRect(layer_rect).fill(.all(0), .{ .color = .{ .color = dvui.themeGet().color(.err, .fill).opacity(0.5) }, .fade = 1.5 });
             drawBatchedResizeOverlayGrid(self, file, columns, layer_rect, grid_thickness);
         }
 
@@ -4527,7 +4528,7 @@ pub fn drawLayers(self: *FileWidget) void {
         .rect = .{ .x = layer_rect.x, .y = layer_rect.y, .w = @min(canvas_rect.w, layer_rect.w), .h = @min(canvas_rect.h, layer_rect.h) },
         .border = dvui.Rect.all(0),
         .background = true,
-        .color_fill = dvui.themeGet().color(.window, .fill),
+        .color_fill = .{ .color = dvui.themeGet().color(.window, .fill) },
     });
     fill_box.deinit();
 
@@ -4541,9 +4542,9 @@ pub fn drawLayers(self: *FileWidget) void {
         };
         const bg_screen = self.init_options.file.editor.canvas.screenFromDataRect(bg_rect);
         if (self.init_options.file.editor.canvas.scale < 0.1) {
-            bg_screen.fill(.all(0), .{ .color = dvui.themeGet().color(.content, .fill), .fade = 1.5 });
+            bg_screen.fill(.all(0), .{ .color = .{ .color = dvui.themeGet().color(.content, .fill) }, .fade = 1.5 });
         } else {
-            bg_screen.fill(.all(0), .{ .color = dvui.themeGet().color(.content, .fill), .fade = 1.5 });
+            bg_screen.fill(.all(0), .{ .color = .{ .color = dvui.themeGet().color(.content, .fill) }, .fade = 1.5 });
             drawCheckerboardCellsBatched(file);
         }
     }
@@ -4580,7 +4581,7 @@ pub fn drawLayers(self: *FileWidget) void {
                 .h = @min(resize_data_point.y - layer_rect.topRight().y, layer_rect.h),
             };
 
-            self.init_options.file.editor.canvas.screenFromDataRect(new_tiles_rect).fill(.all(0), .{ .color = dvui.themeGet().color(.highlight, .fill).opacity(0.5), .fade = 0.0 });
+            self.init_options.file.editor.canvas.screenFromDataRect(new_tiles_rect).fill(.all(0), .{ .color = .{ .color = dvui.themeGet().color(.highlight, .fill).opacity(0.5) }, .fade = 0.0 });
         }
         if (resize_data_point.y > layer_rect.y + layer_rect.h) {
             const new_tiles_rect = dvui.Rect{
@@ -4590,7 +4591,7 @@ pub fn drawLayers(self: *FileWidget) void {
                 .h = resize_data_point.y - layer_rect.bottomLeft().y,
             };
 
-            self.init_options.file.editor.canvas.screenFromDataRect(new_tiles_rect).fill(.all(0), .{ .color = dvui.themeGet().color(.highlight, .fill).opacity(0.5), .fade = 0.0 });
+            self.init_options.file.editor.canvas.screenFromDataRect(new_tiles_rect).fill(.all(0), .{ .color = .{ .color = dvui.themeGet().color(.highlight, .fill).opacity(0.5) }, .fade = 0.0 });
         }
     }
 
@@ -4616,7 +4617,7 @@ pub fn drawLayers(self: *FileWidget) void {
             const sprite_rect_physical = self.init_options.file.editor.canvas.screenFromDataRect(sprite_rect);
 
             // Draw the origins when in the sprites pane
-            if (runtime.state().host.isActiveSidebarView(@import("../../plugin.zig").view_sprites)) {
+            if (plugin.sidebarShows(runtime.state().host, plugin.view_sprites)) {
                 const origin: dvui.Point = .{ .x = sprite_rect.topLeft().x + file.sprites.get(i).origin[0], .y = sprite_rect.topLeft().y + file.sprites.get(i).origin[1] };
 
                 const horizontal_line_start: dvui.Point = .{ .x = sprite_rect.topLeft().x, .y = origin.y };
@@ -4627,17 +4628,17 @@ pub fn drawLayers(self: *FileWidget) void {
                 dvui.Path.stroke(.{ .points = &.{
                     file.editor.canvas.screenFromDataPoint(horizontal_line_start),
                     file.editor.canvas.screenFromDataPoint(horizontal_line_end),
-                } }, .{ .thickness = 1, .color = dvui.themeGet().color(.err, .fill) });
+                } }, .{ .thickness = 1, .color = .{ .color = dvui.themeGet().color(.err, .fill) } });
 
                 dvui.Path.stroke(.{ .points = &.{
                     file.editor.canvas.screenFromDataPoint(vertical_line_start),
                     file.editor.canvas.screenFromDataPoint(vertical_line_end),
-                } }, .{ .thickness = 1, .color = dvui.themeGet().color(.err, .fill) });
+                } }, .{ .thickness = 1, .color = .{ .color = dvui.themeGet().color(.err, .fill) } });
             }
 
             sprite_rect_physical.inset(.all(dvui.currentWindow().natural_scale * 1.5)).stroke(dvui.CornerRect.Physical.round(@min(sprite_rect_physical.w, sprite_rect_physical.h) / 8), .{
                 .thickness = 1.5 * dvui.currentWindow().natural_scale,
-                .color = dvui.themeGet().color(.highlight, .fill),
+                .color = .{ .color = dvui.themeGet().color(.highlight, .fill) },
                 .closed = true,
             });
         }
@@ -4744,9 +4745,9 @@ fn drawCanvasCheckerboardBackground(self: *FileWidget) void {
     };
     const bg_screen = canvas.screenFromDataRect(bg_rect);
     if (canvas.scale < 0.1) {
-        bg_screen.fill(.all(0), .{ .color = dvui.themeGet().color(.content, .fill), .fade = 1.5 });
+        bg_screen.fill(.all(0), .{ .color = .{ .color = dvui.themeGet().color(.content, .fill) }, .fade = 1.5 });
     } else {
-        bg_screen.fill(.all(0), .{ .color = dvui.themeGet().color(.content, .fill), .fade = 1.5 });
+        bg_screen.fill(.all(0), .{ .color = .{ .color = dvui.themeGet().color(.content, .fill) }, .fade = 1.5 });
         drawCheckerboardCellsBatched(file);
     }
 }
@@ -4897,7 +4898,7 @@ fn drawReorderPreviewForAxis(
                 dvui.Path.stroke(.{ .points = &.{
                     canvas.screenFromDataPoint(.{ .x = gx, .y = grid_y0 }),
                     canvas.screenFromDataPoint(.{ .x = gx, .y = grid_y1 }),
-                } }, .{ .thickness = grid_thickness, .color = grid_color });
+                } }, .{ .thickness = grid_thickness, .color = .{ .color = grid_color } });
             }
 
             for (1..file.rows) |i| {
@@ -4905,7 +4906,7 @@ fn drawReorderPreviewForAxis(
                 dvui.Path.stroke(.{ .points = &.{
                     canvas.screenFromDataPoint(.{ .x = grid_x0, .y = gy }),
                     canvas.screenFromDataPoint(.{ .x = grid_x1, .y = gy }),
-                } }, .{ .thickness = grid_thickness, .color = grid_color });
+                } }, .{ .thickness = grid_thickness, .color = .{ .color = grid_color } });
             }
         }
 
@@ -5009,18 +5010,18 @@ fn drawReorderPreviewForAxis(
         }
 
         file.editor.canvas.screenFromDataRect(animated_target_box_rect).fill(.round(3.0 / scale), .{
-            .color = if (same_slot)
+            .color = .{ .color = if (same_slot)
                 dvui.themeGet().color(.control, .fill).opacity(0.6)
             else
-                dvui.themeGet().color(.highlight, .fill).opacity(0.6),
+                dvui.themeGet().color(.highlight, .fill).opacity(0.6) },
             .fade = 1.0,
         });
 
         {
-            pixi.core.dvui.drawEdgeShadow(.{ .r = file.editor.canvas.screenFromDataRect(animated_target_box_rect), .s = scale }, if (axis == .columns) .right else .top, .{
+            pixi.core.draw.drawEdgeShadow(.{ .r = file.editor.canvas.screenFromDataRect(animated_target_box_rect), .s = scale }, if (axis == .columns) .right else .top, .{
                 .opacity = 0.5,
             });
-            pixi.core.dvui.drawEdgeShadow(.{ .r = file.editor.canvas.screenFromDataRect(animated_target_box_rect), .s = scale }, if (axis == .columns) .left else .bottom, .{
+            pixi.core.draw.drawEdgeShadow(.{ .r = file.editor.canvas.screenFromDataRect(animated_target_box_rect), .s = scale }, if (axis == .columns) .left else .bottom, .{
                 .opacity = 0.5,
             });
         }
@@ -5030,10 +5031,10 @@ fn drawReorderPreviewForAxis(
             .rect = target_box_rect,
             .border = dvui.Rect.all(0),
             .background = true,
-            .color_fill = if (same_slot)
+            .color_fill = .{ .color = if (same_slot)
                 dvui.themeGet().color(.control, .fill).opacity(0.75)
             else
-                dvui.themeGet().color(.control, .fill).opacity(0.75),
+                dvui.themeGet().color(.control, .fill).opacity(0.75) },
             .box_shadow = .{
                 .color = .black,
                 .offset = .{
@@ -5057,7 +5058,7 @@ fn drawReorderPreviewForAxis(
             // Tint the original removed slot with err color so the canvas matches the
             // dragged-from indicator used in our tree widgets (files / layers / animations).
             file.editor.canvas.screenFromDataRect(removed_rect).fill(.all(0), .{
-                .color = err_color.opacity(0.25),
+                .color = .{ .color = err_color.opacity(0.25) },
                 .fade = 1.0,
             });
         }
@@ -5069,7 +5070,7 @@ fn drawReorderPreviewForAxis(
                 dvui.Path.stroke(.{ .points = &.{
                     file.editor.canvas.screenFromDataPoint(top),
                     file.editor.canvas.screenFromDataPoint(bottom),
-                } }, .{ .thickness = 3, .color = err_color });
+                } }, .{ .thickness = 3, .color = .{ .color = err_color } });
 
                 dvui.Path.fillConvex(.{
                     .points = &.{
@@ -5078,7 +5079,7 @@ fn drawReorderPreviewForAxis(
                         file.editor.canvas.screenFromDataPoint(top.plus(.{ .x = -5.0 / scale, .y = -10.0 / scale })),
                     },
                 }, .{
-                    .color = err_color,
+                    .color = .{ .color = err_color },
                     .fade = 1.0,
                 });
 
@@ -5089,7 +5090,7 @@ fn drawReorderPreviewForAxis(
                         file.editor.canvas.screenFromDataPoint(bottom.plus(.{ .x = -5.0 / scale, .y = 10.0 / scale })),
                     },
                 }, .{
-                    .color = err_color,
+                    .color = .{ .color = err_color },
                     .fade = 1.0,
                 });
             } else {
@@ -5098,7 +5099,7 @@ fn drawReorderPreviewForAxis(
                 dvui.Path.stroke(.{ .points = &.{
                     file.editor.canvas.screenFromDataPoint(left),
                     file.editor.canvas.screenFromDataPoint(right),
-                } }, .{ .thickness = 3, .color = err_color });
+                } }, .{ .thickness = 3, .color = .{ .color = err_color } });
 
                 dvui.Path.fillConvex(.{
                     .points = &.{
@@ -5107,7 +5108,7 @@ fn drawReorderPreviewForAxis(
                         file.editor.canvas.screenFromDataPoint(left.plus(.{ .x = -8.0 / scale, .y = 5.0 / scale })),
                     },
                 }, .{
-                    .color = err_color,
+                    .color = .{ .color = err_color },
                     .fade = 1.0,
                 });
                 dvui.Path.fillConvex(.{
@@ -5117,7 +5118,7 @@ fn drawReorderPreviewForAxis(
                         file.editor.canvas.screenFromDataPoint(right.plus(.{ .x = 8.0 / scale, .y = 5.0 / scale })),
                     },
                 }, .{
-                    .color = err_color,
+                    .color = .{ .color = err_color },
                     .fade = 1.0,
                 });
             }
@@ -5141,7 +5142,7 @@ fn drawReorderPreviewForAxis(
             dvui.Path.stroke(.{ .points = &.{
                 canvas.screenFromDataPoint(.{ .x = gx, .y = grid_y0 }),
                 canvas.screenFromDataPoint(.{ .x = gx, .y = grid_y1 }),
-            } }, .{ .thickness = grid_thickness, .color = grid_color });
+            } }, .{ .thickness = grid_thickness, .color = .{ .color = grid_color } });
         }
 
         for (1..file.rows) |i| {
@@ -5149,7 +5150,7 @@ fn drawReorderPreviewForAxis(
             dvui.Path.stroke(.{ .points = &.{
                 canvas.screenFromDataPoint(.{ .x = grid_x0, .y = gy }),
                 canvas.screenFromDataPoint(.{ .x = grid_x1, .y = gy }),
-            } }, .{ .thickness = grid_thickness, .color = grid_color });
+            } }, .{ .thickness = grid_thickness, .color = .{ .color = grid_color } });
         }
     }
 }
@@ -5269,7 +5270,7 @@ pub fn drawCellReorderPreview(self: *FileWidget) void {
 
                     const color = if (temp_insert_before_sprite.isSet(sprite_index) and file.editor.selected_sprites.isSet(sprite_index)) highlight.average(err) else if (temp_insert_before_sprite.isSet(sprite_index)) highlight else if (file.editor.selected_sprites.isSet(sprite_index)) err else highlight;
 
-                    image_rect_scale.r.fill(.all(0), .{ .color = color, .fade = 1.5 });
+                    image_rect_scale.r.fill(.all(0), .{ .color = .{ .color = color }, .fade = 1.5 });
 
                     const left_index = file.spriteIndex(image_rect.center().diff(.{ .x = @as(f32, @floatFromInt(file.column_width)) }));
                     const right_index = file.spriteIndex(image_rect.center().plus(.{ .x = @as(f32, @floatFromInt(file.column_width)) }));
@@ -5278,22 +5279,22 @@ pub fn drawCellReorderPreview(self: *FileWidget) void {
 
                     if (left_index) |left_index_value| {
                         if (!temp_selected_sprite.isSet(left_index_value)) {
-                            pixi.core.dvui.drawEdgeShadow(image_rect_scale, .left, .{ .opacity = 0.35 });
+                            pixi.core.draw.drawEdgeShadow(image_rect_scale, .left, .{ .opacity = 0.35 });
                         }
                     }
                     if (right_index) |right_index_value| {
                         if (!temp_selected_sprite.isSet(right_index_value)) {
-                            pixi.core.dvui.drawEdgeShadow(image_rect_scale, .right, .{ .opacity = 0.35 });
+                            pixi.core.draw.drawEdgeShadow(image_rect_scale, .right, .{ .opacity = 0.35 });
                         }
                     }
                     if (top_index) |top_index_value| {
                         if (!temp_selected_sprite.isSet(top_index_value)) {
-                            pixi.core.dvui.drawEdgeShadow(image_rect_scale, .top, .{ .opacity = 0.35 });
+                            pixi.core.draw.drawEdgeShadow(image_rect_scale, .top, .{ .opacity = 0.35 });
                         }
                     }
                     if (bottom_index) |bottom_index_value| {
                         if (!temp_selected_sprite.isSet(bottom_index_value)) {
-                            pixi.core.dvui.drawEdgeShadow(image_rect_scale, .bottom, .{ .opacity = 0.35 });
+                            pixi.core.draw.drawEdgeShadow(image_rect_scale, .bottom, .{ .opacity = 0.35 });
                         }
                     }
                 }
@@ -5320,7 +5321,7 @@ pub fn drawCellReorderPreview(self: *FileWidget) void {
                     dvui.Path.stroke(.{ .points = &.{
                         canvas.screenFromDataPoint(.{ .x = gx, .y = grid_y0 }),
                         canvas.screenFromDataPoint(.{ .x = gx, .y = grid_y1 }),
-                    } }, .{ .thickness = grid_thickness, .color = grid_color });
+                    } }, .{ .thickness = grid_thickness, .color = .{ .color = grid_color } });
                 }
 
                 for (1..file.rows) |i| {
@@ -5328,7 +5329,7 @@ pub fn drawCellReorderPreview(self: *FileWidget) void {
                     dvui.Path.stroke(.{ .points = &.{
                         canvas.screenFromDataPoint(.{ .x = grid_x0, .y = gy }),
                         canvas.screenFromDataPoint(.{ .x = grid_x1, .y = gy }),
-                    } }, .{ .thickness = grid_thickness, .color = grid_color });
+                    } }, .{ .thickness = grid_thickness, .color = .{ .color = grid_color } });
                 }
             }
         }
@@ -5608,8 +5609,8 @@ pub fn processResize(self: *FileWidget) void {
             var path = dvui.Path.Builder.init(dvui.currentWindow().arena());
             path.addRect(bounds_rect, .round(1000000));
             const built = path.build();
-            built.fillConvex(.{ .color = dvui.themeGet().color(.window, .fill).opacity(0.5), .fade = 1.5 });
-            built.stroke(.{ .color = dvui.themeGet().color(.control, .text).opacity(0.5), .thickness = 1.0, .closed = true });
+            built.fillConvex(.{ .color = .{ .color = dvui.themeGet().color(.window, .fill).opacity(0.5) }, .fade = 1.5 });
+            built.stroke(.{ .color = .{ .color = dvui.themeGet().color(.control, .text).opacity(0.5) }, .thickness = 1.0, .closed = true });
 
             path = dvui.Path.Builder.init(dvui.currentWindow().arena());
             path.addPoint(icon_button.data().contentRectScale().r.topLeft());
@@ -5619,7 +5620,7 @@ pub fn processResize(self: *FileWidget) void {
                 .w = icon_button.data().contentRectScale().r.w / 4.0,
                 .h = icon_button.data().contentRectScale().r.h / 4.0,
             }, .all(icon_button.data().contentRectScale().r.w / 8.0));
-            path.build().fillConvex(.{ .color = dvui.themeGet().color(.control, .text).opacity(0.5), .fade = 1.5 });
+            path.build().fillConvex(.{ .color = .{ .color = dvui.themeGet().color(.control, .text).opacity(0.5) }, .fade = 1.5 });
 
             path = dvui.Path.Builder.init(dvui.currentWindow().arena());
             path.addRect(.{
@@ -5628,10 +5629,10 @@ pub fn processResize(self: *FileWidget) void {
                 .w = icon_button.data().contentRectScale().r.w / 4.0,
                 .h = icon_button.data().contentRectScale().r.h / 4.0,
             }, .all(icon_button.data().contentRectScale().r.w / 8.0));
-            path.build().fillConvex(.{ .color = dvui.themeGet().color(.highlight, .fill).opacity(0.5), .fade = 1.5 });
+            path.build().fillConvex(.{ .color = .{ .color = dvui.themeGet().color(.highlight, .fill).opacity(0.5) }, .fade = 1.5 });
         } else {
             dvui.icon(@src(), "resize", if (dragging) icons.tvg.lucide.move else icons.tvg.lucide.@"move-diagonal-2", .{
-                .stroke_color = if (icon_button.hover) dvui.themeGet().color(.highlight, .fill) else dvui.themeGet().color(.control, .text),
+                .stroke_color = .{ .color = if (icon_button.hover) dvui.themeGet().color(.highlight, .fill) else dvui.themeGet().color(.control, .text) },
             }, .{
                 .expand = .ratio,
                 .min_size_content = .{ .w = 1.0, .h = 1.0 },
@@ -5756,7 +5757,7 @@ pub fn processEvents(self: *FileWidget) void {
 
     const canvas_ptr = &self.init_options.file.editor.canvas;
     const mouse_pt = dvui.currentWindow().mouse_pt;
-    canvas_ptr.hovered = !pixi.core.dvui.canvasPointerInputSuppressed() and
+    canvas_ptr.hovered = !pixi.core.dialogs.canvasPointerInputSuppressed() and
         canvas_ptr.pointerOverDrawable(mouse_pt);
 
     // Cursor-leave: when hover transitions true → false, the last brush/fill preview
@@ -5880,10 +5881,10 @@ pub fn processEvents(self: *FileWidget) void {
     }
 
     // Draw shadows for the scroll container
-    pixi.core.dvui.drawEdgeShadow(self.init_options.file.editor.canvas.scroll_container.data().rectScale(), .top, .{ .opacity = 0.15 });
-    pixi.core.dvui.drawEdgeShadow(self.init_options.file.editor.canvas.scroll_container.data().rectScale(), .bottom, .{});
-    pixi.core.dvui.drawEdgeShadow(self.init_options.file.editor.canvas.scroll_container.data().rectScale(), .left, .{ .opacity = 0.15 });
-    pixi.core.dvui.drawEdgeShadow(self.init_options.file.editor.canvas.scroll_container.data().rectScale(), .right, .{});
+    pixi.core.draw.drawEdgeShadow(self.init_options.file.editor.canvas.scroll_container.data().rectScale(), .top, .{ .opacity = 0.15 });
+    pixi.core.draw.drawEdgeShadow(self.init_options.file.editor.canvas.scroll_container.data().rectScale(), .bottom, .{});
+    pixi.core.draw.drawEdgeShadow(self.init_options.file.editor.canvas.scroll_container.data().rectScale(), .left, .{ .opacity = 0.15 });
+    pixi.core.draw.drawEdgeShadow(self.init_options.file.editor.canvas.scroll_container.data().rectScale(), .right, .{});
 
     self.drawTransform();
     self.processSample();
@@ -5902,7 +5903,7 @@ pub fn deinit(self: *FileWidget) void {
 }
 
 pub fn hovered(self: *FileWidget) bool {
-    if (pixi.core.dvui.canvasPointerInputSuppressed()) return false;
+    if (pixi.core.dialogs.canvasPointerInputSuppressed()) return false;
     return self.init_options.file.editor.canvas.hovered;
 }
 

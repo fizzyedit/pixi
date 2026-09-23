@@ -294,7 +294,7 @@ pub fn renderLayersMagnifierSample(init_opts: RenderFileOptions) !void {
 
     path.addRect(init_opts.rs.r, dvui.CornerRect.Physical.square);
 
-    var triangles = try path.build().fillConvexTriangles(runtime.allocator(), .{ .color = init_opts.color_mod, .fade = init_opts.fade });
+    var triangles = try path.build().fillConvexTriangles(runtime.allocator(), .{ .color = .{ .color = init_opts.color_mod }, .fade = init_opts.fade });
     defer triangles.deinit(runtime.allocator());
 
     triangles.uvFromRectuv(init_opts.rs.r, init_opts.uv);
@@ -662,7 +662,7 @@ pub fn syncPreviewComposite(file: *pixi.internal.File) !void {
         var path: dvui.Path.Builder = .init(runtime.allocator());
         defer path.deinit();
         path.addRect(image_rect, dvui.CornerRect.Physical.square);
-        var tris = try path.build().fillConvexTriangles(runtime.allocator(), .{ .color = dvui.themeGet().color(.content, .fill), .fade = 0 });
+        var tris = try path.build().fillConvexTriangles(runtime.allocator(), .{ .color = .{ .color = dvui.themeGet().color(.content, .fill) }, .fade = 0 });
         defer tris.deinit(runtime.allocator());
         dvui.renderTriangles(tris, null) catch {};
     }
@@ -673,7 +673,7 @@ pub fn syncPreviewComposite(file: *pixi.internal.File) !void {
         defer path.deinit();
         path.addRect(image_rect, dvui.CornerRect.Physical.square);
         const tint = dvui.themeGet().color(.content, .fill).lighten(6.0).opacity(0.5);
-        var tris = try path.build().fillConvexTriangles(runtime.allocator(), .{ .color = tint, .fade = 0 });
+        var tris = try path.build().fillConvexTriangles(runtime.allocator(), .{ .color = .{ .color = tint }, .fade = 0 });
         defer tris.deinit(runtime.allocator());
         tris.uvFromRectuv(image_rect, .{ .x = 0, .y = 0, .w = @floatFromInt(file.columns), .h = @floatFromInt(file.rows) });
         dvui.renderTriangles(tris, checker) catch {};
@@ -784,7 +784,7 @@ pub fn renderLayers(init_opts: RenderFileOptions) !void {
 
         path.addRect(content_rs.r, init_opts.corners.scale(content_rs.s, dvui.CornerRect.Physical));
 
-        var t = try path.build().fillConvexTriangles(runtime.allocator(), .{ .color = init_opts.color_mod, .fade = init_opts.fade });
+        var t = try path.build().fillConvexTriangles(runtime.allocator(), .{ .color = .{ .color = init_opts.color_mod }, .fade = init_opts.fade });
         t.uvFromRectuv(content_rs.r, init_opts.uv);
         break :blk t;
     };

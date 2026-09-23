@@ -12,7 +12,7 @@ pub var pending_mode: Mode = .editor_save;
 /// no externally-mutated module flag has to be reset when the quit walk aborts.
 pub fn request(file_id: u64, mode: Mode, from_save_all_quit: bool) void {
     pending_mode = mode;
-    var mutex = pixi.core.dvui.dialog(@src(), .{
+    var mutex = pixi.core.dialogs.dialog(@src(), .{
         .displayFn = dialog,
         .callafterFn = callAfter,
         .title = "Save as .pixi or current extension?",
@@ -79,9 +79,9 @@ pub fn dialog(id: dvui.Id) anyerror!bool {
             .background = false,
         });
         tl.addText("File contains data only compatible with the ", .{ .font = dvui.Font.theme(.body) });
-        tl.addText(".pixi", .{ .font = bold_hi, .color_text = hi_fill });
+        tl.addText(".pixi", .{ .font = bold_hi, .color_text = .{ .color = hi_fill } });
         tl.addText(" extension. Would you like to save a copy of your file as a ", .{ .font = dvui.Font.theme(.body) });
-        tl.addText(".pixi", .{ .font = bold_hi, .color_text = hi_fill });
+        tl.addText(".pixi", .{ .font = bold_hi, .color_text = .{ .color = hi_fill } });
         tl.format(" extension or proceed saving as a {s}?", .{ext_disp}, .{ .font = dvui.Font.theme(.body) });
         tl.deinit();
     }
@@ -115,7 +115,7 @@ fn onChooseFizzy(file_id: u64) !void {
     if (pending_mode == .save_and_close) {
         runtime.state().host.setPendingCloseDocId(file_id);
     }
-    pixi.core.dvui.closeFloatingDialogAnchored();
+    pixi.core.dialogs.closeFloatingDialogAnchored();
     runtime.state().host.requestSaveAs();
 }
 
@@ -123,7 +123,7 @@ fn onChooseFlatRaster(file_id: u64, from_save_all_quit: bool) !void {
     const f = fileRef(file_id) orelse return;
     switch (pending_mode) {
         .editor_save => {
-            pixi.core.dvui.closeFloatingDialogAnchored();
+            pixi.core.dialogs.closeFloatingDialogAnchored();
             if (comptime @import("builtin").target.cpu.arch == .wasm32) {
                 const idx = runtime.state().host.docIndex(file_id) orelse return;
                 runtime.state().host.setActiveDocIndex(idx);
@@ -153,14 +153,14 @@ fn onChooseFlatRaster(file_id: u64, from_save_all_quit: bool) !void {
             } else {
                 try runtime.state().host.queueCloseAfterSave(file_id);
             }
-            pixi.core.dvui.closeFloatingDialogAnchored();
+            pixi.core.dialogs.closeFloatingDialogAnchored();
         },
     }
 }
 
 fn onCancel() void {
     runtime.state().host.cancelPendingSaveDialog();
-    pixi.core.dvui.closeFloatingDialogAnchored();
+    pixi.core.dialogs.closeFloatingDialogAnchored();
 }
 
 pub fn callAfter(_: dvui.Id, response: dvui.enums.DialogResponse) !void {

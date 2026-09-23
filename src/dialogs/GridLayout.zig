@@ -10,11 +10,11 @@ const dvui = @import("dvui");
 const std = @import("std");
 
 const NewFile = @import("NewFile.zig");
-const CanvasWidget = pixi.core.dvui.CanvasWidget;
+const CanvasWidget = pixi.core.widgets.CanvasWidget;
 const CanvasBridge = @import("../widgets/CanvasBridge.zig");
 const pixi = @import("../pixi.zig");
 const runtime = @import("../runtime.zig");
-const FloatingWindowWidget = pixi.core.dvui.FloatingWindowWidget;
+const FloatingWindowWidget = pixi.core.widgets.FloatingWindowWidget;
 
 /// Editable grid fields for one mode (Slice vs Resize each keep their own backing).
 pub const GridFormState = struct {
@@ -94,7 +94,7 @@ pub fn request(file_id: u64) void {
     const file = runtime.state().docs.fileById(file_id) orelse return;
     presetFromFile(file);
 
-    var mutex = pixi.core.dvui.dialog(@src(), .{
+    var mutex = pixi.core.dialogs.dialog(@src(), .{
         .displayFn = dialog,
         .callafterFn = callAfter,
         .windowFn = windowFn,
@@ -166,8 +166,8 @@ fn drawPreviewViewportBackdrop(rs_box: dvui.RectScale, nw: f32, nh: f32) void {
     if (nw <= 0 or nh <= 0) return;
     const natural = dvui.Rect{ .x = 0, .y = 0, .w = nw, .h = nh };
     const phys = rs_box.rectToPhysical(natural);
-    phys.fill(.all(0), .{ .color = dvui.themeGet().color(.window, .fill), .fade = 1.0 });
-    phys.fill(.all(0), .{ .color = dvui.themeGet().color(.content, .fill), .fade = 1.5 });
+    phys.fill(.all(0), .{ .color = .{ .color = dvui.themeGet().color(.window, .fill) }, .fade = 1.0 });
+    phys.fill(.all(0), .{ .color = .{ .color = dvui.themeGet().color(.content, .fill) }, .fade = 1.5 });
 }
 
 fn previewCheckerboardPalette() struct { tone: dvui.Color, c_tl: dvui.Color, c_tr: dvui.Color, c_bl: dvui.Color, c_br: dvui.Color } {
@@ -624,7 +624,7 @@ fn renderPreview(
     }, .{
         .expand = .both,
         .background = true,
-        .color_fill = workspaceCanvasChromeColor(),
+        .color_fill = .{ .color = workspaceCanvasChromeColor() },
     });
     defer preview_canvas.deinit();
 
@@ -632,7 +632,7 @@ fn renderPreview(
     const vph = preview_canvas.scroll_info.viewport.h;
 
     const vp_ok = vpw > 8 and vph > 8;
-  
+
     var did_post_install_refit = false;
     const needs_bootstrap_refit = !host_vp_ok and vp_ok and (fit_key_changed or dims_changed);
     const needs_post_install_host_refit = vp_ok and (host_changed or shell_resize_drag);
@@ -810,7 +810,7 @@ fn gridLayoutDrawModePill(dlg_id: dvui.Id) void {
             .margin = .{ .y = 2, .h = 4 },
             .padding = .{ .x = 12, .y = 6, .w = 12, .h = 6 },
             .expand = .horizontal,
-            .color_fill = if (mode == @as(@TypeOf(mode), @enumFromInt(i))) dvui.themeGet().color(.window, .fill).lighten(-4) else dvui.themeGet().color(.control, .fill),
+            .color_fill = .{ .color = if (mode == @as(@TypeOf(mode), @enumFromInt(i))) dvui.themeGet().color(.window, .fill).lighten(-4) else dvui.themeGet().color(.control, .fill) },
             .box_shadow = if (i != @intFromEnum(mode)) .{
                 .color = .black,
                 .offset = .{ .x = 0.0, .y = 2 },
@@ -846,7 +846,7 @@ fn gridLayoutDrawModePill(dlg_id: dvui.Id) void {
         dvui.labelNoFmt(@src(), name, .{}, .{
             .gravity_x = 0.5,
             .gravity_y = 0.5,
-            .color_text = if (mode == @as(@TypeOf(mode), @enumFromInt(i))) dvui.themeGet().color(.window, .text) else dvui.themeGet().color(.control, .text),
+            .color_text = .{ .color = if (mode == @as(@TypeOf(mode), @enumFromInt(i))) dvui.themeGet().color(.window, .text) else dvui.themeGet().color(.control, .text) },
             .margin = .all(0),
             .padding = .all(0),
         });
@@ -902,10 +902,10 @@ pub fn dialog(id: dvui.Id) anyerror!bool {
 
     defer {
         if (dialog_middle_scroll.offset(.vertical) > 0.0)
-            pixi.core.dvui.drawEdgeShadow(mid_scroll.data().contentRectScale(), .top, .{});
+            pixi.core.draw.drawEdgeShadow(mid_scroll.data().contentRectScale(), .top, .{});
 
         if (dialog_middle_scroll.virtual_size.h > dialog_middle_scroll.viewport.h)
-            pixi.core.dvui.drawEdgeShadow(mid_scroll.data().contentRectScale(), .bottom, .{});
+            pixi.core.draw.drawEdgeShadow(mid_scroll.data().contentRectScale(), .bottom, .{});
     }
 
     // Form (intrinsic width, full height) + preview (expands horizontally with the window).
@@ -965,18 +965,18 @@ pub fn dialog(id: dvui.Id) anyerror!bool {
         const v_scroll = left_scroll.offset(.vertical);
         const h_scroll = left_scroll.offset(.horizontal);
         if (v_scroll > 0.0) {
-            pixi.core.dvui.drawEdgeShadow(pane_left.data().contentRectScale(), .top, .{});
+            pixi.core.draw.drawEdgeShadow(pane_left.data().contentRectScale(), .top, .{});
         }
         if (left_scroll.virtual_size.h > left_scroll.viewport.h) {
-            pixi.core.dvui.drawEdgeShadow(pane_left.data().contentRectScale(), .bottom, .{});
+            pixi.core.draw.drawEdgeShadow(pane_left.data().contentRectScale(), .bottom, .{});
         }
         pane_left.deinit();
 
         if (left_scroll.virtual_size.w > left_scroll.viewport.w) {
-            pixi.core.dvui.drawEdgeShadow(shell_left.data().contentRectScale(), .right, .{});
+            pixi.core.draw.drawEdgeShadow(shell_left.data().contentRectScale(), .right, .{});
         }
         if (h_scroll > 0.0) {
-            pixi.core.dvui.drawEdgeShadow(shell_left.data().contentRectScale(), .left, .{});
+            pixi.core.draw.drawEdgeShadow(shell_left.data().contentRectScale(), .left, .{});
         }
         shell_left.deinit();
     }
@@ -1043,10 +1043,10 @@ pub fn dialog(id: dvui.Id) anyerror!bool {
 
         defer {
             const rs_scroll = preview_host.data().rectScale();
-            pixi.core.dvui.drawEdgeShadow(rs_scroll, .top, .{});
-            pixi.core.dvui.drawEdgeShadow(rs_scroll, .bottom, .{});
-            pixi.core.dvui.drawEdgeShadow(rs_scroll, .left, .{});
-            pixi.core.dvui.drawEdgeShadow(rs_scroll, .right, .{});
+            pixi.core.draw.drawEdgeShadow(rs_scroll, .top, .{});
+            pixi.core.draw.drawEdgeShadow(rs_scroll, .bottom, .{});
+            pixi.core.draw.drawEdgeShadow(rs_scroll, .left, .{});
+            pixi.core.draw.drawEdgeShadow(rs_scroll, .right, .{});
         }
 
         if (target_file) |tf| {
@@ -1119,7 +1119,7 @@ fn drawResizeForm(
         dvui.label(@src(), "Current size: {d} × {d} px", .{ af.width(), af.height() }, .{
             .gravity_x = 0,
             .font = form_font,
-            .color_text = dvui.themeGet().color(.control, .text),
+            .color_text = .{ .color = dvui.themeGet().color(.control, .text) },
         });
     } else {
         valid = false;
@@ -1131,7 +1131,7 @@ fn drawResizeForm(
     }, .{
         .gravity_x = 0,
         .font = form_font,
-        .color_text = dvui.themeGet().color(.control, .text),
+        .color_text = .{ .color = dvui.themeGet().color(.control, .text) },
     });
 
     if (!pixi.internal.File.validateGridLayoutProposedDims(
@@ -1147,7 +1147,7 @@ fn drawResizeForm(
             .{},
             .{
                 .gravity_x = 0,
-                .color_text = dvui.themeGet().color(.err, .text),
+                .color_text = .{ .color = dvui.themeGet().color(.err, .text) },
                 .font = form_font,
             },
         );
@@ -1289,8 +1289,8 @@ fn drawResizeForm(
                     .margin = .all(2),
                     .corners = .round(4),
                     .min_size_content = .{ .w = 36, .h = 28 },
-                    .color_fill = color,
-                    .color_fill_hover = if (selected) color else null,
+                    .color_fill = .{ .color = color },
+                    .color_fill_hover = if (selected) .{ .color = color } else null,
                     .id_extra = unique_id.update(anchor_labels[ix]).asUsize(),
                 };
 
@@ -1304,10 +1304,10 @@ fn drawResizeForm(
                 dvui.labelNoFmt(@src(), anchor_labels[ix], .{}, button_opts.strip().override(button.style()).override(.{
                     .gravity_x = 0.5,
                     .gravity_y = 0.5,
-                    .color_text = if (selected)
+                    .color_text = .{ .color = if (selected)
                         dvui.themeGet().color(.window, .text)
                     else
-                        dvui.themeGet().color(.control, .text),
+                        dvui.themeGet().color(.control, .text) },
                     .font = form_font,
                 }));
                 if (button.clicked()) {
@@ -1338,7 +1338,7 @@ fn drawSliceForm(
     if (total_w == 0 or total_h == 0) {
         dvui.label(@src(), "No layer pixels to slice.", .{}, .{
             .gravity_x = 0,
-            .color_text = dvui.themeGet().color(.err, .text),
+            .color_text = .{ .color = dvui.themeGet().color(.err, .text) },
             .font = form_font,
         });
         return false;
@@ -1347,7 +1347,7 @@ fn drawSliceForm(
     dvui.label(@src(), "Image size: {d} × {d} px (locked)", .{ total_w, total_h }, .{
         .gravity_x = 0,
         .font = form_font,
-        .color_text = dvui.themeGet().color(.control, .text),
+        .color_text = .{ .color = dvui.themeGet().color(.control, .text) },
     });
 
     _ = dvui.spacer(@src(), .{ .min_size_content = .{ .w = 4, .h = 6 } });
@@ -1468,20 +1468,20 @@ fn drawSliceForm(
         valid = false;
         dvui.label(@src(), "Cells must tile the image exactly.", .{}, .{
             .gravity_x = 0,
-            .color_text = dvui.themeGet().color(.err, .text),
+            .color_text = .{ .color = dvui.themeGet().color(.err, .text) },
             .font = form_font,
         });
         if (!w_match) {
             dvui.label(@src(), "  • {d} × {d} ≠ {d} (x)", .{ cw_eff, slice_form.columns, total_w }, .{
                 .gravity_x = 0,
-                .color_text = dvui.themeGet().color(.err, .text),
+                .color_text = .{ .color = dvui.themeGet().color(.err, .text) },
                 .font = form_font,
             });
         }
         if (!h_match) {
             dvui.label(@src(), "  • {d} × {d} ≠ {d} (y)", .{ rh_eff, slice_form.rows, total_h }, .{
                 .gravity_x = 0,
-                .color_text = dvui.themeGet().color(.err, .text),
+                .color_text = .{ .color = dvui.themeGet().color(.err, .text) },
                 .font = form_font,
             });
         }
@@ -1490,7 +1490,7 @@ fn drawSliceForm(
     return valid;
 }
 
-/// Custom window shell for the grid-layout dialog: matches `pixi.core.dvui.dialogWindow` (open
+/// Custom window shell for the grid-layout dialog: matches `pixi.core.dialogs.dialogWindow` (open
 /// `autoSize()` animation, nudge + center on modal rect). `min_size_content` is half the main
 /// window so the first layout pass does not collapse the shell; DVUI then grows to fit content
 /// (see `FloatingWindowWidget` `Size.max(min_size, min_sizeGet)`). Do not use `max_size_content`
@@ -1503,7 +1503,7 @@ pub fn windowFn(id: dvui.Id) anyerror!void {
     };
 
     if (modal) {
-        pixi.core.dvui.modal_dim_titlebar = true;
+        pixi.core.dialogs.modal_dim_titlebar = true;
     }
 
     const title = dvui.dataGetSlice(null, id, "_title", []u8) orelse {
@@ -1516,8 +1516,8 @@ pub fn windowFn(id: dvui.Id) anyerror!void {
     };
     const cancel_label = dvui.dataGetSlice(null, id, "_cancel_label", []u8);
     const default = dvui.dataGet(null, id, "_default", dvui.enums.DialogResponse);
-    const callafter = dvui.dataGet(null, id, "_callafter", pixi.core.dvui.CallAfterFn);
-    const displayFn = dvui.dataGet(null, id, "_displayFn", pixi.core.dvui.DisplayFn);
+    const callafter = dvui.dataGet(null, id, "_callafter", pixi.core.dialogs.CallAfterFn);
+    const displayFn = dvui.dataGet(null, id, "_displayFn", pixi.core.dialogs.DisplayFn);
 
     // Default shell: wide enough for form + preview; DVUI autoSize grows to content if larger.
     const wr = dvui.windowRect();
@@ -1525,7 +1525,7 @@ pub fn windowFn(id: dvui.Id) anyerror!void {
     const init_h = @round(wr.h * 0.52);
     const center_on = dvui.currentWindow().subwindows.current_rect;
 
-    var win = pixi.core.dvui.floatingWindow(@src(), .{
+    var win = pixi.core.widgets.floatingWindow(@src(), .{
         .modal = modal,
         .center_on = center_on,
         .window_avoid = .nudge,
@@ -1537,7 +1537,7 @@ pub fn windowFn(id: dvui.Id) anyerror!void {
         .corners = .round(10),
         .min_size_content = .{ .w = init_w, .h = @max(init_h, 400) },
         .border = .all(0),
-        .color_fill = dvui.themeGet().color(.content, .fill).opacity(0.85),
+        .color_fill = .{ .color = dvui.themeGet().color(.content, .fill).opacity(0.85) },
         .box_shadow = .{
             .color = .black,
             .alpha = 0.35,
@@ -1555,10 +1555,10 @@ pub fn windowFn(id: dvui.Id) anyerror!void {
         win.stopAutoSizing();
     }
 
-    // Matches `core.dvui.dialogWindow`: applied *before* the animation check rather than as an
+    // Matches `core.dialogs.dialogWindow`: applied *before* the animation check rather than as an
     // `else if` to it, so a destination published after the close already began re-aims the
     // animation in flight instead of being dropped on the floor.
-    const close_override = pixi.core.dvui.takeDialogCloseRectOverride();
+    const close_override = pixi.core.dialogs.takeDialogCloseRectOverride();
     if (close_override) |close_rect| {
         dvui.dataSet(null, win.data().id, "_close_rect", close_rect);
     }
@@ -1591,16 +1591,16 @@ pub fn windowFn(id: dvui.Id) anyerror!void {
     var shell = dvui.box(@src(), .{ .dir = .vertical }, .{ .expand = .both });
     defer shell.deinit();
 
-    const header_kind: pixi.core.dvui.DialogHeaderKind = switch (dvui.dataGet(null, id, "_header_kind", u8) orelse 0) {
-        @intFromEnum(pixi.core.dvui.DialogHeaderKind.none) => .none,
-        @intFromEnum(pixi.core.dvui.DialogHeaderKind.info) => .info,
-        @intFromEnum(pixi.core.dvui.DialogHeaderKind.warning) => .warning,
-        @intFromEnum(pixi.core.dvui.DialogHeaderKind.err) => .err,
+    const header_kind: pixi.core.dialogs.DialogHeaderKind = switch (dvui.dataGet(null, id, "_header_kind", u8) orelse 0) {
+        @intFromEnum(pixi.core.dialogs.DialogHeaderKind.none) => .none,
+        @intFromEnum(pixi.core.dialogs.DialogHeaderKind.info) => .info,
+        @intFromEnum(pixi.core.dialogs.DialogHeaderKind.warning) => .warning,
+        @intFromEnum(pixi.core.dialogs.DialogHeaderKind.err) => .err,
         else => .none,
     };
 
     var header_openflag = true;
-    win.dragAreaSet(pixi.core.dvui.windowHeader(title, "", &header_openflag, header_kind));
+    win.dragAreaSet(pixi.core.dialogs.windowHeader(title, "", &header_openflag, header_kind));
     if (!header_openflag) {
         if (callafter) |ca| {
             ca(id, .cancel) catch {
@@ -1633,7 +1633,7 @@ pub fn windowFn(id: dvui.Id) anyerror!void {
         }
     }
 
-    { // Footer — match `pixi.core.dvui.dialogWindow` (horizontal strip, gravity_x centered).
+    { // Footer — match `pixi.core.dialogs.dialogWindow` (horizontal strip, gravity_x centered).
         var hbox = dvui.box(@src(), .{ .dir = .horizontal }, .{
             .gravity_x = 0.5,
             .padding = .{ .y = 6, .h = 8 },

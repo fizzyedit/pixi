@@ -1,4 +1,5 @@
 const std = @import("std");
+const sdk = @import("fizzy_sdk");
 const zgui = @import("zgui");
 const History = @This();
 const dvui = @import("dvui");
@@ -388,7 +389,7 @@ fn layerMergeUndo(file: *pixi.internal.File, lm: *Change.LayerMerge) !void {
     file.editor.layer_composite_dirty = true;
     file.editor.split_composite_dirty = true;
     file.selected_layer_index = lm.source_index;
-    runtime.state().host.setActiveSidebarView(plugin.view_tools);
+    runtime.state().host.setSelectionFor(sdk.keywords.ide.sidebar, plugin.view_tools);
     file.invalidateActiveLayerTransparencyMaskCache();
 }
 
@@ -430,7 +431,7 @@ fn layerMergeRedo(file: *pixi.internal.File, lm: *Change.LayerMerge) !void {
         .up => dest_i,
         .down => dest_i - 1,
     };
-    runtime.state().host.setActiveSidebarView(plugin.view_tools);
+    runtime.state().host.setSelectionFor(sdk.keywords.ide.sidebar, plugin.view_tools);
     file.invalidateActiveLayerTransparencyMaskCache();
 }
 
@@ -460,7 +461,7 @@ pub fn undoRedo(self: *History, file: *pixi.internal.File, action: Action) !void
         // truncates value" panic every time the user undoes/redoes. `id_extra` only needs
         // to be a salt that varies between toasts, so truncate via u128 → low bits of usize.
         const ts_us: u128 = @intCast(@divTrunc(pixi.perf.nanoTimestamp(), 1000));
-        const id_mutex = dvui.toastAdd(dvui.currentWindow(), @src(), @truncate(ts_us), file.editor.canvas.id, pixi.core.dvui.toastDisplay, 2_000_000);
+        const id_mutex = dvui.toastAdd(dvui.currentWindow(), @src(), @truncate(ts_us), file.editor.canvas.id, pixi.core.dialogs.toastDisplay, 2_000_000);
         const id = id_mutex.id;
         const action_text = switch (action) {
             .undo => "Undo:",
@@ -619,7 +620,7 @@ pub fn undoRedo(self: *History, file: *pixi.internal.File, action: Action) !void
 
                 //try file.editor.selected_sprites.append(sprite_index);
             }
-            runtime.state().host.setActiveSidebarView(plugin.view_sprites);
+            runtime.state().host.setSelectionFor(sdk.keywords.ide.sidebar, plugin.view_sprites);
         },
         .layers_order => |*layers_order| {
             file.editor.layer_composite_dirty = true;
@@ -674,7 +675,7 @@ pub fn undoRedo(self: *History, file: *pixi.internal.File, action: Action) !void
                     layer_restore_delete.action = .restore;
                 },
             }
-            runtime.state().host.setActiveSidebarView(plugin.view_tools);
+            runtime.state().host.setSelectionFor(sdk.keywords.ide.sidebar, plugin.view_tools);
             file.invalidateActiveLayerTransparencyMaskCache();
         },
         .layer_name => |*layer_name| {
@@ -682,7 +683,7 @@ pub fn undoRedo(self: *History, file: *pixi.internal.File, action: Action) !void
             runtime.allocator().free(file.layers.items(.name)[layer_name.index]);
             file.layers.items(.name)[layer_name.index] = try runtime.allocator().dupe(u8, layer_name.name);
             layer_name.name = name;
-            runtime.state().host.setActiveSidebarView(plugin.view_tools);
+            runtime.state().host.setSelectionFor(sdk.keywords.ide.sidebar, plugin.view_tools);
         },
         .layer_settings => |*layer_settings| {
             const idx = layer_settings.index;
@@ -701,7 +702,7 @@ pub fn undoRedo(self: *History, file: *pixi.internal.File, action: Action) !void
             if (visibility_changed) {
                 file.editor.split_composite_dirty = true;
             }
-            runtime.state().host.setActiveSidebarView(plugin.view_tools);
+            runtime.state().host.setSelectionFor(sdk.keywords.ide.sidebar, plugin.view_tools);
         },
         .animation_restore_delete => |*animation_restore_delete| {
             const a = animation_restore_delete.action;
@@ -727,14 +728,14 @@ pub fn undoRedo(self: *History, file: *pixi.internal.File, action: Action) !void
                     }
                 },
             }
-            runtime.state().host.setActiveSidebarView(plugin.view_sprites);
+            runtime.state().host.setSelectionFor(sdk.keywords.ide.sidebar, plugin.view_sprites);
         },
         .animation_name => |*animation_name| {
             const name = try runtime.allocator().dupe(u8, file.animations.items(.name)[animation_name.index]);
             runtime.allocator().free(file.animations.items(.name)[animation_name.index]);
             file.animations.items(.name)[animation_name.index] = try runtime.allocator().dupe(u8, animation_name.name);
             animation_name.name = name;
-            runtime.state().host.setActiveSidebarView(plugin.view_sprites);
+            runtime.state().host.setSelectionFor(sdk.keywords.ide.sidebar, plugin.view_sprites);
         },
         .animation_settings => {},
         .animation_order => |*animation_order| {

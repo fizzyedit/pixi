@@ -84,7 +84,7 @@ pub fn dialog(id: dvui.Id) anyerror!bool {
                 .margin = .{ .y = 2, .h = 4 },
                 .padding = .all(6),
                 .expand = .horizontal,
-                .color_fill = if (mode == @as(@TypeOf(mode), @enumFromInt(i))) dvui.themeGet().color(.window, .fill).lighten(-4) else dvui.themeGet().color(.control, .fill),
+                .color_fill = .{ .color = if (mode == @as(@TypeOf(mode), @enumFromInt(i))) dvui.themeGet().color(.window, .fill).lighten(-4) else dvui.themeGet().color(.control, .fill) },
                 .box_shadow = if (i != @intFromEnum(mode)) .{
                     .color = .black,
                     .offset = .{ .x = 0.0, .y = 2 },
@@ -120,7 +120,7 @@ pub fn dialog(id: dvui.Id) anyerror!bool {
             dvui.labelNoFmt(@src(), name, .{}, .{
                 .gravity_x = 0.5,
                 .gravity_y = 0.5,
-                .color_text = if (mode == @as(@TypeOf(mode), @enumFromInt(i))) dvui.themeGet().color(.window, .text) else dvui.themeGet().color(.control, .text),
+                .color_text = .{ .color = if (mode == @as(@TypeOf(mode), @enumFromInt(i))) dvui.themeGet().color(.window, .text) else dvui.themeGet().color(.control, .text) },
                 .margin = .all(0),
                 .padding = .all(0),
             });
@@ -209,13 +209,13 @@ pub fn animationDialog(id: dvui.Id) anyerror!bool {
         } else if (file.animations.len == 0) {
             dvui.labelNoFmt(@src(), "This file has no animations.", .{}, .{
                 .gravity_x = 0.5,
-                .color_text = dvui.themeGet().color(.control, .text),
+                .color_text = .{ .color = dvui.themeGet().color(.control, .text) },
                 .margin = .{ .y = 8, .h = 8 },
             });
         } else {
             dvui.labelNoFmt(@src(), "Select an animation in the editor.", .{}, .{
                 .gravity_x = 0.5,
-                .color_text = dvui.themeGet().color(.control, .text),
+                .color_text = .{ .color = dvui.themeGet().color(.control, .text) },
                 .margin = .{ .y = 8, .h = 8 },
             });
         }
@@ -432,8 +432,8 @@ fn exportScaleSlider(max_scale_val: f32) void {
             .alpha = 0.2,
             .corners = .round(100000),
         },
-        .color_fill = dvui.themeGet().color(.window, .fill).lighten(-4),
-        .color_fill_hover = dvui.themeGet().color(.window, .fill).lighten(2),
+        .color_fill = .{ .color = dvui.themeGet().color(.window, .fill).lighten(-4) },
+        .color_fill_hover = .{ .color = dvui.themeGet().color(.window, .fill).lighten(2) },
         .corners = .round(100000),
         .margin = .all(6),
     })) dvui.currentWindow().extra_frames_needed = 2;

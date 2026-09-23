@@ -3,7 +3,7 @@
 //! viewport; these helpers supply the pixel-art editor's wiring at the install sites.
 const pixi = @import("../pixi.zig");
 const runtime = @import("../runtime.zig");
-const CanvasWidget = pixi.core.dvui.CanvasWidget;
+const CanvasWidget = pixi.core.widgets.CanvasWidget;
 
 /// Map the shell's resolved pan/zoom preference onto the canvas's own scheme enum.
 pub fn scheme() CanvasWidget.PanZoomScheme {
@@ -15,10 +15,10 @@ pub fn scheme() CanvasWidget.PanZoomScheme {
 
 /// Suppression hook for a main-scope canvas (the document editing surface, image previews).
 pub fn mainSuppressed(_: ?*anyopaque) bool {
-    return pixi.core.dvui.canvasPointerInputSuppressed();
+    return pixi.core.dialogs.canvasPointerInputSuppressed();
 }
 
 /// Suppression hook for a dialog-scope canvas (embedded previews like Grid Layout).
 pub fn dialogSuppressed(_: ?*anyopaque) bool {
-    return pixi.core.dvui.dialogCanvasPointerInputSuppressed();
+    return pixi.core.dialogs.dialogCanvasPointerInputSuppressed();
 }

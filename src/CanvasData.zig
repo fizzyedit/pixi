@@ -106,7 +106,7 @@ pub fn drawRuler(self: *CanvasData, file: *File, orientation: RulerOrientation) 
                 .expand = .none,
                 .min_size_content = .{ .h = self.vertical_ruler_width, .w = self.vertical_ruler_width },
                 .background = true,
-                .color_fill = dvui.themeGet().color(.window, .fill),
+                .color_fill = .{ .color = dvui.themeGet().color(.window, .fill) },
             });
             corner_box.deinit();
 
@@ -114,7 +114,7 @@ pub fn drawRuler(self: *CanvasData, file: *File, orientation: RulerOrientation) 
                 .expand = .horizontal,
                 .min_size_content = .{ .h = ruler_thickness, .w = ruler_thickness },
                 .background = true,
-                .color_fill = dvui.themeGet().color(.window, .fill),
+                .color_fill = .{ .color = dvui.themeGet().color(.window, .fill) },
             });
             defer top_box.deinit();
 
@@ -125,7 +125,7 @@ pub fn drawRuler(self: *CanvasData, file: *File, orientation: RulerOrientation) 
                 .expand = .vertical,
                 .min_size_content = .{ .w = ruler_thickness, .h = 1.0 },
                 .background = true,
-                .color_fill = dvui.themeGet().color(.window, .fill),
+                .color_fill = .{ .color = dvui.themeGet().color(.window, .fill) },
             });
             defer ruler_box.deinit();
 
@@ -211,7 +211,7 @@ fn drawRulerContent(
         .vertical => self.rows_drag_name,
     };
 
-    var reorder = pixi.core.dvui.reorder(@src(), .{ .drag_name = drag_name }, .{
+    var reorder = pixi.core.widgets.reorder(@src(), .{ .drag_name = drag_name }, .{
         .expand = .both,
         .margin = dvui.Rect.all(0),
         .padding = dvui.Rect.all(0),
@@ -249,7 +249,7 @@ fn drawRulerContent(
         },
     };
     defer dvui.Path.stroke(.{ .points = &edge_stroke_points }, .{
-        .color = ruler_stroke_color,
+        .color = .{ .color = ruler_stroke_color },
         .thickness = 1.0,
     });
 
@@ -261,7 +261,7 @@ fn drawRulerContent(
         .horizontal => .{ .w = @as(f32, @floatFromInt(file.column_width)), .h = 1.0 },
         .vertical => .{ .w = 1.0, .h = @as(f32, @floatFromInt(file.row_height)) },
     };
-    const reorder_mode: pixi.core.dvui.ReorderWidget.Reorderable.Mode = switch (orientation) {
+    const reorder_mode: pixi.core.widgets.ReorderWidget.Reorderable.Mode = switch (orientation) {
         .horizontal => .any_y,
         .vertical => .any_x,
     };
@@ -299,7 +299,7 @@ fn drawRulerContent(
 
         var button_color = if (reorder.drag_point != null) dvui.themeGet().color(.control, .fill).opacity(0.85) else dvui.themeGet().color(.window, .fill);
 
-        if (pixi.core.dvui.hovered(reorderable.data())) {
+        if (pixi.core.widgets.hovered(reorderable.data())) {
             button_color = dvui.themeGet().color(.control, .fill_hover);
             dvui.cursorSet(.hand);
         }
@@ -308,7 +308,7 @@ fn drawRulerContent(
         cell_box.init(@src(), .{ .dir = .horizontal }, .{
             .expand = .both,
             .background = true,
-            .color_fill = button_color,
+            .color_fill = .{ .color = button_color },
             .id_extra = index,
         });
 
@@ -387,7 +387,7 @@ fn drawRulerContent(
                     .horizontal => .{ cell_rect.topLeft(), cell_rect.bottomLeft() },
                     .vertical => .{ cell_rect.topLeft(), cell_rect.topRight() },
                 };
-                dvui.Path.stroke(.{ .points = &cell_stroke_points }, .{ .color = ruler_stroke_color, .thickness = 2.0 });
+                dvui.Path.stroke(.{ .points = &cell_stroke_points }, .{ .color = .{ .color = ruler_stroke_color }, .thickness = 2.0 });
             }
 
             loop: for (dvui.events()) |*e| {
@@ -479,7 +479,7 @@ fn drawRulerContent(
                 if (same_slot) {
                     // Reorderable still draws theme focus fill for the drop target; paint control
                     // hover on top so "no move" matches ruler button hover styling.
-                    trs.r.fill(.all(0), .{ .color = dvui.themeGet().color(.control, .fill_hover), .fade = 1.0 });
+                    trs.r.fill(.all(0), .{ .color = .{ .color = dvui.themeGet().color(.control, .fill_hover) }, .fade = 1.0 });
                 }
                 self.drawRulerLabel(.{
                     .font = font,
@@ -525,7 +525,7 @@ fn drawRulerContent(
                         dvui.Path.stroke(.{ .points = &.{
                             .{ .x = edge_x, .y = ruler_screen.y },
                             .{ .x = edge_x, .y = ruler_screen.y + ruler_screen.h },
-                        } }, .{ .thickness = thickness, .color = err_color });
+                        } }, .{ .thickness = thickness, .color = .{ .color = err_color } });
                     },
                     .vertical => {
                         const edge_y = if (di < ti)
@@ -535,7 +535,7 @@ fn drawRulerContent(
                         dvui.Path.stroke(.{ .points = &.{
                             .{ .x = ruler_screen.x, .y = edge_y },
                             .{ .x = ruler_screen.x + ruler_screen.w, .y = edge_y },
-                        } }, .{ .thickness = thickness, .color = err_color });
+                        } }, .{ .thickness = thickness, .color = .{ .color = err_color } });
                     },
                 }
             }
@@ -707,7 +707,7 @@ pub fn drawTransformDialog(_: *CanvasData, file: *File, container: *dvui.WidgetD
             .rect = .{ .x = container.rectScale().r.toNatural().x + 10, .y = container.rectScale().r.toNatural().y + 10, .w = 0, .h = 0 },
             .expand = .none,
             .background = true,
-            .color_fill = dvui.themeGet().color(.control, .fill),
+            .color_fill = .{ .color = dvui.themeGet().color(.control, .fill) },
             .corners = .round(8),
             .box_shadow = .{
                 .color = .black,
@@ -748,7 +748,7 @@ pub fn drawTransformDialog(_: *CanvasData, file: *File, container: *dvui.WidgetD
             .min = 0,
             .max = 360,
             .interval = 1,
-        }, .{ .expand = .horizontal, .color_fill = dvui.themeGet().color(.window, .fill) })) {
+        }, .{ .expand = .horizontal, .color_fill = .{ .color = dvui.themeGet().color(.window, .fill) } })) {
             transform.rotation = std.math.degreesToRadians(degrees);
         }
         slider_box.deinit();
@@ -769,10 +769,10 @@ pub fn drawTransformDialog(_: *CanvasData, file: *File, container: *dvui.WidgetD
                 .background = false,
             });
             defer box.deinit();
-            if (dvui.buttonIcon(@src(), "transform_cancel", icons.tvg.lucide.@"trash-2", .{}, .{ .stroke_color = dvui.themeGet().color(.window, .fill) }, .{ .style = .err, .expand = .horizontal })) {
+            if (dvui.buttonIcon(@src(), "transform_cancel", icons.tvg.lucide.@"trash-2", .{}, .{ .stroke_color = .{ .color = dvui.themeGet().color(.window, .fill) } }, .{ .style = .err, .expand = .horizontal })) {
                 runtime.state().cancelEdit();
             }
-            if (dvui.buttonIcon(@src(), "transform_accept", icons.tvg.lucide.check, .{}, .{ .stroke_color = dvui.themeGet().color(.window, .fill) }, .{ .style = .highlight, .expand = .horizontal })) {
+            if (dvui.buttonIcon(@src(), "transform_accept", icons.tvg.lucide.check, .{}, .{ .stroke_color = .{ .color = dvui.themeGet().color(.window, .fill) } }, .{ .style = .highlight, .expand = .horizontal })) {
                 runtime.state().acceptEdit();
             }
         }
@@ -872,7 +872,7 @@ pub fn drawEditPill(self: *CanvasData, container: *dvui.WidgetData) void {
         },
         .expand = .none,
         .background = self.edit_pill_expanded,
-        .color_fill = dvui.themeGet().color(.window, .fill),
+        .color_fill = .{ .color = dvui.themeGet().color(.window, .fill) },
         .corners = .round(pill_radius),
         .box_shadow = if (self.edit_pill_expanded) .{
             .color = .black,
@@ -903,8 +903,8 @@ pub fn drawEditPill(self: *CanvasData, container: *dvui.WidgetData) void {
             .gravity_y = 0.0,
             .background = true,
             .corners = .round(btn_radius),
-            .color_fill = dvui.themeGet().color(.content, .fill),
-            .color_fill_hover = dvui.themeGet().color(.content, .fill).lighten(if (dvui.themeGet().dark) 10.0 else -10.0),
+            .color_fill = .{ .color = dvui.themeGet().color(.content, .fill) },
+            .color_fill_hover = .{ .color = dvui.themeGet().color(.content, .fill).lighten(if (dvui.themeGet().dark) 10.0 else -10.0) },
             .color_border = .transparent,
             .padding = .all(0),
             .margin = .{},
@@ -925,7 +925,7 @@ pub fn drawEditPill(self: *CanvasData, container: *dvui.WidgetData) void {
             @src(),
             "edit_pill_toggle",
             icons.tvg.lucide.menu,
-            .{ .stroke_color = icon_color, .fill_color = icon_color },
+            .{ .stroke_color = .{ .color = icon_color }, .fill_color = .{ .color = icon_color } },
             .{
                 .expand = .ratio,
                 .gravity_x = 0.5,
@@ -982,8 +982,8 @@ pub fn drawEditPill(self: *CanvasData, container: *dvui.WidgetData) void {
             .gravity_x = 0.5,
             .background = true,
             .corners = .round(btn_radius),
-            .color_fill = dvui.themeGet().color(.content, .fill),
-            .color_fill_hover = dvui.themeGet().color(.content, .fill).lighten(if (dvui.themeGet().dark) 10.0 else -10.0),
+            .color_fill = .{ .color = dvui.themeGet().color(.content, .fill) },
+            .color_fill_hover = .{ .color = dvui.themeGet().color(.content, .fill).lighten(if (dvui.themeGet().dark) 10.0 else -10.0) },
             .color_border = .transparent,
             .padding = .all(0),
             .margin = .{ .y = button_gap },
@@ -1005,7 +1005,7 @@ pub fn drawEditPill(self: *CanvasData, container: *dvui.WidgetData) void {
             @src(),
             entry.tooltip,
             entry.tvg,
-            .{ .stroke_color = icon_color, .fill_color = icon_color },
+            .{ .stroke_color = .{ .color = icon_color }, .fill_color = .{ .color = icon_color } },
             .{
                 .expand = .ratio,
                 .gravity_x = 0.5,
@@ -1025,7 +1025,7 @@ pub fn drawEditPill(self: *CanvasData, container: *dvui.WidgetData) void {
                 },
                 .exportd => {
                     // Open the Export dialog (same configuration the `export` keybind uses).
-                    var mutex = pixi.core.dvui.dialog(@src(), .{
+                    var mutex = pixi.core.dialogs.dialog(@src(), .{
                         .displayFn = Export.dialog,
                         .callafterFn = Export.callAfter,
                         .title = "Export...",
@@ -1118,8 +1118,8 @@ pub fn drawSampleButton(self: *CanvasData, container: *dvui.WidgetData) void {
         .background = true,
         .min_size_content = .{ .w = button_size, .h = button_size },
         .corners = .round(btn_radius),
-        .color_fill = dvui.themeGet().color(.content, .fill),
-        .color_fill_hover = dvui.themeGet().color(.content, .fill).lighten(if (dvui.themeGet().dark) 10.0 else -10.0),
+        .color_fill = .{ .color = dvui.themeGet().color(.content, .fill) },
+        .color_fill_hover = .{ .color = dvui.themeGet().color(.content, .fill).lighten(if (dvui.themeGet().dark) 10.0 else -10.0) },
         .color_border = .transparent,
         .padding = .all(0),
         .margin = .{},
@@ -1215,7 +1215,7 @@ pub fn drawSampleButton(self: *CanvasData, container: *dvui.WidgetData) void {
         @src(),
         "sample_dropper",
         icons.tvg.lucide.pipette,
-        .{ .stroke_color = icon_color, .fill_color = icon_color },
+        .{ .stroke_color = .{ .color = icon_color }, .fill_color = .{ .color = icon_color } },
         .{
             .expand = .ratio,
             .gravity_x = 0.5,
@@ -1241,7 +1241,7 @@ pub fn drawSampleButton(self: *CanvasData, container: *dvui.WidgetData) void {
             .active_rect = btn.data().rectScale().r,
             .delay = 350_000,
         }, .{
-            .color_fill = dvui.themeGet().color(.window, .fill),
+            .color_fill = .{ .color = dvui.themeGet().color(.window, .fill) },
             .border = dvui.Rect.all(0),
             .box_shadow = .{
                 .color = .black,

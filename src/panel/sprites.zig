@@ -352,9 +352,9 @@ pub fn draw(self: *Sprites) !void {
             dvui.label(@src(), "touch fling: vel {d:.2}  idle {d:.3}s  dt {d:.3}s  n {d}  coast {}", .{
                 d.vel, d.idle_s, d.dt, d.samples, d.coasted,
             }, .{
-                .color_text = dvui.themeGet().color(.content, .text),
+                .color_text = .{ .color = dvui.themeGet().color(.content, .text) },
                 .background = true,
-                .color_fill = dvui.themeGet().color(.window, .fill),
+                .color_fill = .{ .color = dvui.themeGet().color(.window, .fill) },
             });
         }
 
@@ -1053,7 +1053,7 @@ fn handleInput(self: *Sprites, file: anytype, mode: ScrollMode, count: usize, px
 
     // Dialogs/subwindows stack above the sprites pane in z-order but share the same
     // screen rect — don't capture clicks meant for their footer or chrome.
-    if (pixi.core.dvui.canvasPointerInputSuppressed()) {
+    if (pixi.core.dialogs.canvasPointerInputSuppressed()) {
         if (dvui.captured(id)) {
             for (dvui.events()) |*e| {
                 if (e.evt == .mouse and e.evt.mouse.action == .release and e.evt.mouse.button.pointer()) {
@@ -1283,8 +1283,8 @@ fn drawRoundButton(
         .min_size_content = .{ .w = size, .h = size },
         .background = true,
         .corners = .round(btn_radius),
-        .color_fill = fill,
-        .color_fill_hover = fill.lighten(if (dvui.themeGet().dark) 10.0 else -10.0),
+        .color_fill = .{ .color = fill },
+        .color_fill_hover = .{ .color = fill.lighten(if (dvui.themeGet().dark) 10.0 else -10.0) },
         .color_border = .transparent,
         // Inset lives on the button (not the icon): a uniform pad on the icon
         // would force its content rect square and skew non-square glyphs like
@@ -1319,7 +1319,7 @@ fn drawRoundButton(
         src,
         name,
         icon_tvg,
-        .{ .stroke_color = icon_color, .fill_color = icon_color },
+        .{ .stroke_color = .{ .color = icon_color }, .fill_color = .{ .color = icon_color } },
         .{
             .expand = .ratio,
             .gravity_x = 0.5,

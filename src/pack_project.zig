@@ -1,6 +1,7 @@
 //! Async project packing for the pixel-art plugin. Invoked from the plugin vtable;
 //! the shell routes `EditorAPI.startPackProject` / `isPackingActive` here.
 const std = @import("std");
+const sdk = @import("fizzy_sdk");
 const builtin = @import("builtin");
 const dvui = @import("dvui");
 const pixi = @import("pixi.zig");
@@ -16,7 +17,7 @@ fn showPackToast(message: []const u8, canvas_id: ?dvui.Id) void {
         }
         break :blk dvui.currentWindow().data().id;
     };
-    const id_mutex = dvui.toastAdd(dvui.currentWindow(), @src(), 0, anchor, pixi.core.dvui.toastDisplay, 2_500_000);
+    const id_mutex = dvui.toastAdd(dvui.currentWindow(), @src(), 0, anchor, pixi.core.dialogs.toastDisplay, 2_500_000);
     const id = id_mutex.id;
     const msg_copy = std.fmt.allocPrint(dvui.currentWindow().arena(), "{s}", .{message}) catch message;
     dvui.dataSetSlice(dvui.currentWindow(), id, "_message", msg_copy);
@@ -194,7 +195,7 @@ pub fn tick(st: *State) void {
         }
         runtime.packer().last_packed_at_ns = pixi.perf.nanoTimestamp();
         job.result_consumed = true;
-        st.host.setActiveSidebarView("pixi.project");
+        st.host.setSelectionFor(sdk.keywords.ide.sidebar, "pixi.project");
         const toast_canvas: ?dvui.Id = if (st.host.activeDoc()) |doc|
             if (st.docs.fileById(doc.id)) |file| file.editor.canvas.id else null
         else

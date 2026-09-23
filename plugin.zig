@@ -35,7 +35,17 @@ pub const plugin_options = @import("fizzy_plugin_options");
 pub const view_tools = "pixi.tools";
 pub const view_sprites = "pixi.sprites";
 pub const view_project = "pixi.project";
+pub const view_project_preview = "pixi.project.preview";
 pub const bottom_sprites = "pixi.sprites_panel";
+
+pub fn selectSidebar(host: *sdk.Host, id: []const u8) void {
+    host.setSelectionFor(sdk.keywords.ide.sidebar, id);
+}
+
+pub fn sidebarShows(host: *sdk.Host, id: []const u8) bool {
+    const cur = host.selectionFor(sdk.keywords.ide.sidebar) orelse return false;
+    return std.mem.eql(u8, cur, id);
+}
 
 var plugin: sdk.Plugin = .{
     .state = undefined,
@@ -59,6 +69,8 @@ const vtable: sdk.Plugin.VTable = .{
     .createDocument = createDocument,
     .isDirty = isDirty,
     .saveDocument = saveDocument,
+    .documentBytes = documentBytes,
+    .documentWritten = documentWritten,
     .reloadDocument = reloadDocument,
     .closeDocument = closeDocument,
     .undo = undo,
@@ -126,7 +138,7 @@ const file_icon_sprite_scale: f32 = 2.0;
 
 /// Fill the slot the host reserved for us.
 ///
-/// The shell reserves a fixed rect per tree row (`core.dvui.treeRowGlyph`) and every icon —
+/// The shell reserves a fixed rect per tree row (`core.widgets.treeRowGlyph`) and every icon —
 /// vector, sprite, or letter — is expected to fit itself into it with `expand = .ratio`. Drawing
 /// at a size of our own choosing instead makes pixi's rows taller than everyone else's and knocks
 /// the labels out of alignment, which is exactly what the hard-coded scales below used to do.
@@ -142,8 +154,18 @@ const host_slot_fit: dvui.Options = .{
 /// `.fiz` (the `fiz` animation in `assets/src/misc.pixi`) and `.pixi` (the `pixi` animation),
 /// plus a generic vector icon for flat images. Returns false for anything else so the workbench
 /// falls back to a generic icon.
-fn drawFileIcon(_: ?*anyopaque, ext: []const u8, _: []const u8, color: dvui.Color) bool {
+/// One painter for both the file-tree glyph and the plugin logo (`Host.Painter`).
+fn paint(_: ?*anyopaque, subject: sdk.Host.Painter.Subject) bool {
     const ui_atlas = runtime.uiAtlas();
+    const file = switch (subject) {
+        .file => |f| f,
+        .plugin_logo => {
+            _ = ui_atlas.sprites[internal.atlas.sprites.pixi_default].draw(@src(), ui_atlas.source, file_icon_sprite_scale, host_slot_fit);
+            return true;
+        },
+    };
+    const ext = file.ext;
+    const color = file.color;
     if (std.mem.eql(u8, ext, ".fiz")) {
         _ = ui_atlas.sprites[internal.atlas.sprites.fiz_default].draw(@src(), ui_atlas.source, file_icon_sprite_scale, host_slot_fit);
         return true;
@@ -153,15 +175,10 @@ fn drawFileIcon(_: ?*anyopaque, ext: []const u8, _: []const u8, color: dvui.Colo
         return true;
     }
     if (Internal.File.isFlatImageExtension(ext)) {
-        dvui.icon(@src(), "PixiFileIcon", dvui.entypo.image, .{ .stroke_color = color, .fill_color = color }, host_slot_fit.override(.{ .background = false }));
+        dvui.icon(@src(), "PixiFileIcon", dvui.entypo.image, .{ .stroke_color = .{ .color = color }, .fill_color = .{ .color = color } }, host_slot_fit.override(.{ .background = false }));
         return true;
     }
     return false;
-}
-
-fn drawPluginIcon(_: ?*anyopaque) void {
-    const ui_atlas = runtime.uiAtlas();
-    _ = ui_atlas.sprites[internal.atlas.sprites.pixi_default].draw(@src(), ui_atlas.source, file_icon_sprite_scale, host_slot_fit);
 }
 
 /// Load `path` into the plugin-owned `*Internal.File` at `out_doc`. Runs on the shell's
@@ -188,6 +205,15 @@ fn isDirty(_: *anyopaque, doc: DocHandle) bool {
 /// policy before routing here; this just runs the pixel-art async save.
 fn saveDocument(_: *anyopaque, doc: DocHandle) anyerror!void {
     try docFile(doc).saveAsync();
+}
+
+/// The storage-agnostic half of saving: the host writes these wherever the document lives
+/// (a mounted drive, a browser download) and reports back through `documentWritten`.
+fn documentBytes(_: *anyopaque, doc: DocHandle, allocator: std.mem.Allocator) anyerror![]u8 {
+    return docFile(doc).savedBytes(allocator, dvui.currentWindow());
+}
+fn documentWritten(_: *anyopaque, doc: DocHandle, path: []const u8) anyerror!void {
+    try docFile(doc).written(path);
 }
 
 /// Reload from disk when the shell's document watcher sees an external change on a
@@ -224,7 +250,7 @@ fn drawDocument(_: *anyopaque, doc: DocHandle) anyerror!void {
     internal.perf.canvasPaneDrawn();
 
     if (runtime.state().settings.show_rulers.get() and !dvui.firstFrame(container.id)) {
-        defer internal.core.dvui.drawEdgeShadow(container.rectScale(), .top, .{});
+        defer internal.core.draw.drawEdgeShadow(container.rectScale(), .top, .{});
         canvas.drawRuler(file, .horizontal);
     }
 
@@ -232,7 +258,7 @@ fn drawDocument(_: *anyopaque, doc: DocHandle) anyerror!void {
     defer canvas_hbox.deinit();
 
     if (runtime.state().settings.show_rulers.get() and !dvui.firstFrame(container.id)) {
-        defer internal.core.dvui.drawEdgeShadow(container.rectScale(), .left, .{});
+        defer internal.core.draw.drawEdgeShadow(container.rectScale(), .left, .{});
         canvas.drawRuler(file, .vertical);
     }
 
@@ -240,9 +266,6 @@ fn drawDocument(_: *anyopaque, doc: DocHandle) anyerror!void {
     canvas.drawEditPill(container);
     // Before the file widget so FloatingWidget uses window-scale coords (not canvas zoom).
     canvas.drawSampleButton(container);
-
-    const pane_grouping = container.options.id_extra orelse return;
-    if (@as(u64, @intCast(pane_grouping)) != file.editor.grouping) return;
 
     var file_widget = FileWidget.init(@src(), .{
         .file = file,
@@ -262,10 +285,9 @@ fn drawDocument(_: *anyopaque, doc: DocHandle) anyerror!void {
     }
 }
 
-/// Take over a workspace pane to show the pixel-art packed-atlas preview (the "Project"
-/// sidebar view's `draw_workspace`). The workbench owns the pane frame and routes here when
-/// `view_project` is the active sidebar view.
-fn drawProjectView(_: ?*anyopaque, pane: *sdk.WorkbenchPaneView) anyerror!void {
+/// Packed-atlas preview. A surface of its own (`takeover_when = pixi.project`) so
+/// the layout shows it in Main while Project is selected, without a workbench hook.
+fn drawProjectView(_: ?*anyopaque) anyerror!dvui.App.Result {
     var content_color = dvui.themeGet().color(.window, .fill);
 
     if (runtime.state().host.appliesNativeWindowOpacity()) {
@@ -280,9 +302,9 @@ fn drawProjectView(_: ?*anyopaque, pane: *sdk.WorkbenchPaneView) anyerror!void {
     else
         runtime.state().host.folder() != null and runtime.packer().atlas != null;
 
-    var canvas_vbox = sdk.pane_layout.mainCanvasVbox(content_color, show_packed_atlas, pane.grouping);
+    const grouping: u64 = 0;
+    var canvas_vbox = sdk.pane_layout.mainCanvasVbox(content_color, show_packed_atlas, grouping);
     defer {
-        pane.canvas_rect_physical.* = canvas_vbox.data().contentRectScale().r;
         dvui.toastsShow(canvas_vbox.data().id, canvas_vbox.data().contentRectScale().r.toNatural());
         canvas_vbox.deinit();
     }
@@ -292,9 +314,9 @@ fn drawProjectView(_: ?*anyopaque, pane: *sdk.WorkbenchPaneView) anyerror!void {
         var image_widget = ImageWidget.init(@src(), .{
             .source = atlas.source,
             .canvas = &atlas.canvas,
-            .grouping = pane.grouping,
+            .grouping = grouping,
         }, .{
-            .id_extra = @intCast(pane.grouping),
+            .id_extra = @intCast(grouping),
             .expand = .both,
             .background = false,
             .color_fill = .transparent,
@@ -309,7 +331,7 @@ fn drawProjectView(_: ?*anyopaque, pane: *sdk.WorkbenchPaneView) anyerror!void {
             }
         }
     } else {
-        var box = sdk.pane_layout.emptyStateCard(content_color, pane.grouping);
+        var box = sdk.pane_layout.emptyStateCard(content_color, grouping);
         defer box.deinit();
 
         const alpha = dvui.alpha(1.0);
@@ -330,11 +352,12 @@ fn drawProjectView(_: ?*anyopaque, pane: *sdk.WorkbenchPaneView) anyerror!void {
             .{
                 .gravity_x = 0.5,
                 .gravity_y = 0.5,
-                .color_text = dvui.themeGet().color(.control, .text),
+                .color_text = .{ .color = dvui.themeGet().color(.control, .text) },
                 .font = dvui.Font.theme(.body),
             },
         );
     }
+    return .ok;
 }
 
 fn infobarEntries(state: *anyopaque, active_doc: ?DocHandle) []const sdk.infobar.Entry {
@@ -376,34 +399,46 @@ pub fn register(host: *sdk.Host) !void {
     plugin.state = @ptrCast(&plugin_state);
     try host.registerPlugin(&plugin);
     try host.registerFileRowFillColor(.{ .owner = &plugin, .color = &fileRowFillColor });
-    try host.registerFileIcon(.{ .owner = &plugin, .draw = drawFileIcon });
-    try host.registerPluginIcon(.{ .owner = &plugin, .draw = drawPluginIcon });
-    try host.registerSidebarView(.{
+    try host.registerPainter(.{ .owner = &plugin, .draw = paint });
+    try host.registerSurface(.{
         .id = view_tools,
         .owner = &plugin,
-        .icon = dvui.entypo.pencil,
+        .icon = .{ .tvg = dvui.entypo.pencil },
         .title = "Tools",
+        .keywords = sdk.keywords.ide.sidebar,
         .draw = drawTools,
     });
-    try host.registerSidebarView(.{
+    try host.registerSurface(.{
         .id = view_sprites,
         .owner = &plugin,
-        .icon = dvui.entypo.grid,
+        .icon = .{ .tvg = dvui.entypo.grid },
         .title = "Sprites",
+        .keywords = sdk.keywords.ide.sidebar,
         .draw = drawSprites,
     });
-    try host.registerSidebarView(.{
+    try host.registerSurface(.{
         .id = view_project,
         .owner = &plugin,
-        .icon = dvui.entypo.box,
+        .icon = .{ .tvg = dvui.entypo.box },
         .title = "Project",
+        .keywords = sdk.keywords.ide.sidebar,
         .draw = drawProject,
-        .draw_workspace = drawProjectView,
     });
-    try host.registerBottomView(.{
+    // Fills the main area while Project is the sidebar selection — the same
+    // rule the store README uses, instead of a workbench-only `draw_workspace`.
+    try host.registerSurface(.{
+        .id = view_project_preview,
+        .owner = &plugin,
+        .title = "Project",
+        .keywords = sdk.keywords.ide.main,
+        .draw = drawProjectView,
+        .takeover_when = view_project,
+    });
+    try host.registerSurface(.{
         .id = bottom_sprites,
         .owner = &plugin,
         .title = "Sprites",
+        .keywords = sdk.keywords.ide.panel,
         .draw = drawSpritesPanel,
         .persistent = true,
     });
@@ -546,17 +581,21 @@ fn fileRowFillColor(_: ?*anyopaque, color_index: usize) ?dvui.Color {
     return null;
 }
 
-fn drawTools(_: ?*anyopaque) anyerror!void {
+fn drawTools(_: ?*anyopaque) anyerror!dvui.App.Result {
     try runtime.state().tools_pane.draw();
+    return .ok;
 }
-fn drawSprites(_: ?*anyopaque) anyerror!void {
+fn drawSprites(_: ?*anyopaque) anyerror!dvui.App.Result {
     try runtime.state().sprites_pane.draw();
+    return .ok;
 }
-fn drawProject(_: ?*anyopaque) anyerror!void {
+fn drawProject(_: ?*anyopaque) anyerror!dvui.App.Result {
     try internal.explorer.project.draw();
+    return .ok;
 }
-fn drawSpritesPanel(_: ?*anyopaque) anyerror!void {
+fn drawSpritesPanel(_: ?*anyopaque) anyerror!dvui.App.Result {
     try runtime.state().sprites_panel.draw();
+    return .ok;
 }
 
 fn tickKeybinds(_: *anyopaque) anyerror!void {
@@ -726,7 +765,7 @@ fn resetDocumentSaveUIState(state: *anyopaque, doc: DocHandle) void {
     st.resetDocumentSaveUIState(doc);
 }
 
-fn requestNewDocumentDialog(_: *anyopaque, parent_path: ?[]const u8, id_extra: usize) void {
+fn requestNewDocumentDialog(_: *anyopaque, _: ?[]const u8, parent_path: ?[]const u8, id_extra: usize) void {
     NewFile.request(parent_path, id_extra);
 }
 
@@ -742,7 +781,7 @@ fn exportEnabled(_: *anyopaque) bool {
 
 fn exportCommand(_: *anyopaque) anyerror!void {
     if (!activeDocIsOurs()) return;
-    var mutex = internal.core.dvui.dialog(@src(), .{
+    var mutex = internal.core.dialogs.dialog(@src(), .{
         .displayFn = Export.dialog,
         .callafterFn = Export.callAfter,
         .title = "Export...",

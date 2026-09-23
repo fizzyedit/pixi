@@ -23,8 +23,11 @@
             .lazy = true,
         },
         .fizzy = .{
-            .url = "https://github.com/fizzyedit/fizzy/releases/download/sdk-v0.1.52/fizzy-sdk-v0.1.52.tar.gz",
-            .hash = "fizzy-0.1.52-SGBwYw4-DQDl8HSdUHqFCu81zGqKOw5BFuJ_GitkTJAs",
+            // The published SDK, not a path into a checkout: a release has to build from a
+            // clean clone, and the release asset (never the tag's git archive) is the SDK
+            // package alone — the monorepo root zon carries the app's own dependencies.
+            .url = "https://github.com/fizzyedit/fizzy/releases/download/sdk-v0.2.1/fizzy-sdk-v0.2.1.tar.gz",
+            .hash = "fizzy-0.2.1-SGBwY2FNFgB8NjO2YxdrfzR4Hm9nqUyLTOWhGbhwiVHQ",
         },
     },
 }

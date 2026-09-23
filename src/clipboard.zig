@@ -98,7 +98,7 @@ pub fn copy(st: *State) !void {
             .offset = reduced_data_rect.topLeft().diff(sprite_tl),
         };
 
-        const id_mutex = dvui.toastAdd(dvui.currentWindow(), @src(), 0, file.editor.canvas.id, pixi.core.dvui.toastDisplay, 2_000_000);
+        const id_mutex = dvui.toastAdd(dvui.currentWindow(), @src(), 0, file.editor.canvas.id, pixi.core.dialogs.toastDisplay, 2_000_000);
         const id = id_mutex.id;
         const message = std.fmt.allocPrint(dvui.currentWindow().arena(), "Copied selection", .{}) catch "Copied selection.";
         dvui.dataSetSlice(dvui.currentWindow(), id, "_message", message);
@@ -109,59 +109,16 @@ pub fn copy(st: *State) !void {
 pub fn paste(st: *State) !void {
     if (st.sprite_clipboard) |*clipboard| {
         const file = activeFile(st) orelse return;
-    const active_layer = file.layers.get(file.selected_layer_index);
+        const active_layer = file.layers.get(file.selected_layer_index);
 
-    var dst_rect: dvui.Rect = .fromSize(pixi.image.size(clipboard.source));
+        var dst_rect: dvui.Rect = .fromSize(pixi.image.size(clipboard.source));
 
-    var sprite_iterator = file.editor.selected_sprites.iterator(.{ .kind = .set, .direction = .forward });
-    while (sprite_iterator.next()) |sprite_index| {
-        const sprite_rect = file.spriteRect(sprite_index);
+        var sprite_iterator = file.editor.selected_sprites.iterator(.{ .kind = .set, .direction = .forward });
+        while (sprite_iterator.next()) |sprite_index| {
+            const sprite_rect = file.spriteRect(sprite_index);
 
-        dst_rect.x = sprite_rect.x + clipboard.offset.x;
-        dst_rect.y = sprite_rect.y + clipboard.offset.y;
-
-        file.editor.transform = .{
-            .target_texture = dvui.textureCreateTarget(.{ .width = file.width(), .height = file.height(), .format = pixi.render.compositeTargetPixelFormat(), .interpolation = .nearest }) catch {
-                dvui.log.err("Failed to create target texture", .{});
-                return;
-            },
-            .file_id = file.id,
-            .layer_id = active_layer.id,
-            .data_points = .{
-                dst_rect.topLeft(),
-                dst_rect.topRight(),
-                dst_rect.bottomRight(),
-                dst_rect.bottomLeft(),
-                dst_rect.center(),
-                dst_rect.center(),
-            },
-            .source = clipboard.source,
-        };
-
-        for (file.editor.transform.?.data_points[0..4]) |*point| {
-            const d = point.diff(file.editor.transform.?.point(.pivot).*);
-            if (d.length() > file.editor.transform.?.radius) {
-                file.editor.transform.?.radius = d.length() + 4;
-            }
-        }
-
-        return;
-    }
-
-    dst_rect.x = clipboard.offset.x;
-    dst_rect.y = clipboard.offset.y;
-
-    if (file.spriteIndex(file.editor.canvas.dataFromScreenPoint(dvui.currentWindow().mouse_pt))) |sprite_index| {
-        const rect = file.spriteRect(sprite_index);
-        dst_rect.x = rect.x + clipboard.offset.x;
-        dst_rect.y = rect.y + clipboard.offset.y;
-    } else if (file.selected_animation_index) |animation_index| {
-        const animation = file.animations.get(animation_index);
-
-        if (file.selected_animation_frame_index < animation.frames.len) {
-            const rect = file.spriteRect(animation.frames[file.selected_animation_frame_index].sprite_index);
-            dst_rect.x = rect.x + clipboard.offset.x;
-            dst_rect.y = rect.y + clipboard.offset.y;
+            dst_rect.x = sprite_rect.x + clipboard.offset.x;
+            dst_rect.y = sprite_rect.y + clipboard.offset.y;
 
             file.editor.transform = .{
                 .target_texture = dvui.textureCreateTarget(.{ .width = file.width(), .height = file.height(), .format = pixi.render.compositeTargetPixelFormat(), .interpolation = .nearest }) catch {
@@ -190,25 +147,68 @@ pub fn paste(st: *State) !void {
 
             return;
         }
-    }
 
-    file.editor.transform = .{
-        .target_texture = dvui.textureCreateTarget(.{ .width = file.width(), .height = file.height(), .format = pixi.render.compositeTargetPixelFormat(), .interpolation = .nearest }) catch {
-            dvui.log.err("Failed to create target texture", .{});
-            return;
-        },
-        .file_id = file.id,
-        .layer_id = active_layer.id,
-        .data_points = .{
-            dst_rect.topLeft(),
-            dst_rect.topRight(),
-            dst_rect.bottomRight(),
-            dst_rect.bottomLeft(),
-            dst_rect.center(),
-            dst_rect.center(),
-        },
-        .source = clipboard.source,
-    };
+        dst_rect.x = clipboard.offset.x;
+        dst_rect.y = clipboard.offset.y;
+
+        if (file.spriteIndex(file.editor.canvas.dataFromScreenPoint(dvui.currentWindow().mouse_pt))) |sprite_index| {
+            const rect = file.spriteRect(sprite_index);
+            dst_rect.x = rect.x + clipboard.offset.x;
+            dst_rect.y = rect.y + clipboard.offset.y;
+        } else if (file.selected_animation_index) |animation_index| {
+            const animation = file.animations.get(animation_index);
+
+            if (file.selected_animation_frame_index < animation.frames.len) {
+                const rect = file.spriteRect(animation.frames[file.selected_animation_frame_index].sprite_index);
+                dst_rect.x = rect.x + clipboard.offset.x;
+                dst_rect.y = rect.y + clipboard.offset.y;
+
+                file.editor.transform = .{
+                    .target_texture = dvui.textureCreateTarget(.{ .width = file.width(), .height = file.height(), .format = pixi.render.compositeTargetPixelFormat(), .interpolation = .nearest }) catch {
+                        dvui.log.err("Failed to create target texture", .{});
+                        return;
+                    },
+                    .file_id = file.id,
+                    .layer_id = active_layer.id,
+                    .data_points = .{
+                        dst_rect.topLeft(),
+                        dst_rect.topRight(),
+                        dst_rect.bottomRight(),
+                        dst_rect.bottomLeft(),
+                        dst_rect.center(),
+                        dst_rect.center(),
+                    },
+                    .source = clipboard.source,
+                };
+
+                for (file.editor.transform.?.data_points[0..4]) |*point| {
+                    const d = point.diff(file.editor.transform.?.point(.pivot).*);
+                    if (d.length() > file.editor.transform.?.radius) {
+                        file.editor.transform.?.radius = d.length() + 4;
+                    }
+                }
+
+                return;
+            }
+        }
+
+        file.editor.transform = .{
+            .target_texture = dvui.textureCreateTarget(.{ .width = file.width(), .height = file.height(), .format = pixi.render.compositeTargetPixelFormat(), .interpolation = .nearest }) catch {
+                dvui.log.err("Failed to create target texture", .{});
+                return;
+            },
+            .file_id = file.id,
+            .layer_id = active_layer.id,
+            .data_points = .{
+                dst_rect.topLeft(),
+                dst_rect.topRight(),
+                dst_rect.bottomRight(),
+                dst_rect.bottomLeft(),
+                dst_rect.center(),
+                dst_rect.center(),
+            },
+            .source = clipboard.source,
+        };
 
         for (file.editor.transform.?.data_points[0..4]) |*point| {
             const d = point.diff(file.editor.transform.?.point(.pivot).*);

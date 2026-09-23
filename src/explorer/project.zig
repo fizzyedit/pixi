@@ -31,7 +31,7 @@ pub fn draw() !void {
             };
             defer dvui.currentWindow().lifo().free(project_path);
 
-            tl.addText(project_path, .{ .color_text = dvui.themeGet().color(.control, .text) });
+            tl.addText(project_path, .{ .color_text = .{ .color = dvui.themeGet().color(.control, .text) } });
             _ = dvui.spacer(@src(), .{ .min_size_content = .{ .h = 6 } });
         } else {
             var box = dvui.box(@src(), .{ .dir = .vertical }, .{
@@ -42,7 +42,7 @@ pub fn draw() !void {
 
             const tl = dvui.textLayout(@src(), .{}, .{ .expand = .horizontal, .background = false });
             tl.addText("No project file found!\n\n", .{});
-            tl.addText("Would you like to create a project file to specify constant output paths and other project-specific behaviors?\n", .{ .color_text = dvui.themeGet().color(.control, .text) });
+            tl.addText("Would you like to create a project file to specify constant output paths and other project-specific behaviors?\n", .{ .color_text = .{ .color = dvui.themeGet().color(.control, .text) } });
             tl.deinit();
 
             if (dvui.button(@src(), "Create Project", .{}, .{ .expand = .horizontal })) {
@@ -100,7 +100,7 @@ pub fn draw() !void {
     //     defer box.deinit();
 
     //     if (dvui.buttonIcon(@src(), "example.atlas", icons.tvg.lucide.@"folder-open", .{}, .{
-    //         .fill_color = .fromTheme(.text_press),
+    //         .fill_color = .{ .color = .fromTheme(.text_press) },
     //     }, .{
     //         .gravity_y = 0.5,
     //         .padding = dvui.Rect.all(4),
@@ -150,7 +150,7 @@ pub fn draw() !void {
     //         .padding = dvui.Rect.all(5),
     //         .expand = .horizontal,
     //         .margin = dvui.Rect.all(0),
-    //         .color_text = if (project.packed_atlas_output) |_| .text else .text_press,
+    //         .color_text = .{ .color = if (project.packed_atlas_output) |_| .text else .text_press },
     //     });
 
     //     defer te.deinit();
@@ -181,7 +181,7 @@ pub fn draw() !void {
     //     defer box.deinit();
 
     //     if (dvui.buttonIcon(@src(), "example.atlas", icons.tvg.lucide.@"folder-open", .{}, .{
-    //         .fill_color = .fromTheme(.text_press),
+    //         .fill_color = .{ .color = .fromTheme(.text_press) },
     //     }, .{
     //         .gravity_y = 0.5,
     //         .padding = dvui.Rect.all(4),
@@ -231,7 +231,7 @@ pub fn draw() !void {
     //         .padding = dvui.Rect.all(5),
     //         .expand = .horizontal,
     //         .margin = dvui.Rect.all(0),
-    //         .color_text = if (project.packed_image_output) |_| .text else .text_press,
+    //         .color_text = .{ .color = if (project.packed_image_output) |_| .text else .text_press },
     //     });
 
     //     defer te.deinit();
@@ -329,7 +329,7 @@ fn pathTextEntry(path_type: PathType) !void {
             .padding = dvui.Rect.all(5),
             .expand = .horizontal,
             .margin = dvui.Rect.all(0),
-            .color_text = if (output_path.*) |_| dvui.themeGet().color(.window, .text) else dvui.themeGet().color(.control, .text),
+            .color_text = .{ .color = if (output_path.*) |_| dvui.themeGet().color(.window, .text) else dvui.themeGet().color(.control, .text) },
             .id_extra = index,
         });
 
@@ -370,8 +370,8 @@ fn drawPackedAtlasStats() void {
     const body = dvui.Font.theme(.body);
     const label_color = dvui.themeGet().color(.window, .text);
     const value_color = dvui.themeGet().color(.control, .text);
-    const label_opts: dvui.Options = .{ .font = body, .color_text = label_color };
-    const value_opts: dvui.Options = .{ .font = body, .color_text = value_color };
+    const label_opts: dvui.Options = .{ .font = body, .color_text = .{ .color = label_color } };
+    const value_opts: dvui.Options = .{ .font = body, .color_text = .{ .color = value_color } };
 
     if (runtime.packer().last_packed_at_ns) |packed_at_ns| {
         var when_buf: [64]u8 = undefined;
@@ -444,7 +444,7 @@ fn packProjectButton(packing: bool) bool {
     // Spinner overlays at the right edge — same content rect as the label, but anchored to
     // `gravity_x = 1.0`. Sized to roughly match the cap height so it doesn't fight the label.
     if (packing) {
-        pixi.core.dvui.bubbleSpinner(@src(), (dvui.Options{}).strip().override(bw.style()).override(.{
+        pixi.core.dialogs.bubbleSpinner(@src(), (dvui.Options{}).strip().override(bw.style()).override(.{
             .min_size_content = .{ .w = 16, .h = 16 },
             .gravity_x = 1.0,
             .gravity_y = 0.5,
@@ -489,7 +489,7 @@ fn drawWeb() !void {
             @src(),
             "Open one or more files to pack.",
             .{},
-            .{ .color_text = dvui.themeGet().color(.control, .text) },
+            .{ .color_text = .{ .color = dvui.themeGet().color(.control, .text) } },
         );
         return;
     }

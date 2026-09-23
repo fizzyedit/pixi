@@ -42,9 +42,16 @@ layers_rect: ?dvui.Rect.Physical = null,
 /// Visible clip of the layer list (scroll container content rect). Rows can have screen rects that
 /// extend below this when scrolled; without gating, those rects overlap the palettes pane and steal hover/input.
 layers_scroll_viewport_rect: ?dvui.Rect.Physical = null,
+/// See `splitTree`.
+split: ?pixi.core.widgets.DockLayout = null,
 
 pub fn init() Tools {
     return .{};
+}
+
+pub fn deinit(self: *Tools) void {
+    if (self.split) |*t| t.deinit();
+    self.split = null;
 }
 
 pub fn draw(self: *Tools) !void {
@@ -72,74 +79,62 @@ pub fn draw(self: *Tools) !void {
     const layer_count: usize = if (runtime.state().docs.activeFile(runtime.state().host)) |file| file.layers.len else 0;
     defer prev_layer_count = layer_count;
 
-    var paned = pixi.core.dvui.paned(@src(), .{
-        .direction = .vertical,
-        .collapsed_size = 0,
-        .handle_size = 10,
-        .handle_dynamic = .{},
-    }, .{ .expand = .both, .background = false });
-    defer paned.deinit();
-
-    if (paned.dragging) {
-        max_split_ratio = paned.split_ratio.*;
-        runtime.state().layers_ratio = paned.split_ratio.*;
+    // Layers above, palettes below: a two-leaf split tree. The layers half fits its content
+    // (`fit`) unless the palettes are pinned, in which case the user's ratio holds; a drag
+    // on a fitted split moves the cap the fit may grow to. With no layers at all the top
+    // shuts, and the palettes take the whole column.
+    const tree = self.splitTree();
+    const root = tree.root;
+    const sp = &tree.nodes.items[root].split;
+    if (layer_count == 0) {
+        sp.fit = null;
+        sp.ratio = 0;
+    } else if (runtime.state().pinned_palettes) {
+        sp.fit = null;
+        if (prev_layer_count == 0) sp.ratio = runtime.state().layers_ratio;
+    } else {
+        if (sp.fit == null) sp.fit = .{ .child = .first, .max = @min(max_split_ratio, 0.75) };
     }
 
-    if (paned.showFirst()) {
-        self.layers_rect = self.drawLayers() catch {
-            dvui.log.err("Failed to draw layers", .{});
-            return;
-        };
-    } else {
-        self.layers_rect = null;
-        self.layers_scroll_viewport_rect = null;
-    }
-
-    const autofit = !paned.dragging and !paned.collapsed_state and !paned.animating;
-
-    // Refit must be done between showFirst and showSecond
-    if (((dvui.firstFrame(paned.data().id) or prev_layer_count != layer_count) or autofit) and !runtime.state().pinned_palettes) {
-        if (dvui.firstFrame(paned.data().id) and layer_count == 0)
-            paned.split_ratio.* = 0.0;
-
-        // `firstFrame` is also true the first time we see the paned after it was not drawn
-        // (e.g. another explorer tab was active). Min sizes for the subtree are not published
-        // from the prior frame, so getFirstFittedRatio can be clamped to max_split, then a
-        // second pass animates to the true fit. Restore from the saved ratio; refit+animate
-        // next frame when min sizes are valid.
-        if (dvui.firstFrame(paned.data().id) and layer_count > 0) {
-            paned.split_ratio.* = 0.01;
-            //runtime.state().layers_ratio = paned.split_ratio.*;
-        } else {
-            const ratio = paned.getFirstFittedRatio(
-                .{
-                    .min_split = 0,
-                    .max_split = @min(max_split_ratio, 0.75),
-                    .min_size = 0,
-                },
-            );
-
-            const diff = @abs(ratio - paned.split_ratio.*);
-
-            if (diff > 0.000001 and layer_count > 0) {
-                paned.animateSplit(ratio, dvui.easing.outBack);
-            }
-        }
-    } else {
-        if (dvui.firstFrame(paned.data().id)) {
-            if (layer_count == 0)
-                paned.split_ratio.* = 0.0
-            else
-                paned.split_ratio.* = runtime.state().layers_ratio;
-
-            runtime.state().layers_ratio = paned.split_ratio.*;
+    var dock = pixi.core.widgets.dockspace(@src(), .{ .layout = tree, .header = .none }, .{ .expand = .both, .background = false });
+    self.layers_rect = null;
+    self.layers_scroll_viewport_rect = null;
+    while (dock.panel()) |p| {
+        defer p.end();
+        if (std.mem.eql(u8, p.id, layers_pane)) {
+            self.layers_rect = self.drawLayers() catch {
+                dvui.log.err("Failed to draw layers", .{});
+                continue;
+            };
+        } else if (std.mem.eql(u8, p.id, palettes_pane)) {
+            drawPaletteControls() catch {};
+            drawPalettes() catch {};
         }
     }
+    const dragging = dock.dragging;
+    dock.deinit();
 
-    if (paned.showSecond()) {
-        drawPaletteControls() catch {};
-        drawPalettes() catch {};
+    if (dragging) {
+        max_split_ratio = sp.ratio;
+        runtime.state().layers_ratio = sp.ratio;
+        if (sp.fit) |*f| f.max = @min(sp.ratio, 0.75);
     }
+}
+
+const layers_pane = "layers";
+const palettes_pane = "palettes";
+
+/// The layers/palettes split, built on first use. Lives on the drawer rather than in `State`
+/// because it is only this drawer's arrangement — nothing else reads it.
+fn splitTree(self: *Tools) *pixi.core.widgets.DockLayout {
+    if (self.split) |*t| return t;
+    var t = pixi.core.widgets.DockLayout.initSingleLeaf(runtime.allocator(), layers_pane) catch @panic("OOM");
+    t.animated = true;
+    t.splitLeaf(t.root, .bottom, palettes_pane) catch @panic("OOM");
+    t.nodes.items[t.root].split.opening = null; // built, not opened by hand: no slide
+    t.nodes.items[t.root].split.ratio = runtime.state().layers_ratio;
+    self.split = t;
+    return &self.split.?;
 }
 
 pub fn layersHovered(self: *Tools) bool {
@@ -196,8 +191,8 @@ pub fn drawTools() !void {
             .id_extra = id_extra,
             .background = true,
             .corners = .round(1000),
-            .color_fill = if (selected) dvui.themeGet().color(.content, .fill) else hover_fill.opacity(0),
-            .color_fill_hover = hover_fill,
+            .color_fill = .{ .color = if (selected) dvui.themeGet().color(.content, .fill) else hover_fill.opacity(0) },
+            .color_fill_hover = .{ .color = hover_fill },
             .box_shadow = if (selected) .{
                 .color = .black,
                 .offset = .{ .x = -2.5, .y = 2.5 },
@@ -206,14 +201,14 @@ pub fn drawTools() !void {
             } else null,
             .padding = .all(0),
             //.border = dvui.Rect.all(1.0),
-            //.color_border = if (selected) color else dvui.themeGet().color(.control, .fill),
+            //.color_border = .{ .color = if (selected) color else dvui.themeGet().color(.control, .fill) },
         });
         defer button.deinit();
 
         runtime.state().tools.drawTooltip(tool, button.data().rectScale().r, id_extra) catch {};
 
         if (button.hovered()) {
-            button.data().options.color_border = color;
+            button.data().options.color_border = .{ .color = color };
         }
 
         const size: dvui.Size = dvui.imageSize(runtime.uiAtlas().source) catch .{ .w = 0, .h = 0 };
@@ -284,7 +279,7 @@ pub fn drawLayerControls() !void {
                     .alpha = 0.15,
                     .corners = .round(1000),
                 },
-                .color_fill = dvui.themeGet().color(.control, .fill),
+                .color_fill = .{ .color = dvui.themeGet().color(.control, .fill) },
             })) {
                 if (merge_up_enabled) {
                     file.mergeSelectedLayerUp() catch {
@@ -308,7 +303,7 @@ pub fn drawLayerControls() !void {
                     .alpha = 0.15,
                     .corners = .round(1000),
                 },
-                .color_fill = dvui.themeGet().color(.control, .fill),
+                .color_fill = .{ .color = dvui.themeGet().color(.control, .fill) },
             })) {
                 if (merge_down_enabled) {
                     file.mergeSelectedLayerDown() catch {
@@ -352,7 +347,7 @@ pub fn drawLayerControls() !void {
                 .alpha = 0.15,
                 .corners = .round(1000),
             },
-            .color_fill = dvui.themeGet().color(.control, .fill),
+            .color_fill = .{ .color = dvui.themeGet().color(.control, .fill) },
         })) {
             if (file.createLayer() catch null) |id| {
                 edit_layer_id = id;
@@ -370,7 +365,7 @@ pub fn drawLayerControls() !void {
                 .alpha = 0.15,
                 .corners = .round(1000),
             },
-            .color_fill = dvui.themeGet().color(.control, .fill),
+            .color_fill = .{ .color = dvui.themeGet().color(.control, .fill) },
         })) {
             if (file.duplicateLayer(file.selected_layer_index) catch null) |id| {
                 edit_layer_id = id;
@@ -378,7 +373,7 @@ pub fn drawLayerControls() !void {
         }
 
         if (file.layers.len > 1) {
-            if (dvui.buttonIcon(@src(), "DeleteLayer", icons.tvg.lucide.trash, .{}, .{ .stroke_color = dvui.themeGet().color(.window, .fill) }, .{
+            if (dvui.buttonIcon(@src(), "DeleteLayer", icons.tvg.lucide.trash, .{}, .{ .stroke_color = .{ .color = dvui.themeGet().color(.window, .fill) } }, .{
                 .style = .err,
                 .expand = .none,
                 .gravity_y = 0.5,
@@ -430,7 +425,7 @@ pub fn drawLayers(tools: *Tools) !?dvui.Rect.Physical {
 
         const vertical_scroll = file.editor.layers_scroll_info.offset(.vertical);
 
-        var tree = pixi.core.dvui.TreeWidget.tree(@src(), .{ .enable_reordering = true }, .{
+        var tree = pixi.core.widgets.TreeWidget.tree(@src(), .{ .enable_reordering = true }, .{
             .expand = .horizontal,
             .background = false,
         });
@@ -474,7 +469,7 @@ pub fn drawLayers(tools: *Tools) !?dvui.Rect.Physical {
                     file.layers.orderedRemove(sources[ri]);
                 }
 
-                const target_raw = pixi.core.dvui.TreeSelection.adjustInsertBeforeForRemovals(sources, insert_before_raw);
+                const target_raw = pixi.core.widgets.TreeSelection.adjustInsertBeforeForRemovals(sources, insert_before_raw);
                 const target = @min(target_raw, file.layers.len);
 
                 for (moved, 0..) |layer, i| {
@@ -621,10 +616,10 @@ pub fn drawLayers(tools: *Tools) !?dvui.Rect.Physical {
             var hbox = dvui.box(@src(), .{ .dir = .horizontal }, .{
                 .expand = .both,
                 .background = true,
-                .color_fill = if ((selected or row_highlight) and !branch.floating())
+                .color_fill = .{ .color = if ((selected or row_highlight) and !branch.floating())
                     ctrl_hover
                 else
-                    .transparent,
+                    .transparent },
                 .color_fill_hover = .transparent,
                 .margin = dvui.Rect{},
                 .padding = dvui.Rect.all(1),
@@ -638,8 +633,8 @@ pub fn drawLayers(tools: *Tools) !?dvui.Rect.Physical {
             //     "LayerIcon",
             //     icons.tvg.heroicons.solid.@"square-3-stack-3d",
             //     .{
-            //         .stroke_color = if (!(selected or row_hovered)) dvui.themeGet().color(.control, .fill) else if (selected) dvui.themeGet().color(.window, .text) else dvui.themeGet().color(.window, .fill),
-            //         .fill_color = if (!(selected or row_hovered)) dvui.themeGet().color(.control, .fill) else if (selected) dvui.themeGet().color(.window, .text) else dvui.themeGet().color(.window, .fill),
+            //         .stroke_color = .{ .color = if (!(selected or row_hovered)) dvui.themeGet().color(.control, .fill) else if (selected) dvui.themeGet().color(.window, .text) else dvui.themeGet().color(.window, .fill) },
+            //         .fill_color = .{ .color = if (!(selected or row_hovered)) dvui.themeGet().color(.control, .fill) else if (selected) dvui.themeGet().color(.window, .text) else dvui.themeGet().color(.window, .fill) },
             //     },
             //     .{ .expand = .none, .gravity_y = 0.5, .margin = .{ .x = 4, .w = 4 } },
             // );
@@ -649,7 +644,7 @@ pub fn drawLayers(tools: *Tools) !?dvui.Rect.Physical {
                 .background = true,
                 .gravity_y = 0.5,
                 .min_size_content = .{ .w = 8.0, .h = 8.0 },
-                .color_fill = color,
+                .color_fill = .{ .color = color },
                 .corners = .round(1000),
                 .margin = dvui.Rect.all(2),
                 .padding = dvui.Rect.all(0),
@@ -683,7 +678,7 @@ pub fn drawLayers(tools: *Tools) !?dvui.Rect.Physical {
                         .margin = dvui.Rect{},
                         .font = font,
                         .padding = dvui.Rect.all(0),
-                        .color_text = name_color,
+                        .color_text = .{ .color = name_color },
                     })) {
                         const lr = name_label_box.data().borderRectScale().r;
                         if (pointerReleaseInRectWithoutSelectionModifier(lr)) {
@@ -697,7 +692,7 @@ pub fn drawLayers(tools: *Tools) !?dvui.Rect.Physical {
                         .margin = dvui.Rect{},
                         .font = font,
                         .padding = dvui.Rect.all(0),
-                        .color_text = name_color,
+                        .color_text = .{ .color = name_color },
                     });
                 }
             } else {
@@ -923,13 +918,13 @@ pub fn drawLayers(tools: *Tools) !?dvui.Rect.Physical {
 
         // Only draw shadow if the scroll bar has been scrolled some
         if (vertical_scroll > 0.0)
-            pixi.core.dvui.drawEdgeShadow(scroll_area.data().contentRectScale(), .top, .{});
+            pixi.core.draw.drawEdgeShadow(scroll_area.data().contentRectScale(), .top, .{});
 
         if (file.editor.layers_scroll_info.virtual_size.h > file.editor.layers_scroll_info.viewport.h + 1 and vertical_scroll < file.editor.layers_scroll_info.scrollMax(.vertical))
-            pixi.core.dvui.drawEdgeShadow(scroll_area.data().contentRectScale(), .bottom, .{});
+            pixi.core.draw.drawEdgeShadow(scroll_area.data().contentRectScale(), .bottom, .{});
     }
 
-    if (pixi.core.dvui.hovered(vbox.data())) {
+    if (pixi.core.widgets.hovered(vbox.data())) {
         const mp = dvui.currentWindow().mouse_pt;
         if (tools.layers_scroll_viewport_rect) |vr| {
             if (!vr.contains(mp)) return null;
@@ -958,9 +953,9 @@ pub fn drawColors() !void {
         .expand = .both,
         .background = true,
         .corners = .round(8.0),
-        .color_fill = primary,
-        .color_fill_hover = primary,
-        .color_fill_press = primary,
+        .color_fill = .{ .color = primary },
+        .color_fill_hover = .{ .color = primary },
+        .color_fill_press = .{ .color = primary },
         .margin = dvui.Rect.all(4),
         .padding = dvui.Rect.all(0),
         .box_shadow = .{
@@ -973,9 +968,9 @@ pub fn drawColors() !void {
     };
 
     const secondary_overrider: dvui.Options = .{
-        .color_fill = secondary,
-        .color_fill_hover = secondary,
-        .color_fill_press = secondary,
+        .color_fill = .{ .color = secondary },
+        .color_fill_hover = .{ .color = secondary },
+        .color_fill_press = .{ .color = secondary },
     };
 
     var clicked: bool = false;
@@ -1231,12 +1226,12 @@ pub fn drawPalettes() !void {
 
                 const b = path.build().fillConvexTriangles(
                     dvui.currentWindow().arena(),
-                    .{ .color = .{
+                    .{ .color = .{ .color = .{
                         .r = color[0],
                         .g = color[1],
                         .b = color[2],
                         .a = color[3],
-                    }, .fade = 1.0 },
+                    } }, .fade = 1.0 },
                 ) catch return;
                 for (b.vertexes) |vertex| {
                     triangles.appendVertex(vertex);
@@ -1381,7 +1376,7 @@ const LayerClickApplied = struct {
 fn applyLayerClick(
     file: *pixi.internal.File,
     clicked: usize,
-    mode: pixi.core.dvui.TreeSelection.ClickMode,
+    mode: pixi.core.widgets.TreeSelection.ClickMode,
 ) LayerClickApplied {
     const count_before = file.editor.selected_layer_indices.items.len;
 
@@ -1394,7 +1389,7 @@ fn applyLayerClick(
     var tmp: std.ArrayList(usize) = .empty;
     defer tmp.deinit(runtime.allocator());
 
-    const res = pixi.core.dvui.TreeSelection.applyClickUsize(
+    const res = pixi.core.widgets.TreeSelection.applyClickUsize(
         runtime.allocator(),
         file.editor.selected_layer_indices.items,
         file.selected_layer_index,
@@ -1481,7 +1476,7 @@ fn layerPointerInScrollViewport(p: dvui.Point.Physical, viewport_r: ?dvui.Rect.P
     return true;
 }
 
-fn layerTreePointerInTreeSurface(tree: *pixi.core.dvui.TreeWidget, p: dvui.Point.Physical, floating_win: dvui.Id) bool {
+fn layerTreePointerInTreeSurface(tree: *pixi.core.widgets.TreeWidget, p: dvui.Point.Physical, floating_win: dvui.Id) bool {
     if (floating_win != dvui.subwindowCurrentId()) return false;
     const tr = tree.data().borderRectScale().r;
     if (!tr.contains(p)) return false;
@@ -1489,14 +1484,14 @@ fn layerTreePointerInTreeSurface(tree: *pixi.core.dvui.TreeWidget, p: dvui.Point
     return true;
 }
 
-fn layerTreePointerInTreeBorder(tree: *pixi.core.dvui.TreeWidget, p: dvui.Point.Physical, floating_win: dvui.Id) bool {
+fn layerTreePointerInTreeBorder(tree: *pixi.core.widgets.TreeWidget, p: dvui.Point.Physical, floating_win: dvui.Id) bool {
     if (floating_win != dvui.subwindowCurrentId()) return false;
     return tree.data().borderRectScale().r.contains(p);
 }
 
 /// While another widget holds capture, `target_widgetId` may not be the tree. Allow starting a reorder drag
 /// when the pointer is over the tree border (scroll clip can disagree with visible row geometry).
-fn layerTreeMotionAllowsLayerReorder(tree: *pixi.core.dvui.TreeWidget, e: *dvui.Event) bool {
+fn layerTreeMotionAllowsLayerReorder(tree: *pixi.core.widgets.TreeWidget, e: *dvui.Event) bool {
     if (e.target_widgetId) |fwid| {
         if (fwid == tree.data().id) return true;
     }
@@ -1510,7 +1505,7 @@ fn layerTreeMotionAllowsLayerReorder(tree: *pixi.core.dvui.TreeWidget, e: *dvui.
 
 /// One pass over `events()` in frame order: press → motion → release.
 /// Runs after layer rows (and rename `textEntry`) are built so geometry and `e.handled` reflect z-order.
-fn processLayerTreePointerEvents(tree: *pixi.core.dvui.TreeWidget, file: *pixi.internal.File, hits: []const LayerRowHit, layers_viewport_r: ?dvui.Rect.Physical) void {
+fn processLayerTreePointerEvents(tree: *pixi.core.widgets.TreeWidget, file: *pixi.internal.File, hits: []const LayerRowHit, layers_viewport_r: ?dvui.Rect.Physical) void {
     if (!tree.init_options.enable_reordering) return;
 
     for (dvui.events()) |*e| {
@@ -1536,7 +1531,7 @@ fn processLayerTreePointerEvents(tree: *pixi.core.dvui.TreeWidget, file: *pixi.i
                         layerTreeClearGestureKeysOnly(file);
                         dvui.dragPreStart(me.button, me.p, .{ .offset = h.hbox_tl.diff(me.p) });
 
-                        const mode = pixi.core.dvui.TreeSelection.clickModeFromMod(me.mod);
+                        const mode = pixi.core.widgets.TreeSelection.clickModeFromMod(me.mod);
                         const applied = applyLayerClick(file, h.layer_index, mode);
 
                         layer_row_gesture = .{

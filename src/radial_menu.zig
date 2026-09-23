@@ -68,7 +68,6 @@ pub fn draw() !void {
     });
     defer fw.deinit();
 
-    const menu_color = dvui.themeGet().color(.content, .fill).lighten(4.0);
     const center = fw.data().rectScale().pointFromPhysical(runtime.state().tools.radial_menu.center);
     const tool_count: usize = std.meta.fields(Tools.Tool).len;
     const radius: f32 = 50.0;
@@ -85,10 +84,14 @@ pub fn draw() !void {
     outer_rect.x -= outer_rect.w / 2.0;
     outer_rect.y -= outer_rect.h / 2.0;
 
+    // The disc is frosted glass like every other floating surface (`core.dialogs.frostPane`,
+    // at the app's dialog style): the box paints its shadow, the frost replaces what the shadow
+    // covered inside the disc, the tools draw on top. Only when the style has the blur off
+    // does the box paint a plain fill.
     var box = dvui.box(@src(), .{ .dir = .horizontal }, .{
         .rect = outer_rect,
         .expand = .none,
-        .background = true,
+        .background = false,
         .corners = .round(100000),
         .box_shadow = .{
             .color = .black,
@@ -96,9 +99,15 @@ pub fn draw() !void {
             .fade = 8.0,
             .alpha = 0.35,
         },
-        .color_fill = menu_color.opacity(0.75),
         .border = dvui.Rect.all(0.0),
     });
+    {
+        const brs = box.data().borderRectScale();
+        const corners = box.data().options.cornersGet();
+        if (!pixi.core.dialogs.frostPane(box.data().id, brs.r, corners, brs.s)) {
+            brs.r.fill(corners.scale(brs.s, dvui.CornerRect.Physical), .{ .color = .{ .color = pixi.core.dialogs.dialogFill() }, .fade = 1.0 });
+        }
+    }
     box.deinit();
     outer_anim.deinit();
 
@@ -139,8 +148,8 @@ pub fn draw() !void {
             .rect = rect,
             .id_extra = i,
             .corners = .round(1000.0),
-            .color_fill = if (tool == runtime.state().tools.current) dvui.themeGet().color(.content, .fill) else hover_fill.opacity(0),
-            .color_fill_hover = hover_fill,
+            .color_fill = .{ .color = if (tool == runtime.state().tools.current) dvui.themeGet().color(.content, .fill) else hover_fill.opacity(0) },
+            .color_fill_hover = .{ .color = hover_fill },
             .box_shadow = if (tool == runtime.state().tools.current) .{
                 .color = .black,
                 .offset = .{ .x = -2.5, .y = 2.5 },
@@ -231,7 +240,7 @@ pub fn draw() !void {
                     .alpha = 0.25,
                     .corners = .round(1000),
                 },
-                .color_fill = dvui.themeGet().color(.control, .fill_hover),
+                .color_fill = .{ .color = dvui.themeGet().color(.control, .fill_hover) },
                 .rect = rect,
             })) {
                 file.editor.playing = !file.editor.playing;

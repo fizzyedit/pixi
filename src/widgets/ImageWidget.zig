@@ -1,5 +1,5 @@
 pub const ImageWidget = @This();
-const CanvasWidget = pixi.core.dvui.CanvasWidget;
+const CanvasWidget = pixi.core.widgets.CanvasWidget;
 const CanvasBridge = @import("CanvasBridge.zig");
 
 init_options: InitOptions,
@@ -164,7 +164,7 @@ fn sample(self: *ImageWidget, point: dvui.Point, screen_p: dvui.Point.Physical) 
 }
 
 pub fn drawCursor(self: *ImageWidget) void {
-    if (pixi.core.dvui.canvasPointerInputSuppressed()) return;
+    if (pixi.core.dialogs.canvasPointerInputSuppressed()) return;
     for (dvui.events()) |*e| {
         if (!self.init_options.canvas.scroll_container.matchEvent(e)) {
             continue;
@@ -207,7 +207,7 @@ pub fn drawSample(self: *ImageWidget) void {
 }
 
 pub fn drawSampleMagnifier(canvas: *CanvasWidget, source: dvui.ImageSource, data_point: dvui.Point) void {
-    if (pixi.core.dvui.canvasPointerInputSuppressed()) return;
+    if (pixi.core.dialogs.canvasPointerInputSuppressed()) return;
     if (!canvas.samplePointerInViewport(dvui.currentWindow().mouse_pt)) return;
 
     _ = dvui.cursorSet(.hidden);
@@ -255,9 +255,9 @@ pub fn drawSampleMagnifier(canvas: *CanvasWidget, source: dvui.ImageSource, data
         .rect = dvui.Rect.cast(magnifier_nat),
         .expand = .none,
         .background = true,
-        .color_fill = dvui.themeGet().color(.window, .fill),
+        .color_fill = .{ .color = dvui.themeGet().color(.window, .fill) },
         .border = dvui.Rect.all(border_nat),
-        .color_border = dvui.themeGet().color(.control, .text),
+        .color_border = .{ .color = dvui.themeGet().color(.control, .text) },
         .corners = corners,
         .box_shadow = .{
             .fade = 15.0 / ns,
@@ -325,7 +325,7 @@ fn packedAtlasCheckerboardTexture() ?dvui.Texture {
 
 fn drawPackedAtlasCheckerboardBackground(canvas: *CanvasWidget, data_rect: dvui.Rect) void {
     const bg_screen = canvas.screenFromDataRect(data_rect);
-    bg_screen.fill(.all(0), .{ .color = dvui.themeGet().color(.content, .fill), .fade = 1.5 });
+    bg_screen.fill(.all(0), .{ .color = .{ .color = dvui.themeGet().color(.content, .fill) }, .fade = 1.5 });
     if (canvas.scale < 0.1) return;
 
     const tex = packedAtlasCheckerboardTexture() orelse return;
@@ -371,7 +371,7 @@ pub fn drawImage(self: *ImageWidget) void {
         .rect = image_rect,
         .border = dvui.Rect.all(0),
         .background = true,
-        .color_fill = dvui.themeGet().color(.window, .fill),
+        .color_fill = .{ .color = dvui.themeGet().color(.window, .fill) },
     });
     fill_box.deinit();
 
@@ -400,7 +400,7 @@ pub fn drawImage(self: *ImageWidget) void {
         self.init_options.canvas.rect.topRight(),
         self.init_options.canvas.rect.bottomRight(),
         self.init_options.canvas.rect.bottomLeft(),
-    } }, .{ .thickness = 1, .color = dvui.themeGet().color(.control, .fill_hover), .closed = true });
+    } }, .{ .thickness = 1, .color = .{ .color = dvui.themeGet().color(.control, .fill_hover) }, .closed = true });
 }
 
 pub fn processEvents(self: *ImageWidget) void {
@@ -434,10 +434,10 @@ pub fn processEvents(self: *ImageWidget) void {
 
     self.drawImage();
 
-    pixi.core.dvui.drawEdgeShadow(self.init_options.canvas.scroll_container.data().rectScale(), .top, .{});
-    pixi.core.dvui.drawEdgeShadow(self.init_options.canvas.scroll_container.data().rectScale(), .bottom, .{ .opacity = 0.15 });
-    pixi.core.dvui.drawEdgeShadow(self.init_options.canvas.scroll_container.data().rectScale(), .left, .{});
-    pixi.core.dvui.drawEdgeShadow(self.init_options.canvas.scroll_container.data().rectScale(), .right, .{ .opacity = 0.15 });
+    pixi.core.draw.drawEdgeShadow(self.init_options.canvas.scroll_container.data().rectScale(), .top, .{});
+    pixi.core.draw.drawEdgeShadow(self.init_options.canvas.scroll_container.data().rectScale(), .bottom, .{ .opacity = 0.15 });
+    pixi.core.draw.drawEdgeShadow(self.init_options.canvas.scroll_container.data().rectScale(), .left, .{});
+    pixi.core.draw.drawEdgeShadow(self.init_options.canvas.scroll_container.data().rectScale(), .right, .{ .opacity = 0.15 });
 
     self.drawCursor();
     self.drawSample();

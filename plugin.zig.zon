@@ -1,8 +1,8 @@
 .{
     .id = "pixi",
     .name = "Pixi",
-    .version = "0.1.22",
-    .min_sdk_version = "0.1.52",
+    .version = "0.1.23",
+    .min_sdk_version = "0.2.1",
     .description = "Pixel-art editor: sprite and atlas editing for fizzy.",
     .tags = .{ "editor", "pixel-art" },
     .author = "foxnne",

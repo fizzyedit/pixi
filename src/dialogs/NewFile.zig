@@ -22,7 +22,7 @@ pub const min_size: [2]u32 = .{ 1, 1 };
 /// on disk inside that folder (explorer-initiated); otherwise an in-memory `untitled-n` is made.
 /// `id_extra` disambiguates dialogs launched from distinct explorer rows.
 pub fn request(parent_path: ?[]const u8, id_extra: usize) void {
-    var mutex = pixi.core.dvui.dialog(@src(), .{
+    var mutex = pixi.core.dialogs.dialog(@src(), .{
         .displayFn = dialog,
         .callafterFn = callAfter,
         .title = "New File...",
@@ -64,8 +64,8 @@ pub fn dialog(id: dvui.Id) anyerror!bool {
                     .margin = .{ .y = 2, .h = 4 },
                     .corners = if (i == 0) .{ .tl = .round(100000), .bl = .round(100000) } else .{ .tr = .round(100000), .br = .round(100000) },
                     .expand = .horizontal,
-                    .color_fill = color,
-                    .color_fill_hover = if (i == @intFromEnum(mode)) color else null,
+                    .color_fill = .{ .color = color },
+                    .color_fill_hover = if (i == @intFromEnum(mode)) .{ .color = color } else null,
                     .id_extra = i,
                     .box_shadow = if (i != @intFromEnum(mode)) .{
                         .color = .black,
@@ -90,7 +90,7 @@ pub fn dialog(id: dvui.Id) anyerror!bool {
                     dvui.labelNoFmt(@src(), "Single", .{}, button_opts.strip().override(button.style()).override(.{
                         .gravity_x = 0.5,
                         .gravity_y = 0.5,
-                        .color_text = if (i == @intFromEnum(mode)) dvui.themeGet().color(.window, .text) else dvui.themeGet().color(.control, .text),
+                        .color_text = .{ .color = if (i == @intFromEnum(mode)) dvui.themeGet().color(.window, .text) else dvui.themeGet().color(.control, .text) },
                     }));
                     if (button.clicked()) {
                         mode = .single;
@@ -100,7 +100,7 @@ pub fn dialog(id: dvui.Id) anyerror!bool {
                     dvui.labelNoFmt(@src(), "Grid", .{}, button_opts.strip().override(button.style()).override(.{
                         .gravity_x = 0.5,
                         .gravity_y = 0.5,
-                        .color_text = if (i == @intFromEnum(mode)) dvui.themeGet().color(.window, .text) else dvui.themeGet().color(.control, .text),
+                        .color_text = .{ .color = if (i == @intFromEnum(mode)) dvui.themeGet().color(.window, .text) else dvui.themeGet().color(.control, .text) },
                     }));
                     if (button.clicked()) {
                         mode = .grid;

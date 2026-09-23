@@ -98,7 +98,7 @@ pub fn sprite(src: std.builtin.SourceLocation, init_opts: SpriteInitOptions, opt
     // rect is the content rect, so expand to the whole rect
     wd.rect = rect.outset(wd.options.paddingGet()).outset(wd.options.borderGet()).outset(wd.options.marginGet());
 
-    var renderBackground: ?dvui.Color = if (wd.options.backgroundGet()) wd.options.color(.fill) else null;
+    var renderBackground: ?dvui.Color = if (wd.options.backgroundGet()) wd.options.color(.fill).toColor() else null;
 
     if (wd.options.rotationGet() == 0.0) {
         wd.borderAndBackground(.{});
@@ -285,25 +285,25 @@ pub fn sprite(src: std.builtin.SourceLocation, init_opts: SpriteInitOptions, opt
             if (init_opts.depth != 0.0) {
                 // Skew the opaque base along with the art so no axis-aligned sliver
                 // of fill colour pokes out past the receding edge.
-            var base_triangles = pathToSubdividedQuad(path.build(), dvui.currentWindow().arena(), .{
+                var base_triangles = pathToSubdividedQuad(path.build(), dvui.currentWindow().arena(), .{
+                    .subdivisions = 8,
+                    .color_mod = dvui.themeGet().color(.content, .fill).opacity(op),
+                }) catch unreachable;
+                defer base_triangles.deinit(dvui.currentWindow().arena());
+                dvui.renderTriangles(base_triangles, null) catch {
+                    dvui.log.err("Failed to render triangles", .{});
+                };
+            } else {
+                wd.contentRectScale().r.fill(.all(0), .{ .color = .{ .color = dvui.themeGet().color(.content, .fill).opacity(op) }, .fade = 1.5 });
+            }
+
+            const alpha_triangles = pathToSubdividedQuad(path.build(), dvui.currentWindow().arena(), .{
                 .subdivisions = 8,
-                .color_mod = dvui.themeGet().color(.content, .fill).opacity(op),
+                .color_mod = dvui.themeGet().color(.content, .fill).lighten(6.0).opacity(0.5).opacity(op),
             }) catch unreachable;
-            defer base_triangles.deinit(dvui.currentWindow().arena());
-            dvui.renderTriangles(base_triangles, null) catch {
+            dvui.renderTriangles(alpha_triangles, alpha_source.getTexture() catch null) catch {
                 dvui.log.err("Failed to render triangles", .{});
             };
-        } else {
-            wd.contentRectScale().r.fill(.all(0), .{ .color = dvui.themeGet().color(.content, .fill).opacity(op), .fade = 1.5 });
-        }
-
-        const alpha_triangles = pathToSubdividedQuad(path.build(), dvui.currentWindow().arena(), .{
-            .subdivisions = 8,
-            .color_mod = dvui.themeGet().color(.content, .fill).lighten(6.0).opacity(0.5).opacity(op),
-        }) catch unreachable;
-        dvui.renderTriangles(alpha_triangles, alpha_source.getTexture() catch null) catch {
-            dvui.log.err("Failed to render triangles", .{});
-        };
         }
     }
 
@@ -684,7 +684,7 @@ pub fn renderSprite(source: dvui.ImageSource, s: pixi.core_sprite, data_point: d
         .padding = .{ .x = 0, .y = 0 },
         .margin = .{ .x = 0, .y = 0 },
         .background = false,
-        .color_fill = dvui.themeGet().color(.err, .fill),
+        .color_fill = .{ .color = dvui.themeGet().color(.err, .fill) },
     });
     defer box.deinit();
 

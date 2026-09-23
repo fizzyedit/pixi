@@ -10,7 +10,7 @@ const alpha_checkerboard_count: u32 = 8;
 
 /// The packed atlas texture
 source: dvui.ImageSource,
-canvas: pixi.core.dvui.CanvasWidget = .{},
+canvas: pixi.core.widgets.CanvasWidget = .{},
 
 /// Checkerboard tile for the project-tab atlas preview (not tied to open files).
 checkerboard_tile: ?dvui.Texture = null,

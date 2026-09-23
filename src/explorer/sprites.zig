@@ -362,7 +362,7 @@ pub fn drawOriginControls(self: *Sprites) !void {
             dvui.labelNoFmt(@src(), "X", .{}, .{ .font = dvui.Font.theme(.body) });
             if (mixed_x) {
                 dvui.icon(@src(), "OriginXIcon", icons.tvg.lucide.@"link-2-off", .{
-                    .stroke_color = dvui.themeGet().color(.control, .text),
+                    .stroke_color = .{ .color = dvui.themeGet().color(.control, .text) },
                 }, .{
                     .gravity_y = 0.5,
                     .expand = .none,
@@ -371,7 +371,7 @@ pub fn drawOriginControls(self: *Sprites) !void {
                 });
             } else {
                 dvui.icon(@src(), "OriginXIcon", icons.tvg.lucide.@"link-2", .{
-                    .stroke_color = dvui.themeGet().color(.control, .text),
+                    .stroke_color = .{ .color = dvui.themeGet().color(.control, .text) },
                 }, .{
                     .gravity_y = 0.5,
                     .expand = .none,
@@ -433,7 +433,7 @@ pub fn drawOriginControls(self: *Sprites) !void {
             dvui.labelNoFmt(@src(), "Y", .{}, .{ .font = dvui.Font.theme(.body) });
             if (mixed_y) {
                 dvui.icon(@src(), "OriginYIcon", icons.tvg.lucide.@"link-2-off", .{
-                    .stroke_color = dvui.themeGet().color(.control, .text),
+                    .stroke_color = .{ .color = dvui.themeGet().color(.control, .text) },
                 }, .{
                     .gravity_y = 0.5,
                     .expand = .none,
@@ -442,7 +442,7 @@ pub fn drawOriginControls(self: *Sprites) !void {
                 });
             } else {
                 dvui.icon(@src(), "OriginYIcon", icons.tvg.lucide.@"link-2", .{
-                    .stroke_color = dvui.themeGet().color(.control, .text),
+                    .stroke_color = .{ .color = dvui.themeGet().color(.control, .text) },
                 }, .{
                     .gravity_y = 0.5,
                     .expand = .none,
@@ -521,7 +521,7 @@ pub fn drawAnimationControls(self: *Sprites) !void {
                     .alpha = 0.15,
                     .corners = .round(1000),
                 },
-                .color_fill = dvui.themeGet().color(.control, .fill),
+                .color_fill = .{ .color = dvui.themeGet().color(.control, .fill) },
             });
             defer add_animation_button.deinit();
 
@@ -533,8 +533,8 @@ pub fn drawAnimationControls(self: *Sprites) !void {
                 "AddAnimationIcon",
                 icons.tvg.lucide.plus,
                 .{
-                    .fill_color = icon_color,
-                    .stroke_color = icon_color,
+                    .fill_color = .{ .color = icon_color },
+                    .stroke_color = .{ .color = icon_color },
                 },
                 .{
                     .gravity_x = 0.5,
@@ -577,7 +577,7 @@ pub fn drawAnimationControls(self: *Sprites) !void {
                     .alpha = 0.15,
                     .corners = .round(1000),
                 },
-                .color_fill = dvui.themeGet().color(.control, .fill),
+                .color_fill = .{ .color = dvui.themeGet().color(.control, .fill) },
             });
 
             defer duplicate_animation_button.deinit();
@@ -589,7 +589,7 @@ pub fn drawAnimationControls(self: *Sprites) !void {
                 @src(),
                 "DuplicateAnimationIcon",
                 icons.tvg.lucide.@"copy-plus",
-                .{ .fill_color = icon_color, .stroke_color = icon_color },
+                .{ .fill_color = .{ .color = icon_color }, .stroke_color = .{ .color = icon_color } },
                 .{
                     .gravity_x = 0.5,
                     .gravity_y = 0.5,
@@ -637,7 +637,7 @@ pub fn drawAnimationControls(self: *Sprites) !void {
                     .alpha = 0.15,
                     .corners = .round(1000),
                 },
-                .color_fill = dvui.themeGet().color(.err, .fill),
+                .color_fill = .{ .color = dvui.themeGet().color(.err, .fill) },
             });
             defer delete_animation_button.deinit();
             delete_animation_button.processEvents();
@@ -649,7 +649,7 @@ pub fn drawAnimationControls(self: *Sprites) !void {
                 @src(),
                 "DeleteAnimationIcon",
                 icons.tvg.lucide.trash,
-                .{ .fill_color = dvui.themeGet().color(.window, .fill), .stroke_color = dvui.themeGet().color(.window, .fill) },
+                .{ .fill_color = .{ .color = dvui.themeGet().color(.window, .fill) }, .stroke_color = .{ .color = dvui.themeGet().color(.window, .fill) } },
                 .{
                     .gravity_x = 0.5,
                     .gravity_y = 0.5,
@@ -731,17 +731,17 @@ pub fn drawAnimations(self: *Sprites) !void {
         defer {
             if (file.editor.animations_scroll_info.viewport.w < file.editor.animations_scroll_info.virtual_size.w) {
                 if (file.editor.animations_scroll_info.offset(.horizontal) < file.editor.animations_scroll_info.scrollMax(.horizontal)) {
-                    pixi.core.dvui.drawEdgeShadow(scroll_area.data().contentRectScale(), .right, .{});
+                    pixi.core.draw.drawEdgeShadow(scroll_area.data().contentRectScale(), .right, .{});
                 }
                 if (file.editor.animations_scroll_info.offset(.horizontal) > 0.0) {
-                    pixi.core.dvui.drawEdgeShadow(scroll_area.data().contentRectScale(), .left, .{});
+                    pixi.core.draw.drawEdgeShadow(scroll_area.data().contentRectScale(), .left, .{});
                 }
             }
         }
 
         const vertical_scroll = file.editor.animations_scroll_info.offset(.vertical);
 
-        var tree = pixi.core.dvui.TreeWidget.tree(@src(), .{ .enable_reordering = true }, .{
+        var tree = pixi.core.widgets.TreeWidget.tree(@src(), .{ .enable_reordering = true }, .{
             .expand = .horizontal,
             .background = false,
         });
@@ -780,7 +780,7 @@ pub fn drawAnimations(self: *Sprites) !void {
                     file.animations.orderedRemove(sources[ri]);
                 }
 
-                const target_raw = pixi.core.dvui.TreeSelection.adjustInsertBeforeForRemovals(sources, insert_before_raw);
+                const target_raw = pixi.core.widgets.TreeSelection.adjustInsertBeforeForRemovals(sources, insert_before_raw);
                 const target = @min(target_raw, file.animations.len);
 
                 for (moved, 0..) |anim, i| {
@@ -875,12 +875,12 @@ pub fn drawAnimations(self: *Sprites) !void {
             var hbox = dvui.box(@src(), .{ .dir = .horizontal }, .{
                 .expand = .both,
                 .background = true,
-                .color_fill = if (branch.floating())
+                .color_fill = .{ .color = if (branch.floating())
                     .transparent
                 else if (selected or row_highlight)
                     ctrl_hover
                 else
-                    .transparent,
+                    .transparent },
                 .color_fill_hover = .transparent,
                 .margin = .all(0),
                 .padding = dvui.Rect.all(5),
@@ -893,7 +893,7 @@ pub fn drawAnimations(self: *Sprites) !void {
                 .background = true,
                 .gravity_y = 0.5,
                 .min_size_content = .{ .w = 8.0, .h = 8.0 },
-                .color_fill = color,
+                .color_fill = .{ .color = color },
                 .corners = .round(1000),
                 .margin = dvui.Rect.all(2),
                 .padding = dvui.Rect.all(0),
@@ -928,7 +928,7 @@ pub fn drawAnimations(self: *Sprites) !void {
                         .margin = dvui.Rect{},
                         .font = font,
                         .padding = .{ .y = 1 },
-                        .color_text = name_color,
+                        .color_text = .{ .color = name_color },
                     })) {
                         const lr = name_label_box.data().borderRectScale().r;
                         if (pointerReleaseInRectWithoutSelectionModifier(lr)) {
@@ -942,7 +942,7 @@ pub fn drawAnimations(self: *Sprites) !void {
                         .margin = dvui.Rect{},
                         .font = font,
                         .padding = .{ .y = 1 },
-                        .color_text = name_color,
+                        .color_text = .{ .color = name_color },
                     });
                 }
 
@@ -1049,10 +1049,10 @@ pub fn drawAnimations(self: *Sprites) !void {
         const anim_si = file.editor.animations_scroll_info;
         const anim_v_max = anim_si.scrollMax(.vertical);
         if (vertical_scroll > scroll_list_shadow_deadzone_ns)
-            pixi.core.dvui.drawEdgeShadow(scroll_area.data().contentRectScale(), .top, .{});
+            pixi.core.draw.drawEdgeShadow(scroll_area.data().contentRectScale(), .top, .{});
 
         if (anim_v_max > scroll_list_shadow_deadzone_ns and vertical_scroll < anim_v_max - scroll_list_shadow_deadzone_ns)
-            pixi.core.dvui.drawEdgeShadow(scroll_area.data().contentRectScale(), .bottom, .{});
+            pixi.core.draw.drawEdgeShadow(scroll_area.data().contentRectScale(), .bottom, .{});
     }
 }
 
@@ -1082,7 +1082,7 @@ pub fn drawFrameControls(_: *Sprites) !void {
                     .alpha = 0.15,
                     .corners = .round(1000),
                 },
-                .color_fill = dvui.themeGet().color(.control, .fill),
+                .color_fill = .{ .color = dvui.themeGet().color(.control, .fill) },
             });
 
             defer sort_anim_asc_button.deinit();
@@ -1094,7 +1094,7 @@ pub fn drawFrameControls(_: *Sprites) !void {
                 @src(),
                 "SortAnimationAscIcon",
                 icons.tvg.lucide.@"arrow-up-from-line",
-                .{ .fill_color = icon_color, .stroke_color = icon_color },
+                .{ .fill_color = .{ .color = icon_color }, .stroke_color = .{ .color = icon_color } },
                 .{
                     .gravity_x = 0.5,
                     .gravity_y = 0.5,
@@ -1142,7 +1142,7 @@ pub fn drawFrameControls(_: *Sprites) !void {
                         .alpha = 0.15,
                         .corners = .round(1000),
                     },
-                    .color_fill = dvui.themeGet().color(.control, .fill),
+                    .color_fill = .{ .color = dvui.themeGet().color(.control, .fill) },
                 });
 
                 defer sort_anim_desc_button.deinit();
@@ -1154,7 +1154,7 @@ pub fn drawFrameControls(_: *Sprites) !void {
                     @src(),
                     "SortAnimationDescIcon",
                     icons.tvg.lucide.@"arrow-down-from-line",
-                    .{ .fill_color = icon_color, .stroke_color = icon_color },
+                    .{ .fill_color = .{ .color = icon_color }, .stroke_color = .{ .color = icon_color } },
                     .{
                         .gravity_x = 0.5,
                         .gravity_y = 0.5,
@@ -1203,7 +1203,7 @@ pub fn drawFrameControls(_: *Sprites) !void {
                     .alpha = 0.15,
                     .corners = .round(1000),
                 },
-                .color_fill = dvui.themeGet().color(.control, .fill),
+                .color_fill = .{ .color = dvui.themeGet().color(.control, .fill) },
             });
 
             defer add_sprite_button.deinit();
@@ -1215,7 +1215,7 @@ pub fn drawFrameControls(_: *Sprites) !void {
                 @src(),
                 "AddSpriteIcon",
                 icons.tvg.lucide.plus,
-                .{ .fill_color = icon_color, .stroke_color = icon_color },
+                .{ .fill_color = .{ .color = icon_color }, .stroke_color = .{ .color = icon_color } },
                 .{
                     .gravity_x = 0.5,
                     .gravity_y = 0.5,
@@ -1292,7 +1292,7 @@ pub fn drawFrameControls(_: *Sprites) !void {
                     .alpha = 0.15,
                     .corners = .round(1000),
                 },
-                .color_fill = dvui.themeGet().color(.control, .fill),
+                .color_fill = .{ .color = dvui.themeGet().color(.control, .fill) },
             });
 
             defer duplicate_animation_button.deinit();
@@ -1304,7 +1304,7 @@ pub fn drawFrameControls(_: *Sprites) !void {
                 @src(),
                 "DuplicateAnimationIcon",
                 icons.tvg.lucide.@"copy-plus",
-                .{ .fill_color = icon_color, .stroke_color = icon_color },
+                .{ .fill_color = .{ .color = icon_color }, .stroke_color = .{ .color = icon_color } },
                 .{
                     .gravity_x = 0.5,
                     .gravity_y = 0.5,
@@ -1364,7 +1364,7 @@ pub fn drawFrameControls(_: *Sprites) !void {
                     .alpha = 0.15,
                     .corners = .round(1000),
                 },
-                .color_fill = dvui.themeGet().color(.err, .fill).opacity(0.75),
+                .color_fill = .{ .color = dvui.themeGet().color(.err, .fill).opacity(0.75) },
             });
 
             defer delete_animation_button.deinit();
@@ -1376,11 +1376,11 @@ pub fn drawFrameControls(_: *Sprites) !void {
                 @src(),
                 "DeleteAnimationIcon",
                 icons.tvg.lucide.minus,
-                .{ .fill_color = dvui.themeGet().color(.err, .text), .stroke_color = dvui.themeGet().color(.err, .text) },
+                .{ .fill_color = .{ .color = dvui.themeGet().color(.err, .text) }, .stroke_color = .{ .color = dvui.themeGet().color(.err, .text) } },
                 .{
                     .gravity_x = 0.5,
                     .gravity_y = 0.5,
-                    .color_text = dvui.themeGet().color(.err, .text),
+                    .color_text = .{ .color = dvui.themeGet().color(.err, .text) },
                     .expand = .ratio,
                     .margin = dvui.Rect.all(0),
                     .padding = dvui.Rect.all(0),
@@ -1481,7 +1481,7 @@ pub fn drawFrames(self: *Sprites) !void {
             defer self.prev_sprite_count = animation.frames.len;
             defer self.prev_anim_id = animation.id;
 
-            var tree = pixi.core.dvui.TreeWidget.tree(@src(), .{ .enable_reordering = true }, .{
+            var tree = pixi.core.widgets.TreeWidget.tree(@src(), .{ .enable_reordering = true }, .{
                 .expand = .horizontal,
                 .background = false,
             });
@@ -1534,7 +1534,7 @@ pub fn drawFrames(self: *Sprites) !void {
                         }
                     }
 
-                    const target_raw = pixi.core.dvui.TreeSelection.adjustInsertBeforeForRemovals(sources, insert_before_raw);
+                    const target_raw = pixi.core.widgets.TreeSelection.adjustInsertBeforeForRemovals(sources, insert_before_raw);
                     const target = @min(target_raw, remaining.len);
 
                     var wi: usize = 0;
@@ -1647,12 +1647,12 @@ pub fn drawFrames(self: *Sprites) !void {
                 var hbox = dvui.box(@src(), .{ .dir = .horizontal }, .{
                     .expand = .both,
                     .background = true,
-                    .color_fill = if (branch.floating())
+                    .color_fill = .{ .color = if (branch.floating())
                         .transparent
                     else if ((sprite_selected or row_highlight))
                         ctrl_hover
                     else
-                        .transparent,
+                        .transparent },
                     .color_fill_hover = .transparent,
                     .margin = dvui.Rect{},
                     .padding = .{ .x = 5, .y = 3, .w = 5, .h = 2 },
@@ -1665,7 +1665,7 @@ pub fn drawFrames(self: *Sprites) !void {
                     .background = true,
                     .gravity_y = 0.5,
                     .min_size_content = .{ .w = 8.0, .h = 8.0 },
-                    .color_fill = anim_color,
+                    .color_fill = .{ .color = anim_color },
                     .corners = .round(1000),
                     .margin = .{ .x = 2, .w = 4 },
                     .padding = dvui.Rect.all(0),
@@ -1678,7 +1678,7 @@ pub fn drawFrames(self: *Sprites) !void {
                     .margin = dvui.Rect.rect(2, 0, 2, 0),
                     .padding = dvui.Rect.all(0),
                     .corners = .round(1000),
-                    .color_text = if (sprite_selected) dvui.themeGet().color(.control, .text) else dvui.themeGet().color(.control, .text),
+                    .color_text = .{ .color = if (sprite_selected) dvui.themeGet().color(.control, .text) else dvui.themeGet().color(.control, .text) },
                 });
 
                 var drag_sink = dvui.box(@src(), .{ .dir = .horizontal }, .{
@@ -1782,10 +1782,10 @@ pub fn drawFrames(self: *Sprites) !void {
         const frames_si = file.editor.sprites_scroll_info;
         const frames_v_max = frames_si.scrollMax(.vertical);
         if (vertical_scroll > scroll_list_shadow_deadzone_ns)
-            pixi.core.dvui.drawEdgeShadow(scroll_area.data().contentRectScale(), .top, .{});
+            pixi.core.draw.drawEdgeShadow(scroll_area.data().contentRectScale(), .top, .{});
 
         if (frames_v_max > scroll_list_shadow_deadzone_ns and vertical_scroll < frames_v_max - scroll_list_shadow_deadzone_ns)
-            pixi.core.dvui.drawEdgeShadow(scroll_area.data().contentRectScale(), .bottom, .{});
+            pixi.core.draw.drawEdgeShadow(scroll_area.data().contentRectScale(), .bottom, .{});
     }
 }
 
@@ -1883,7 +1883,7 @@ fn applyFrameClick(
     anim_index: usize,
     anim_id: u64,
     clicked: usize,
-    mode: pixi.core.dvui.TreeSelection.ClickMode,
+    mode: pixi.core.widgets.TreeSelection.ClickMode,
 ) !bool {
     ensureFrameSelection(file, anim_index, anim_id);
 
@@ -1917,7 +1917,7 @@ fn applyFrameClick(
         break :blk file.editor.selected_frame_indices.items[0];
     } else file.selected_animation_frame_index;
 
-    const res = try pixi.core.dvui.TreeSelection.applyClickUsize(
+    const res = try pixi.core.widgets.TreeSelection.applyClickUsize(
         runtime.allocator(),
         prev_multi,
         primary_for_tree,
@@ -1983,7 +1983,7 @@ fn buildFrameMultiDragIds(file: *const pixi.internal.File, animation_index: usiz
 }
 
 fn processFrameTreePointerEvents(
-    tree: *pixi.core.dvui.TreeWidget,
+    tree: *pixi.core.widgets.TreeWidget,
     file: *pixi.internal.File,
     anim_id: u64,
     animation_index: usize,
@@ -2014,7 +2014,7 @@ fn processFrameTreePointerEvents(
                         frameTreeClearGestureKeysOnly(file);
                         dvui.dragPreStart(me.button, me.p, .{ .offset = h.hbox_tl.diff(me.p) });
 
-                        const mode = pixi.core.dvui.TreeSelection.clickModeFromMod(me.mod);
+                        const mode = pixi.core.widgets.TreeSelection.clickModeFromMod(me.mod);
                         const narrow_on_release = applyFrameClick(file, animation_index, anim_id, h.frame_index, mode) catch blk: {
                             dvui.log.err("Failed to apply frame click", .{});
                             break :blk false;
@@ -2175,7 +2175,7 @@ fn animationPointerInScrollViewport(p: dvui.Point.Physical, viewport_r: ?dvui.Re
     return true;
 }
 
-fn animationTreePointerInTreeSurface(tree: *pixi.core.dvui.TreeWidget, p: dvui.Point.Physical, floating_win: dvui.Id) bool {
+fn animationTreePointerInTreeSurface(tree: *pixi.core.widgets.TreeWidget, p: dvui.Point.Physical, floating_win: dvui.Id) bool {
     if (floating_win != dvui.subwindowCurrentId()) return false;
     const tr = tree.data().borderRectScale().r;
     if (!tr.contains(p)) return false;
@@ -2183,12 +2183,12 @@ fn animationTreePointerInTreeSurface(tree: *pixi.core.dvui.TreeWidget, p: dvui.P
     return true;
 }
 
-fn animationTreePointerInTreeBorder(tree: *pixi.core.dvui.TreeWidget, p: dvui.Point.Physical, floating_win: dvui.Id) bool {
+fn animationTreePointerInTreeBorder(tree: *pixi.core.widgets.TreeWidget, p: dvui.Point.Physical, floating_win: dvui.Id) bool {
     if (floating_win != dvui.subwindowCurrentId()) return false;
     return tree.data().borderRectScale().r.contains(p);
 }
 
-fn animationTreeMotionAllowsReorder(tree: *pixi.core.dvui.TreeWidget, e: *dvui.Event) bool {
+fn animationTreeMotionAllowsReorder(tree: *pixi.core.widgets.TreeWidget, e: *dvui.Event) bool {
     if (e.target_widgetId) |fwid| {
         if (fwid == tree.data().id) return true;
     }
@@ -2264,7 +2264,7 @@ fn ensureAnimationSelection(file: *pixi.internal.File) void {
 
 /// Apply a modifier-aware click to the animation selection. Returns whether the click should defer
 /// narrowing until release (Finder-style): plain click on an already-multi-selected row.
-fn applyAnimationClick(file: *pixi.internal.File, clicked: usize, mode: pixi.core.dvui.TreeSelection.ClickMode) !bool {
+fn applyAnimationClick(file: *pixi.internal.File, clicked: usize, mode: pixi.core.widgets.TreeSelection.ClickMode) !bool {
     const prev_multi = file.editor.selected_animation_indices.items;
     const was_in_multi = animationIndexInMulti(file, clicked);
     const was_multi = prev_multi.len > 1;
@@ -2284,7 +2284,7 @@ fn applyAnimationClick(file: *pixi.internal.File, clicked: usize, mode: pixi.cor
         return true;
     }
 
-    const res = try pixi.core.dvui.TreeSelection.applyClickUsize(
+    const res = try pixi.core.widgets.TreeSelection.applyClickUsize(
         runtime.allocator(),
         prev_multi,
         file.selected_animation_index,
@@ -2342,7 +2342,7 @@ fn buildAnimationMultiDragIds(file: *const pixi.internal.File, hits: []const Ani
     return out[0..len];
 }
 
-fn processAnimationTreePointerEvents(_: *Sprites, tree: *pixi.core.dvui.TreeWidget, file: *pixi.internal.File, hits: []const AnimationRowHit, viewport_r: ?dvui.Rect.Physical) void {
+fn processAnimationTreePointerEvents(_: *Sprites, tree: *pixi.core.widgets.TreeWidget, file: *pixi.internal.File, hits: []const AnimationRowHit, viewport_r: ?dvui.Rect.Physical) void {
     if (!tree.init_options.enable_reordering) return;
 
     for (dvui.events()) |*e| {
@@ -2368,7 +2368,7 @@ fn processAnimationTreePointerEvents(_: *Sprites, tree: *pixi.core.dvui.TreeWidg
                         animationTreeClearGestureKeysOnly(file);
                         dvui.dragPreStart(me.button, me.p, .{ .offset = h.hbox_tl.diff(me.p) });
 
-                        const mode = pixi.core.dvui.TreeSelection.clickModeFromMod(me.mod);
+                        const mode = pixi.core.widgets.TreeSelection.clickModeFromMod(me.mod);
                         const narrow_on_release = applyAnimationClick(file, h.anim_index, mode) catch blk: {
                             dvui.log.err("Failed to apply animation click", .{});
                             break :blk false;
