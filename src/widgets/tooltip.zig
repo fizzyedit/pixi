@@ -35,6 +35,9 @@ pub fn options(id_extra: usize) dvui.Options {
 /// so glass and contents arrive together. Returns the alpha to restore after the contents.
 /// Against an SDK without it: the surface at full strength, contents unfaded.
 pub fn begin(tooltip: *dvui.FloatingTooltipWidget, duration_us: i32) f32 {
+    // `tooltipBeginFor` follows the tooltip's own delay fade (the glass waits with the text);
+    // `tooltipBegin`, from the SDK before it, runs a clock of its own.
+    if (comptime @hasDecl(dialogs, "tooltipBeginFor")) return dialogs.tooltipBeginFor(tooltip, duration_us);
     if (comptime @hasDecl(dialogs, "tooltipBegin")) return dialogs.tooltipBegin(tooltip.data(), duration_us);
     surface(tooltip);
     return dvui.alpha(1);
