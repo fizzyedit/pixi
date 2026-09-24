@@ -24,8 +24,9 @@ pub const RenderFileOptions = struct {
     quad_subdivisions: usize = 8,
 };
 
-/// Web backends without `textureUpdateSubRect` recreate the GPU texture on upload; sync the cache
-/// when the pointer changes so we do not keep drawing a texture id that was destroyLater'd.
+/// Backends without `textureUpdateSubRect` recreate the GPU texture on upload (dvui's fallback);
+/// sync the cache when the pointer changes so we do not keep drawing a texture id that was
+/// destroyLater'd.
 fn uploadSubRectAndSyncCache(
     key: u64,
     tex: *dvui.Texture,
@@ -41,6 +42,10 @@ fn uploadSubRectAndSyncCache(
         return;
     };
     if (tex.ptr != prev_ptr) {
+        // The recreate already `destroyLater`'d the old texture. Take its entry out before adding
+        // the new one: `textureAddToCache` trashes whatever the key held, which would destroy
+        // that same old texture a second time. (dvui's own `getTexture` does the same.)
+        _ = dvui.currentWindow().texture_cache.remove(key);
         dvui.textureAddToCache(key, tex.*);
     }
 }
