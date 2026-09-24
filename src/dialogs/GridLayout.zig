@@ -960,6 +960,7 @@ pub fn dialog(id: dvui.Id) anyerror!bool {
         }
 
         inner_left.deinit();
+        pixi.scroll_shadows.draw(scroll_left);
         scroll_left.deinit();
 
         const v_scroll = left_scroll.offset(.vertical);

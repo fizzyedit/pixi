@@ -1098,6 +1098,7 @@ pub fn drawPalettes() !void {
         .background = false,
     });
     defer scroll_area.deinit();
+    defer pixi.scroll_shadows.draw(scroll_area);
 
     // Palette search dropdown
     {

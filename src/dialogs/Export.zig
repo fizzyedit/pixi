@@ -389,6 +389,7 @@ fn renderExportPreviewSprite(file: *pixi.internal.File, sprite_index: usize) voi
         .max_size_content = .{ .w = max_size_content.w, .h = max_size_content.h },
     });
     defer scroll_area.deinit();
+    defer pixi.scroll_shadows.draw(scroll_area);
 
     {
         var box = dvui.box(@src(), .{
@@ -672,6 +673,7 @@ fn renderExportPreview(file: *pixi.internal.File, kind: ExportFullPreviewKind) v
         .max_size_content = .{ .w = max_size_content.w, .h = max_size_content.h },
     });
     defer scroll_area.deinit();
+    defer pixi.scroll_shadows.draw(scroll_area);
 
     {
         var box = dvui.box(@src(), .{
