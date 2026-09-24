@@ -1726,7 +1726,13 @@ pub fn drawSpriteBubble(
             // cell's blur — so the shadow must stay outside the arc too (`appendArcShadowBand`).
             // Without the frost (blur off, zoomed right out) it is the old opaque bubble: tint,
             // checkerboard, and a filled shadow the fill then covers inside.
-            const glass = self.bubble_glass and self.init_options.file.editor.canvas.scale >= 0.1;
+            //
+            // The top row has no cell above it: its glass would frost the empty canvas around the
+            // document. It takes the opaque bubble instead — the checkerboard tile repeated up out
+            // of the cell below, with the cell's blurred tile faded in over it — so it reads as
+            // the cell's own checkerboard bent up, frosted with it.
+            const glass = self.bubble_glass and self.init_options.file.editor.canvas.scale >= 0.1 and
+                sprite_index >= self.init_options.file.columns;
             if (glass) {
                 appendArcShadowBand(&a.shadow, built.points, arc_center, shadow_fade, shadow_color);
             } else {
