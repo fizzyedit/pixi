@@ -839,6 +839,15 @@ const TriAcc = struct {
         }, tex) catch {};
     }
 
+    /// One quad, corners top-left, top-right, bottom-right, bottom-left, wound as the cells are.
+    fn appendQuad(self: *TriAcc, q: [4]dvui.Vertex) void {
+        const base: dvui.Vertex.Index = @intCast(self.vtx.items.len);
+        self.vtx.appendSlice(self.alloc, &q) catch return;
+        self.idx.appendSlice(self.alloc, &.{ base + 1, base + 0, base + 3, base + 1, base + 3, base + 2 }) catch {
+            self.vtx.shrinkRetainingCapacity(base);
+        };
+    }
+
     fn clear(self: *TriAcc) void {
         self.vtx.clearRetainingCapacity();
         self.idx.clearRetainingCapacity();
@@ -866,6 +875,49 @@ fn cellFrostTile(file: *pixi.internal.File) ?dvui.Texture {
     const radius = canvasFrostRadius(file);
     if (radius < 1) return null;
     return file.checkerboardTileBlurredTexture(radius * 0.5, file.editor.canvas.screen_rect_scale.s);
+}
+
+/// A glass bubble's frost, fading out toward its base: `w` (the cell's amount) down to `seam_y`
+/// less `band`, then down to nothing on the seam. The frost is the art above, blurred — a blur
+/// that stops at the seam, where the cell below has only its own blurred checkerboard. Faded to
+/// nothing there, the bubble meets the cell as the same blurred checkerboard, with the art's blur
+/// rising out of it. Laid as columns under each pair of arc points — the top, where the fade
+/// starts, the seam — so the fade is exact per vertex rather than smeared across a fan.
+fn appendFrostFade(acc: *TriAcc, arc: []const dvui.Point.Physical, seam_y: f32, band: f32, w: f32, uv_rect: dvui.Rect.Physical) void {
+    if (arc.len < 2 or band <= 0) return;
+    const S = struct {
+        fn vert(p: dvui.Point.Physical, seam: f32, bnd: f32, wt: f32, r: dvui.Rect.Physical) dvui.Vertex {
+            const k = wt * std.math.clamp((seam - p.y) / bnd, 0.0, 1.0);
+            const c: u8 = @intFromFloat(@round(255 * k));
+            return .{
+                .pos = p,
+                .col = .{ .r = c, .g = c, .b = c, .a = c },
+                .uv = .{ (p.x - r.x) / r.w, (p.y - r.y) / r.h },
+            };
+        }
+    };
+    const fade_top = seam_y - band;
+    for (arc[0 .. arc.len - 1], arc[1..]) |a, b| {
+        const l = if (a.x <= b.x) a else b;
+        const r = if (a.x <= b.x) b else a;
+        if (r.x - l.x <= 0) continue;
+        const l_mid: dvui.Point.Physical = .{ .x = l.x, .y = @max(l.y, fade_top) };
+        const r_mid: dvui.Point.Physical = .{ .x = r.x, .y = @max(r.y, fade_top) };
+        const l_bot: dvui.Point.Physical = .{ .x = l.x, .y = seam_y };
+        const r_bot: dvui.Point.Physical = .{ .x = r.x, .y = seam_y };
+        if (l_mid.y > l.y or r_mid.y > r.y) acc.appendQuad(.{
+            S.vert(l, seam_y, band, w, uv_rect),
+            S.vert(r, seam_y, band, w, uv_rect),
+            S.vert(r_mid, seam_y, band, w, uv_rect),
+            S.vert(l_mid, seam_y, band, w, uv_rect),
+        });
+        acc.appendQuad(.{
+            S.vert(l_mid, seam_y, band, w, uv_rect),
+            S.vert(r_mid, seam_y, band, w, uv_rect),
+            S.vert(r_bot, seam_y, band, w, uv_rect),
+            S.vert(l_bot, seam_y, band, w, uv_rect),
+        });
+    }
 }
 
 /// A bubble's drop shadow as a band running *outward* from its arc only: `color` on the arc,
@@ -1727,6 +1779,10 @@ pub fn drawSpriteBubble(
 
         // Geometry phase: accumulate shadow + fill + outline into accumulators.
         if (accs) |a| {
+            // Where the checker tile lies for the bubble: the cell above's rect, whose bottom the
+            // bubble covers — the pattern runs on across the seam, one tile per cell.
+            var cell_above_r = sprite_rect_scale.r;
+            cell_above_r.y -= cell_above_r.h;
             const shadow_fade = arc_height * 0.66 * dvui.easing.outExpo(t);
             const shadow_color = dvui.Color.black.opacity(0.25);
             // Glass: the bubble is the canvas under it, frosted. Nothing opaque goes inside —
@@ -1754,23 +1810,29 @@ pub fn drawSpriteBubble(
                 const fill_tris = built.fillConvexTriangles(dvui.currentWindow().arena(), .{ .color = .{ .color = cell_tint }, .fade = 0.0 }) catch return false;
                 a.fill.append(fill_tris);
             } else if (glass) {
-                // What is under the bubble, blurred, faded in by the cell's eased amount
-                // (`stepCellFrostWeights`) over the sharp canvas — never over a checkerboard of
-                // its own, so it goes from the cell above as it is to the same thing frosted.
+                // The cell's own stack continued up — content fill and blurred checkerboard by
+                // the cell's eased amount (`stepCellFrostWeights`), mapped as the cell above's
+                // tile — with what is under the bubble, blurred, over it and fading out toward
+                // the seam (`appendFrostFade`). Over the sharp canvas, never a checkerboard of
+                // its own: it goes from the cell above as it is to the same thing frosted.
                 const w = cellFrostWeight(self.cell_frost_weights, sprite_index);
-                if (w > 0.001) if (self.bubble_frost_rect) |fr| {
-                    var frost_tris = built.fillConvexTriangles(dvui.currentWindow().arena(), .{ .color = .{ .color = .white }, .fade = 0.0 }) catch return false;
-                    frost_tris.uvFromRectuv(fr, .{ .x = 0.0, .y = 0.0, .w = 1.0, .h = 1.0 });
-                    const c: u8 = @intFromFloat(@round(255 * w));
-                    for (frost_tris.vertexes) |*v| v.col = .{ .r = c, .g = c, .b = c, .a = c };
-                    a.frost.append(frost_tris);
-                };
+                if (w > 0.001) {
+                    if (self.cell_frost_tile != null) {
+                        const bg_fill_tris = built.fillConvexTriangles(dvui.currentWindow().arena(), .{ .color = .{ .color = dvui.themeGet().color(.content, .fill) }, .fade = 0.0 }) catch return false;
+                        for (bg_fill_tris.vertexes) |*v| v.col = pmaScale(v.col, w);
+                        a.bg_fill.append(bg_fill_tris);
+                        var bg_tris = built.fillConvexTriangles(dvui.currentWindow().arena(), .{ .color = .{ .color = cell_tint }, .fade = 0.0 }) catch return false;
+                        bg_tris.uvFromRectuv(cell_above_r, .{ .x = 0.0, .y = 0.0, .w = 1.0, .h = 1.0 });
+                        for (bg_tris.vertexes) |*v| v.col = pmaScale(v.col, w);
+                        a.bg.append(bg_tris);
+                    }
+                    if (self.bubble_frost_rect) |fr| appendFrostFade(&a.frost, built.points, sprite_rect_scale.r.y, arc_height * 0.6, w, fr);
+                }
             } else {
                 const fill_tris = built.fillConvexTriangles(dvui.currentWindow().arena(), .{ .color = .{ .color = cell_tint }, .fade = 1.0 }) catch return false;
                 a.fill.append(fill_tris);
                 var tex_tris = built.fillConvexTriangles(dvui.currentWindow().arena(), .{ .color = .{ .color = cell_tint }, .fade = 0.0 }) catch return false;
-                const h_ratio = arc_height / sprite_rect_scale.r.h;
-                tex_tris.uvFromRectuv(bubble_rect_scale.r, .{ .x = 0.0, .w = 1.0, .y = 1.0 - h_ratio, .h = h_ratio });
+                tex_tris.uvFromRectuv(cell_above_r, .{ .x = 0.0, .y = 0.0, .w = 1.0, .h = 1.0 });
                 a.tex.append(tex_tris);
 
                 // The cell's blurred checkerboard continued over the base, when the tile is
@@ -1778,7 +1840,7 @@ pub fn drawSpriteBubble(
                 const w = cellFrostWeight(self.cell_frost_weights, sprite_index);
                 if (w > 0.001 and self.cell_frost_tile != null) {
                     var bg_tris = built.fillConvexTriangles(dvui.currentWindow().arena(), .{ .color = .{ .color = cell_tint }, .fade = 0.0 }) catch return false;
-                    bg_tris.uvFromRectuv(bubble_rect_scale.r, .{ .x = 0.0, .w = 1.0, .y = 1.0 - h_ratio, .h = h_ratio });
+                    bg_tris.uvFromRectuv(cell_above_r, .{ .x = 0.0, .y = 0.0, .w = 1.0, .h = 1.0 });
                     for (bg_tris.vertexes) |*v| v.col = pmaScale(v.col, w);
                     a.bg.append(bg_tris);
                     const bg_fill_tris = built.fillConvexTriangles(dvui.currentWindow().arena(), .{ .color = .{ .color = dvui.themeGet().color(.content, .fill) }, .fade = 0.0 }) catch return false;
