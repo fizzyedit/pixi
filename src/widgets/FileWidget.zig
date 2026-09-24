@@ -63,6 +63,19 @@ sample_key_down: bool = false,
 shift_key_down: bool = false,
 hide_distance_bubble: bool = false,
 hovered_bubble_sprite_index: ?usize = null,
+/// Screen rect the bubbles' frost is read from this frame (see `captureBubbleFrost`); null draws
+/// the plain checkerboard in them instead.
+bubble_frost_rect: ?dvui.Rect.Physical = null,
+/// Bubbles are glass this frame (`drawSpriteBubble`): the blur is on and the frame is drawn, not
+/// queued. Not tied to `bubble_frost_rect`, which lags a frame behind a bubble opening.
+bubble_glass: bool = false,
+/// This frame's `BubbleCell`s (arena), published for the next frame's checkerboard.
+bubble_cells: std.ArrayList(BubbleCell) = .empty,
+/// Each bubble cell's eased blur amount this frame, sorted by sprite index (`stepCellFrostWeights`).
+cell_frost_weights: []const BubbleCell = &.{},
+/// The blurred checker tile the bubble cells draw this frame (`cellFrostTile`), for the bubbles
+/// to continue over their bases.
+cell_frost_tile: ?dvui.Texture = null,
 grid_reorder_point: ?dvui.Point = null,
 cell_reorder_point: ?dvui.Point = null,
 cell_reorder_mode: SpriteReorderMode = .replace,
@@ -832,10 +845,184 @@ const TriAcc = struct {
     }
 };
 
+/// A cell whose bubble is up, and how far (0…1). Published at the end of `drawSpriteBubbles` and
+/// read by the next frame's checkerboard, which draws before the bubbles do.
+const BubbleCell = struct {
+    sprite_index: usize,
+    weight: f32,
+};
+const bubble_cells_key = "_bubble_cells";
+
+const cell_frost_weights_key = "_cell_frost_w";
+const cell_frost_frame_key = "_cell_frost_frame";
+/// How long a cell's blur takes to follow its bubble (time constant, seconds). The bubbles
+/// themselves spring open elastically in well under this; the blur settles in behind them.
+const cell_frost_tau_s: f32 = 0.25;
+
+/// The checker tile blurred to match the bubble frost at the current zoom (σ = half the frost's
+/// radius, as its blur spreads), or null with the blur off. What sits behind a bubble cell's art
+/// — computed, not read back and blurred (`File.checkerboardTileBlurredTexture`).
+fn cellFrostTile(file: *pixi.internal.File) ?dvui.Texture {
+    const radius = canvasFrostRadius(file);
+    if (radius < 1) return null;
+    return file.checkerboardTileBlurredTexture(radius * 0.5, file.editor.canvas.screen_rect_scale.s);
+}
+
+/// A bubble's drop shadow as a band running *outward* from its arc only: `color` on the arc,
+/// nothing `width` further out along each point's normal from `center`. A filled, faded arc
+/// shadow darkens the inside too, which a glass bubble (nothing opaque inside) would show; the
+/// flat base needs none — it sits on the seam, where the cell below takes over.
+fn appendArcShadowBand(acc: *TriAcc, arc: []const dvui.Point.Physical, center: dvui.Point.Physical, width: f32, color: dvui.Color) void {
+    if (arc.len < 2 or width < 0.5) return;
+    const arena = dvui.currentWindow().arena();
+    var b = dvui.Triangles.Builder.init(arena, arc.len * 2, (arc.len - 1) * 6) catch return;
+    const inner: dvui.Color.PMA = .fromColor(color);
+    const outer: dvui.Color.PMA = .{ .r = 0, .g = 0, .b = 0, .a = 0 };
+    const last_f: f32 = @floatFromInt(arc.len - 1);
+    for (arc, 0..) |p, i| {
+        const dx = p.x - center.x;
+        const dy = p.y - center.y;
+        const len = @sqrt(dx * dx + dy * dy);
+        var nx: f32 = if (len > 0.001) dx / len else 0;
+        var ny: f32 = if (len > 0.001) dy / len else -1;
+        // Toward each end, turn the band flat onto the base: the arc's own normal there points
+        // up and out on a shallow bubble, and the band ended in a slanted cut rising from the
+        // corner. A full half-circle's ends already point flat along the base — the one height
+        // that looked right — so every height now ends the way it does, wrapping the corner.
+        const along = @as(f32, @floatFromInt(i)) / last_f;
+        const edge = 1 - cellFrostEase(@min(along, 1 - along) / 0.25);
+        if (edge > 0) {
+            const hx: f32 = if (dx < 0) -1 else 1;
+            nx = nx * (1 - edge) + hx * edge;
+            ny = ny * (1 - edge);
+            const nl = @sqrt(nx * nx + ny * ny);
+            if (nl > 0.001) {
+                nx /= nl;
+                ny /= nl;
+            }
+        }
+        // And fade it out at its feet: at full strength the band's ends met the base as a dark
+        // wedge flaring into the neighbouring cells. Eased to nothing (and half as wide) over
+        // the last fifth of the arc, the shadow runs out into the corners like a real one
+        // under a bump.
+        const taper = cellFrostEase(@min(along, 1 - along) / 0.2);
+        const reach = width * (0.5 + 0.5 * taper);
+        b.appendVertex(.{ .pos = p, .col = pmaScale(inner, taper), .uv = .{ 0, 0 } });
+        b.appendVertex(.{ .pos = .{ .x = p.x + nx * reach, .y = p.y + ny * reach }, .col = outer, .uv = .{ 0, 0 } });
+    }
+    for (0..arc.len - 1) |i| {
+        const in0: dvui.Vertex.Index = @intCast(i * 2);
+        appendTriangleFacing(&b, in0, in0 + 1, in0 + 3);
+        appendTriangleFacing(&b, in0, in0 + 3, in0 + 2);
+    }
+    acc.append(b.build());
+}
+
+/// One triangle wound the way dvui draws (its backface culling drops the other): negative
+/// cross product in screen space, y down — as the checkerboard's quads are.
+fn appendTriangleFacing(b: *dvui.Triangles.Builder, v0: dvui.Vertex.Index, v1: dvui.Vertex.Index, v2: dvui.Vertex.Index) void {
+    const v = b.vertexes.items;
+    const p0 = v[v0].pos;
+    const p1 = v[v1].pos;
+    const p2 = v[v2].pos;
+    const cross = (p1.x - p0.x) * (p2.y - p0.y) - (p1.y - p0.y) * (p2.x - p0.x);
+    if (cross > 0) b.appendTriangles(&.{ v0, v2, v1 }) else b.appendTriangles(&.{ v0, v1, v2 });
+}
+
+/// The fill a bubble's label button takes under the pointer.
+fn bubbleButtonHover() dvui.Color {
+    return dvui.themeGet().color(.control, .fill).lighten(if (dvui.themeGet().dark) 10.0 else -10.0);
+}
+
+/// `c` at `w` of itself — a premultiplied colour faded, as a vertex tint.
+fn pmaScale(c: dvui.Color.PMA, w: f32) dvui.Color.PMA {
+    const k = std.math.clamp(w, 0.0, 1.0);
+    return .{
+        .r = @intFromFloat(@round(@as(f32, @floatFromInt(c.r)) * k)),
+        .g = @intFromFloat(@round(@as(f32, @floatFromInt(c.g)) * k)),
+        .b = @intFromFloat(@round(@as(f32, @floatFromInt(c.b)) * k)),
+        .a = @intFromFloat(@round(@as(f32, @floatFromInt(c.a)) * k)),
+    };
+}
+
+/// A cell's eased blur amount, 0…1, as it is drawn.
+fn cellFrostEase(w: f32) f32 {
+    const x = std.math.clamp(w, 0.0, 1.0);
+    return x * x * (3.0 - 2.0 * x);
+}
+
+fn bubbleCellLess(_: void, a: BubbleCell, b: BubbleCell) bool {
+    return a.sprite_index < b.sprite_index;
+}
+
+/// Move every cell's blur amount toward its bubble's (last frame's `BubbleCell`s) over
+/// `cell_frost_tau_s`, frame-rate independent, and keep cells that are still fading out.
+/// Once a frame per canvas, whoever asks first — the checkerboard, or the bubbles when the
+/// checkerboard is not drawn. Sorted by sprite index for `cellFrostWeight`.
+fn stepCellFrostWeights(file: *pixi.internal.File) []const BubbleCell {
+    const cw = dvui.currentWindow();
+    const id = file.editor.canvas.id;
+    const prev = dvui.dataGetSlice(null, id, cell_frost_weights_key, []BubbleCell) orelse &.{};
+    if (dvui.dataGet(null, id, cell_frost_frame_key, i128)) |f| {
+        if (f == cw.frame_time_ns) return prev;
+    }
+    dvui.dataSet(null, id, cell_frost_frame_key, cw.frame_time_ns);
+
+    const targets = dvui.dataGetSlice(null, id, bubble_cells_key, []BubbleCell) orelse &.{};
+    const arena = cw.arena();
+    // sprite index → { current, target }
+    var map: std.AutoArrayHashMapUnmanaged(usize, [2]f32) = .empty;
+    for (prev) |c| map.put(arena, c.sprite_index, .{ c.weight, 0 }) catch return prev;
+    for (targets) |c| {
+        const gop = map.getOrPut(arena, c.sprite_index) catch return prev;
+        if (!gop.found_existing) gop.value_ptr.* = .{ 0, 0 };
+        gop.value_ptr.*[1] = c.weight;
+    }
+
+    const dt = std.math.clamp(dvui.secondsSinceLastFrame(), 0.0, 0.1);
+    const k = 1.0 - @exp(-dt / cell_frost_tau_s);
+    var out: std.ArrayList(BubbleCell) = .empty;
+    var moving = false;
+    var it = map.iterator();
+    while (it.next()) |e| {
+        const from = e.value_ptr.*[0];
+        const to = e.value_ptr.*[1];
+        var w = from + (to - from) * k;
+        if (@abs(to - w) < 0.002) w = to else moving = true;
+        if (w <= 0.001) continue;
+        out.append(arena, .{ .sprite_index = e.key_ptr.*, .weight = w }) catch break;
+    }
+    std.mem.sort(BubbleCell, out.items, {}, bubbleCellLess);
+
+    if (out.items.len > 0)
+        dvui.dataSetSlice(null, id, cell_frost_weights_key, out.items)
+    else
+        dvui.dataRemove(null, id, cell_frost_weights_key);
+    if (moving) dvui.refresh(null, @src(), id);
+    return out.items;
+}
+
+/// `sprite_index`'s eased blur amount this frame, 0 when its cell has none.
+fn cellFrostWeight(weights: []const BubbleCell, sprite_index: usize) f32 {
+    var lo: usize = 0;
+    var hi: usize = weights.len;
+    while (lo < hi) {
+        const mid = lo + (hi - lo) / 2;
+        const m = weights[mid].sprite_index;
+        if (m == sprite_index) return cellFrostEase(weights[mid].weight);
+        if (m < sprite_index) lo = mid + 1 else hi = mid;
+    }
+    return 0;
+}
+
 const BubbleAccs = struct {
     shadow: TriAcc,
     fill: TriAcc,
     tex: TriAcc,
+    /// Bubble interiors continuing the cell's blurred checkerboard (`cell_frost_tile`, tile UVs).
+    bg: TriAcc,
+    /// Bubble interiors textured from the frost (UVs over `bubble_frost_rect`).
+    frost: TriAcc,
     outline: TriAcc,
 
     fn init(alloc: std.mem.Allocator) BubbleAccs {
@@ -843,6 +1030,8 @@ const BubbleAccs = struct {
             .shadow = TriAcc.init(alloc),
             .fill = TriAcc.init(alloc),
             .tex = TriAcc.init(alloc),
+            .bg = TriAcc.init(alloc),
+            .frost = TriAcc.init(alloc),
             .outline = TriAcc.init(alloc),
         };
     }
@@ -851,9 +1040,94 @@ const BubbleAccs = struct {
         self.shadow.clear();
         self.fill.clear();
         self.tex.clear();
+        self.bg.clear();
+        self.frost.clear();
         self.outline.clear();
     }
 };
+
+/// Where a bubble row's frost is read from: what is behind that row's glass — the bubble
+/// headroom over every cell of `row` in `weights` — plus a margin of twice the blur radius up
+/// and to the sides, so the blur at those edges still draws from real content. Never below the
+/// seam: that is not behind the glass, and reaching into it blurred a cell's own selection box
+/// up into its bubble, cut off at the base. Within the viewport and on whole pixels (the rect
+/// the capture rounds to), its bottom on the pixel boundary the seam rounds to — where the
+/// bubble's fills stop. Null — no frost for the row — with nothing to cover, the blur off, or
+/// the frame queued rather than drawn (a readback then would see none of the canvas).
+fn canvasFrostRect(file: *pixi.internal.File, weights: []const BubbleCell, row: usize) ?dvui.Rect.Physical {
+    const radius = canvasFrostRadius(file);
+    if (radius < 1) return null;
+    if (!dvui.currentWindow().render_target.rendering) return null;
+    if (file.columns == 0) return null;
+    const n = file.spriteCount();
+    const headroom: f32 = @floatFromInt(@max(file.row_height, file.column_width));
+    const rs = file.editor.canvas.screen_rect_scale;
+    var covered: ?dvui.Rect.Physical = null;
+    for (weights) |c| {
+        if (c.sprite_index >= n or c.sprite_index / file.columns != row) continue;
+        var above = file.spriteRect(c.sprite_index);
+        above.y -= headroom;
+        above.h = headroom;
+        const pr = rs.rectToPhysical(above);
+        covered = if (covered) |u| u.unionWith(pr) else pr;
+    }
+    const cov = covered orelse return null;
+    const margin = radius * 2;
+    const seam = @round(cov.y + cov.h);
+    var r: dvui.Rect.Physical = .{ .x = cov.x - margin, .y = cov.y - margin, .w = cov.w + 2 * margin, .h = seam - (cov.y - margin) };
+    r = r.intersect(file.editor.canvas.rect).intersect(dvui.windowRectPixels());
+    const x = @floor(r.x);
+    const y = @floor(r.y);
+    r = .{ .x = x, .y = y, .w = @round(r.x + r.w - x), .h = @min(seam, r.y + r.h) - y };
+    if (r.w < 2 or r.h < 2) return null;
+    return r;
+}
+
+/// A canvas frost's blur is a share of a cell's size on screen — zoomed out it sharpens until the
+/// grid reads through it, zoomed in it has room to soften while what is underneath still shows —
+/// and the `bubble_blur` setting is that share: `setting / canvas_frost_setting_per_cell` of a
+/// cell. At the default 12 that is a tenth of a cell; at the top (20) a sixth, where the
+/// checker's eighth-of-a-cell squares have averaged out flat — past that nothing more reads, so
+/// the slider stops there rather than spending most of its travel on no change.
+const canvas_frost_setting_per_cell: f32 = 120;
+
+/// A ceiling far past anything the slider reaches at a sane zoom — only there so a huge zoom
+/// cannot ask for a blur wider than the viewport. The capture is `stable` at any radius (it
+/// box-averages down before blurring), so this is not where the blur changes kind.
+const canvas_frost_radius_max: f32 = 256;
+
+/// The canvas frosts' blur radius (physical pixels): the `bubble_blur` setting's share of a
+/// cell's smaller side on screen (`canvas_frost_setting_per_cell`); 0 turns them off. Both
+/// frosts share it, so the bubbles and the cells under them match. The setting scales the blur
+/// rather than capping it — as a cap, every value past where the cell's own share came out did
+/// nothing.
+fn canvasFrostRadius(file: *pixi.internal.File) f32 {
+    const setting = runtime.state().settings.bubble_blur.get();
+    if (setting <= 0) return 0;
+    const cell_data: f32 = @floatFromInt(@min(file.column_width, file.row_height));
+    const cell_px = cell_data * file.editor.canvas.screen_rect_scale.s;
+    return std.math.clamp(cell_px * setting / canvas_frost_setting_per_cell, 0, canvas_frost_radius_max);
+}
+
+/// Blur what the canvas shows under `rect` right now, at `canvasFrostRadius` — one capture per
+/// `key` a frame, however many shapes then sample it. The texture keeps the backdrop's copy
+/// blend: like a frosted dialog, it replaces what it covers rather than letting the sharp art
+/// through.
+fn captureCanvasFrost(file: *pixi.internal.File, comptime key: []const u8, rect: dvui.Rect.Physical) ?dvui.Texture {
+    const BlurBackdrop = pixi.core.widgets.BlurBackdrop;
+    const id = file.editor.canvas.id.update(key);
+    const backdrop = dvui.dataGetPtrDefault(null, id, "_frost", BlurBackdrop, .{});
+    dvui.dataSetDeinitFunction(null, id, "_frost", &BlurBackdrop.releaseTexture);
+    backdrop.mode = .readback;
+    backdrop.radius_px = canvasFrostRadius(file);
+    // The canvas moves under it (zoom, pan): the full-size blur holds still where the pyramid's
+    // screen-fixed levels would shimmer. A no-op against an SDK without it.
+    if (@hasField(BlurBackdrop, "stable")) backdrop.stable = true;
+    // Re-read every frame: the art under the bubbles changes as it is drawn.
+    backdrop.init(dvui.windowRectScale().rectFromPhysical(rect), .{ rect, dvui.currentWindow().frame_time_ns });
+    backdrop.deinit();
+    return backdrop.small;
+}
 
 /// Responsible for drawing the indicators for animation frames as bubbles over each sprite.
 ///
@@ -863,6 +1137,15 @@ const BubbleAccs = struct {
 ///
 /// Bubbles use a elastic animation, and also display the currently viewed animation frame in the panel.
 pub fn drawSpriteBubbles(self: *FileWidget) void {
+    // Published on every way out, so a frame without bubbles clears the last frame's.
+    self.bubble_cells = .empty;
+    defer {
+        const id = self.init_options.file.editor.canvas.id;
+        if (self.bubble_cells.items.len > 0)
+            dvui.dataSetSlice(null, id, bubble_cells_key, self.bubble_cells.items)
+        else
+            dvui.dataRemove(null, id, bubble_cells_key);
+    }
     if (self.init_options.file.editor.transform != null) return;
     if (self.resize_data_point != null) return;
 
@@ -975,6 +1258,13 @@ pub fn drawSpriteBubbles(self: *FileWidget) void {
     const checkerboard_tex = file.checkerboardTileTexture();
     var accs = BubbleAccs.init(dvui.currentWindow().arena());
 
+    // The frost is taken per bubble row, just before that row draws (`canvasFrostRect`): its
+    // glass sees what is behind it as it is by then — layers, selection boxes, rows above.
+    self.cell_frost_weights = stepCellFrostWeights(file);
+    self.bubble_frost_rect = null;
+    self.bubble_glass = canvasFrostRadius(file) >= 1 and dvui.currentWindow().render_target.rendering;
+    self.cell_frost_tile = if (self.cell_frost_weights.len > 0) cellFrostTile(file) else null;
+
     // Row-based iteration with batched geometry rendering.
     // Geometry is accumulated into TriAccs and rendered in bulk to minimize draw calls.
     //
@@ -1021,9 +1311,21 @@ pub fn drawSpriteBubbles(self: *FileWidget) void {
                 .w = col_w * @as(f32, @floatFromInt(cols)),
                 .h = bubble_headroom,
             });
+            // The bubbles' base is the row's top edge — the seam with the cells below. On a
+            // fractional edge the clip took in the whole pixel straddling it, and the shadow's
+            // fade (which spills past the flat base too) darkened that pixel where the bubble's
+            // own layers, ending exactly on the edge, did not cover it: a 1px line through the
+            // seam. The fills end on the pixel boundary the edge rounds to, the one both sides
+            // already split at. The strokes keep the full clip: a closed bubble is a 1px line
+            // *on* the seam, and cut at the boundary it came and went as zooming slid the edge
+            // through its pixel.
+            var fill_clip_screen = row_clip_screen;
+            fill_clip_screen.h = @round(row_clip_screen.y + row_clip_screen.h) - row_clip_screen.y;
 
             if (pass_i == 0) {
                 // Pass 0 — geometry: accumulate shadow + fill + tex + outline in one pass.
+                // The row's frost rect first: the geometry maps the glass onto it.
+                self.bubble_frost_rect = canvasFrostRect(file, self.cell_frost_weights, row);
                 {
                     var si: usize = si_end_excl;
                     while (si > si_start) {
@@ -1035,13 +1337,30 @@ pub fn drawSpriteBubbles(self: *FileWidget) void {
                     }
                 }
 
+                // This row's glass: what is behind it, captured just before the row draws —
+                // everything drawn so far, rows above included — so a bubble frosts exactly what
+                // it covers, a neighbour's selection box and all.
+                var frost_tex: ?dvui.Texture = null;
+                if (accs.frost.vtx.items.len > 0) if (self.bubble_frost_rect) |fr| {
+                    frost_tex = captureCanvasFrost(file, "bubble_frost", fr);
+                    // Faded in by the cell's amount, so drawn over what is under it, not copied.
+                    if (frost_tex) |ft| if (dvui.Backend.support_texture_blend) dvui.currentWindow().backend.textureBlend(ft, .over) catch {};
+                };
+
                 // Render all accumulated geometry under the row clip
                 {
-                    const prev_clip = dvui.clip(row_clip_screen);
+                    const prev_clip = dvui.clip(fill_clip_screen);
                     defer dvui.clipSet(prev_clip);
+                    // Bottom to top, the same stack as the cell below the bubble: sharp
+                    // checkerboard, its blur by the cell's amount, then (the glass) the blurred
+                    // art above, fading out toward the seam. A failed capture skips its layer.
                     accs.shadow.render(null);
                     accs.fill.render(null);
                     accs.tex.render(checkerboard_tex);
+                    if (self.cell_frost_tile) |t| accs.bg.render(t);
+                    if (frost_tex) |ft| accs.frost.render(ft);
+                    dvui.clipSet(prev_clip);
+                    _ = dvui.clip(row_clip_screen);
                     accs.outline.render(null);
                 }
                 accs.clearAll();
@@ -1370,7 +1689,8 @@ pub fn drawSpriteBubble(
             path.addPoint(bubble_rect_scale.r.topRight());
             path.addPoint(bubble_rect_scale.r.topLeft());
             const tris = path.build().strokeTriangles(dvui.currentWindow().arena(), .{ .thickness = 1, .color = .{ .color = color } }) catch return false;
-            a.shadow.append(tris);
+            // With the outlines, under the full row clip (see `drawSpriteBubbles`).
+            a.outline.append(tris);
         }
         return false;
     } else {
@@ -1401,14 +1721,36 @@ pub fn drawSpriteBubble(
         if (accs) |a| {
             const shadow_fade = arc_height * 0.66 * dvui.easing.outExpo(t);
             const shadow_color = dvui.Color.black.opacity(0.25);
-            var shadow_path = dvui.Path.Builder.init(dvui.currentWindow().arena());
-            shadow_path.addArc(arc_center, radius, dvui.math.pi + start_angle, dvui.math.pi + end_angle, false);
-            const shadow_tris = shadow_path.build().fillConvexTriangles(dvui.currentWindow().arena(), .{ .color = .{ .color = shadow_color }, .fade = shadow_fade }) catch return false;
-            a.shadow.append(shadow_tris);
+            // Glass: the bubble is the canvas under it, frosted. Nothing opaque goes inside —
+            // the upper cell's art shows as it is, and the frost fades in over it with the
+            // cell's blur — so the shadow must stay outside the arc too (`appendArcShadowBand`).
+            // Without the frost (blur off, zoomed right out) it is the old opaque bubble: tint,
+            // checkerboard, and a filled shadow the fill then covers inside.
+            const glass = self.bubble_glass and self.init_options.file.editor.canvas.scale >= 0.1;
+            if (glass) {
+                appendArcShadowBand(&a.shadow, built.points, arc_center, shadow_fade, shadow_color);
+            } else {
+                var shadow_path = dvui.Path.Builder.init(dvui.currentWindow().arena());
+                shadow_path.addArc(arc_center, radius, dvui.math.pi + start_angle, dvui.math.pi + end_angle, false);
+                const shadow_tris = shadow_path.build().fillConvexTriangles(dvui.currentWindow().arena(), .{ .color = .{ .color = shadow_color }, .fade = shadow_fade }) catch return false;
+                a.shadow.append(shadow_tris);
+            }
 
             if (self.init_options.file.editor.canvas.scale < 0.1) {
                 const fill_tris = built.fillConvexTriangles(dvui.currentWindow().arena(), .{ .color = .{ .color = cell_tint }, .fade = 0.0 }) catch return false;
                 a.fill.append(fill_tris);
+            } else if (glass) {
+                // What is under the bubble, blurred, faded in by the cell's eased amount
+                // (`stepCellFrostWeights`) over the sharp canvas — never over a checkerboard of
+                // its own, so it goes from the cell above as it is to the same thing frosted.
+                const w = cellFrostWeight(self.cell_frost_weights, sprite_index);
+                if (w > 0.001) if (self.bubble_frost_rect) |fr| {
+                    var frost_tris = built.fillConvexTriangles(dvui.currentWindow().arena(), .{ .color = .{ .color = .white }, .fade = 0.0 }) catch return false;
+                    frost_tris.uvFromRectuv(fr, .{ .x = 0.0, .y = 0.0, .w = 1.0, .h = 1.0 });
+                    const c: u8 = @intFromFloat(@round(255 * w));
+                    for (frost_tris.vertexes) |*v| v.col = .{ .r = c, .g = c, .b = c, .a = c };
+                    a.frost.append(frost_tris);
+                };
             } else {
                 const fill_tris = built.fillConvexTriangles(dvui.currentWindow().arena(), .{ .color = .{ .color = cell_tint }, .fade = 1.0 }) catch return false;
                 a.fill.append(fill_tris);
@@ -1416,9 +1758,24 @@ pub fn drawSpriteBubble(
                 const h_ratio = arc_height / sprite_rect_scale.r.h;
                 tex_tris.uvFromRectuv(bubble_rect_scale.r, .{ .x = 0.0, .w = 1.0, .y = 1.0 - h_ratio, .h = h_ratio });
                 a.tex.append(tex_tris);
+
+                // The cell's blurred checkerboard continued over the base, when the tile is
+                // there without the bubble frost (a frame queued rather than drawn).
+                const w = cellFrostWeight(self.cell_frost_weights, sprite_index);
+                if (w > 0.001 and self.cell_frost_tile != null) {
+                    var bg_tris = built.fillConvexTriangles(dvui.currentWindow().arena(), .{ .color = .{ .color = cell_tint }, .fade = 0.0 }) catch return false;
+                    bg_tris.uvFromRectuv(bubble_rect_scale.r, .{ .x = 0.0, .w = 1.0, .y = 1.0 - h_ratio, .h = h_ratio });
+                    for (bg_tris.vertexes) |*v| v.col = pmaScale(v.col, w);
+                    a.bg.append(bg_tris);
+                }
             }
             const outline_tris = built.strokeTriangles(dvui.currentWindow().arena(), .{ .color = .{ .color = color }, .thickness = dvui.currentWindow().natural_scale }) catch return false;
             a.outline.append(outline_tris);
+
+            self.bubble_cells.append(dvui.currentWindow().arena(), .{
+                .sprite_index = sprite_index,
+                .weight = std.math.clamp(t, 0.0, 1.0),
+            }) catch {};
 
             const mouse_data_pt = self.init_options.file.editor.canvas.dataFromScreenPoint(dvui.currentWindow().mouse_pt);
             return button_rect.contains(mouse_data_pt);
@@ -1501,15 +1858,14 @@ pub fn drawSpriteBubble(
             .margin = .all(0),
             .padding = .all(0),
             .id_extra = sprite_index,
-            .color_fill = .{ .color = dvui.themeGet().color(.control, .fill).lighten(if (dvui.themeGet().dark) 10.0 else -10.0) },
-            //.color_border = .{ .color = dvui.themeGet().color(.control, .fill) },
-            //.border = dvui.Rect.all(1).scale(1.0 / self.init_options.file.editor.canvas.scale, dvui.Rect),
-            .box_shadow = .{
-                .color = .black,
-                .offset = .{ .x = -0.05 * button_height, .y = 0.08 * button_height },
-                .fade = (button_height / 10) * t,
-                .alpha = 0.5 * t,
-            },
+            // Only the label at rest, so the frosted bubble reads through; the pill fills in
+            // under the pointer (and firmer while pressed). No shadow — it sat on the glass as
+            // a dark smudge. At rest it is the hover colour at zero alpha, not `.transparent`:
+            // the button eases its fill between states, and from transparent *black* the
+            // mid-way colour was a dark grey.
+            .color_fill = .{ .color = bubbleButtonHover().opacity(0) },
+            .color_fill_hover = .{ .color = bubbleButtonHover() },
+            .color_fill_press = .{ .color = dvui.themeGet().color(.control, .fill).lighten(if (dvui.themeGet().dark) 16.0 else -16.0) },
             .corners = .round(1000000),
             .gravity_x = 0.5,
             .gravity_y = 0.5,
@@ -3996,6 +4352,28 @@ fn drawCheckerboardCellsBatched(file: *pixi.internal.File) void {
     const mv = prev_uv.y + (target_mv - prev_uv.y) * smooth_t;
     dvui.dataSet(null, canvas.id, "checkerboard_mouse_uv", dvui.Point{ .x = mu, .y = mv });
 
+    // Behind a cell whose bubble is up the checkerboard goes soft: the blurred tile over the
+    // sharp one, tinted alike and faded in by the cell's eased amount. Before the layers, so the
+    // art stays sharp over it.
+    const frost_weights = stepCellFrostWeights(file);
+    // Only with something to blur: `Triangles.Builder.init` asserts room for a triangle.
+    var frost_builder: ?dvui.Triangles.Builder = null;
+    // The checker is translucent (its tone is half opacity over the content fill), so the
+    // blurred tile alone would only half-cover the sharp one — its hard squares showed through
+    // at half contrast. Content fill first, at the cell's amount, puts back what the checker is
+    // drawn over; at full blur the cell is then exactly fill + blurred checker, which is what
+    // the bubble's capture holds, and the two meet without a seam.
+    var frost_fill_builder: ?dvui.Triangles.Builder = null;
+    const frost_tile: ?dvui.Texture = if (frost_weights.len > 0) cellFrostTile(file) else null;
+    if (frost_tile != null) {
+        frost_builder = dvui.Triangles.Builder.init(arena, frost_weights.len * 4, frost_weights.len * 6) catch null;
+        frost_fill_builder = dvui.Triangles.Builder.init(arena, frost_weights.len * 4, frost_weights.len * 6) catch null;
+    }
+    defer if (frost_builder) |*fb| fb.deinit(arena);
+    defer if (frost_fill_builder) |*fb| fb.deinit(arena);
+    const content_fill: dvui.Color.PMA = .fromColor(dvui.themeGet().color(.content, .fill));
+    var frost_quads: usize = 0;
+
     var quad_idx: usize = 0;
     var row: usize = gp.first_vis_row;
     while (row < gp.last_vis_row) : (row += 1) {
@@ -4042,6 +4420,24 @@ fn drawCheckerboardCellsBatched(file: *pixi.internal.File) void {
             const quad_base: dvui.Vertex.Index = @intCast(quad_idx * 4);
             builder.appendTriangles(&.{ quad_base + 1, quad_base + 0, quad_base + 3, quad_base + 1, quad_base + 3, quad_base + 2 });
             quad_idx += 1;
+
+            if (frost_builder) |*fbuild| if (frost_quads < frost_weights.len) {
+                const w = cellFrostWeight(frost_weights, i);
+                if (w > 0.001) {
+                    fbuild.appendVertex(.{ .pos = tl, .col = pmaScale(pma_tl, w), .uv = .{ 0, 0 } });
+                    fbuild.appendVertex(.{ .pos = tr, .col = pmaScale(pma_tr, w), .uv = .{ 1, 0 } });
+                    fbuild.appendVertex(.{ .pos = br, .col = pmaScale(pma_br, w), .uv = .{ 1, 1 } });
+                    fbuild.appendVertex(.{ .pos = bl, .col = pmaScale(pma_bl, w), .uv = .{ 0, 1 } });
+                    const fb: dvui.Vertex.Index = @intCast(frost_quads * 4);
+                    fbuild.appendTriangles(&.{ fb + 1, fb + 0, fb + 3, fb + 1, fb + 3, fb + 2 });
+                    if (frost_fill_builder) |*ffb| {
+                        const fc = pmaScale(content_fill, w);
+                        for ([4]dvui.Point.Physical{ tl, tr, br, bl }) |p| ffb.appendVertex(.{ .pos = p, .col = fc, .uv = .{ 0, 0 } });
+                        ffb.appendTriangles(&.{ fb + 1, fb + 0, fb + 3, fb + 1, fb + 3, fb + 2 });
+                    }
+                    frost_quads += 1;
+                }
+            };
         }
     }
 
@@ -4050,6 +4446,15 @@ fn drawCheckerboardCellsBatched(file: *pixi.internal.File) void {
     const triangles = builder.build();
     dvui.renderTriangles(triangles, file.checkerboardTileTexture()) catch {
         dvui.log.err("Failed to render batched checkerboard", .{});
+    };
+
+    if (frost_fill_builder) |*ffb| if (frost_quads > 0) {
+        dvui.renderTriangles(ffb.build(), null) catch {};
+    };
+    if (frost_tile) |t| if (frost_builder) |*fbuild| if (frost_quads > 0) {
+        dvui.renderTriangles(fbuild.build(), t) catch {
+            dvui.log.err("Failed to render checkerboard frost", .{});
+        };
     };
 }
 
@@ -4486,7 +4891,7 @@ pub fn drawLayers(self: *FileWidget) void {
     const perf_t0 = pixi.perf.drawLayersBegin();
     defer pixi.perf.drawLayersEnd(perf_t0);
 
-    var file = self.init_options.file;
+    const file = self.init_options.file;
     var columns: usize = file.columns;
     var rows: usize = file.rows;
 
@@ -4609,7 +5014,13 @@ pub fn drawLayers(self: *FileWidget) void {
         drawBatchedGridLines(self, file, columns, rows, grid_color, grid_thickness, grid_x0, grid_x1, grid_y0, grid_y1, vertical_inner);
     }
 
-    // Draw the selection box for the selected sprites
+    self.drawSelectedSpriteBoxes();
+}
+
+/// The selected sprites' boxes (and, in the sprites pane, their origins), with the layers:
+/// canvas the bubbles' glass frosts like anything else behind it.
+fn drawSelectedSpriteBoxes(self: *FileWidget) void {
+    const file = self.init_options.file;
     if (runtime.state().tools.current == .pointer and file.editor.transform == null and self.resize_data_point == null) {
         var iter = file.editor.selected_sprites.iterator(.{ .kind = .set, .direction = .forward });
         while (iter.next()) |i| {

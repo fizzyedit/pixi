@@ -89,6 +89,9 @@ pub const EditorData = struct {
 
     checkerboard: std.DynamicBitSet = undefined,
     checkerboard_tile: ?dvui.Texture = null,
+    /// `checkerboardTileBlurredTexture`'s tile, and the key it was built for.
+    checkerboard_tile_blurred: ?dvui.Texture = null,
+    checkerboard_tile_blurred_key: u64 = 0,
 
     /// Flattened visible-layer stack cached as a render target.
     /// Reused across frames; rebuilt only when content or structure changes.
@@ -271,6 +274,129 @@ pub fn checkerboardTileTexture(file: *File) ?dvui.Texture {
         runtime.state().checker_color_odd,
     );
     return file.editor.checkerboard_tile;
+}
+
+/// The checker tile blurred by a Gaussian of `sigma_px` screen pixels, as the canvas draws it at
+/// `screen_scale` (physical pixels a file pixel) — what the sharp tile would look like read back
+/// from the screen and blurred, without reading anything back. Drawn with the same per-cell UVs
+/// and tints as `checkerboardTileTexture`. Null for a blur too small to show.
+///
+/// Exact and cheap because a checkerboard is separable: even squares are where the two axes'
+/// square waves (±1 a square) agree, so the even colour's share is `½ + ½·sx·sy`, and a
+/// Gaussian blur of that product is the product of each wave blurred alone — two 1D curves,
+/// then one multiply a texel. Sampled at just enough texels a square for the blur to be
+/// smooth under linear filtering; rebuilt only when the zoom moves the blur by a step
+/// (`sigma` quantised to ~6%), the grid's shape, or the checker colours change.
+pub fn checkerboardTileBlurredTexture(file: *File, sigma_px: f32, screen_scale: f32) ?dvui.Texture {
+    const sharp = file.checkerboardTileTexture() orelse return null;
+    const cx = sharp.width;
+    const cy = sharp.height;
+    if (screen_scale <= 0 or sigma_px <= 0) return null;
+    // Screen pixels a checker square, per axis.
+    const square_x = @as(f32, @floatFromInt(file.column_width)) * screen_scale / @as(f32, @floatFromInt(cx));
+    const square_y = @as(f32, @floatFromInt(file.row_height)) * screen_scale / @as(f32, @floatFromInt(cy));
+    const sx = quantizeSigma(sigma_px / square_x);
+    const sy = quantizeSigma(sigma_px / square_y);
+    if (sx < 0.01 and sy < 0.01) return null;
+
+    const even = runtime.state().checker_color_even;
+    const odd = runtime.state().checker_color_odd;
+    var hasher = std.hash.Wyhash.init(0);
+    hasher.update(std.mem.asBytes(&.{ cx, cy }));
+    hasher.update(std.mem.asBytes(&.{ sx, sy }));
+    hasher.update(&even);
+    hasher.update(&odd);
+    const key = hasher.final();
+    if (file.editor.checkerboard_tile_blurred) |t| {
+        if (file.editor.checkerboard_tile_blurred_key == key) return t;
+        dvui.textureDestroyLater(t);
+        file.editor.checkerboard_tile_blurred = null;
+    }
+
+    // Texels a square: enough that the blur's ramp spans a few of them, never over 32 (a sharp
+    // edge on a huge square needs no more than linear filtering gives it), and the tile capped.
+    const rx: u32 = @min(blurTexelsPerSquare(sx), @max(1, 2048 / cx));
+    const ry: u32 = @min(blurTexelsPerSquare(sy), @max(1, 2048 / cy));
+    const w = cx * rx;
+    const h = cy * ry;
+    const arena = dvui.currentWindow().arena();
+    const bx = arena.alloc(f32, w) catch return null;
+    const by = arena.alloc(f32, h) catch return null;
+    const buf = arena.alloc(dvui.Color.PMA, w * h) catch return null;
+    blurredCheckerAxis(bx, cx, rx, sx);
+    blurredCheckerAxis(by, cy, ry, sy);
+    for (0..h) |y| {
+        for (0..w) |x| {
+            const f = 0.5 + 0.5 * bx[x] * by[y];
+            var px: [4]u8 = undefined;
+            for (0..4) |ch| {
+                const a: f32 = @floatFromInt(odd[ch]);
+                const b: f32 = @floatFromInt(even[ch]);
+                px[ch] = @intFromFloat(std.math.clamp(@round(a + (b - a) * f), 0, 255));
+            }
+            buf[y * w + x] = @bitCast(px);
+        }
+    }
+
+    file.editor.checkerboard_tile_blurred = dvui.textureCreate(buf, .{
+        .width = w,
+        .height = h,
+        .interpolation = .linear,
+        .wrap_u = .repeat,
+        .wrap_v = .repeat,
+    }) catch null;
+    file.editor.checkerboard_tile_blurred_key = key;
+    return file.editor.checkerboard_tile_blurred;
+}
+
+/// `sigma` (checker squares) snapped to ~6% steps, so a zoom rebuilds the blurred tile every few
+/// frames rather than every frame. Below 0.01 of a square the blur is nothing.
+fn quantizeSigma(sigma: f32) f32 {
+    if (!(sigma >= 0.01)) return 0;
+    return @exp2(@round(@log2(sigma) * 12) / 12);
+}
+
+fn blurTexelsPerSquare(sigma: f32) u32 {
+    if (sigma < 0.01) return 1;
+    return @intFromFloat(std.math.clamp(@ceil(3.0 / sigma), 1, 32));
+}
+
+/// One axis of the checker — +1 on even squares, −1 on odd, the pattern repeating every `count`
+/// squares like the tile does — blurred by a Gaussian of `sigma` squares, at the centres of
+/// `res` texels a square. Each square contributes its sign times the Gaussian's mass over it.
+fn blurredCheckerAxis(out: []f32, count: u32, res: u32, sigma: f32) void {
+    const count_i: i64 = count;
+    const res_f: f32 = @floatFromInt(res);
+    const reach: i64 = @intFromFloat(@ceil(4 * sigma) + 1);
+    for (out, 0..) |*o, t| {
+        const x = (@as(f32, @floatFromInt(t)) + 0.5) / res_f;
+        const m0: i64 = @intFromFloat(@floor(x));
+        if (sigma < 0.01) {
+            o.* = if (@mod(m0, count_i) & 1 == 0) 1 else -1;
+            continue;
+        }
+        var sum: f32 = 0;
+        var m = m0 - reach;
+        while (m <= m0 + reach) : (m += 1) {
+            const sign: f32 = if (@mod(m, count_i) & 1 == 0) 1 else -1;
+            const mf: f32 = @floatFromInt(m);
+            sum += sign * (normalCdf((mf + 1 - x) / sigma) - normalCdf((mf - x) / sigma));
+        }
+        o.* = sum;
+    }
+}
+
+fn normalCdf(z: f32) f32 {
+    return 0.5 * (1.0 + erf(z * std.math.sqrt1_2));
+}
+
+/// Abramowitz & Stegun 7.1.26 (|error| < 1.5e-7) — `std.math` has no `erf`.
+fn erf(x: f32) f32 {
+    const sign: f32 = if (x < 0) -1 else 1;
+    const ax = @abs(x);
+    const t = 1.0 / (1.0 + 0.3275911 * ax);
+    const poly = ((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t;
+    return sign * (1.0 - poly * @exp(-ax * ax));
 }
 
 pub fn width(file: *const File) u32 {
@@ -1340,6 +1466,10 @@ pub fn deinit(file: *File) void {
     if (file.editor.checkerboard_tile) |t| {
         dvui.textureDestroyLater(t);
         file.editor.checkerboard_tile = null;
+    }
+    if (file.editor.checkerboard_tile_blurred) |t| {
+        dvui.textureDestroyLater(t);
+        file.editor.checkerboard_tile_blurred = null;
     }
 
     file.editor.selected_layer_indices.deinit(runtime.allocator());
