@@ -1019,6 +1019,9 @@ const BubbleAccs = struct {
     shadow: TriAcc,
     fill: TriAcc,
     tex: TriAcc,
+    /// Under `bg`: the content fill at the cell's amount, as the cells lay it (`drawCheckerboard`)
+    /// — the checker is translucent, and without it the sharp squares show through the blur.
+    bg_fill: TriAcc,
     /// Bubble interiors continuing the cell's blurred checkerboard (`cell_frost_tile`, tile UVs).
     bg: TriAcc,
     /// Bubble interiors textured from the frost (UVs over `bubble_frost_rect`).
@@ -1030,6 +1033,7 @@ const BubbleAccs = struct {
             .shadow = TriAcc.init(alloc),
             .fill = TriAcc.init(alloc),
             .tex = TriAcc.init(alloc),
+            .bg_fill = TriAcc.init(alloc),
             .bg = TriAcc.init(alloc),
             .frost = TriAcc.init(alloc),
             .outline = TriAcc.init(alloc),
@@ -1040,6 +1044,7 @@ const BubbleAccs = struct {
         self.shadow.clear();
         self.fill.clear();
         self.tex.clear();
+        self.bg_fill.clear();
         self.bg.clear();
         self.frost.clear();
         self.outline.clear();
@@ -1357,7 +1362,10 @@ pub fn drawSpriteBubbles(self: *FileWidget) void {
                     accs.shadow.render(null);
                     accs.fill.render(null);
                     accs.tex.render(checkerboard_tex);
-                    if (self.cell_frost_tile) |t| accs.bg.render(t);
+                    if (self.cell_frost_tile) |t| {
+                        accs.bg_fill.render(null);
+                        accs.bg.render(t);
+                    }
                     if (frost_tex) |ft| accs.frost.render(ft);
                     dvui.clipSet(prev_clip);
                     _ = dvui.clip(row_clip_screen);
@@ -1773,6 +1781,9 @@ pub fn drawSpriteBubble(
                     bg_tris.uvFromRectuv(bubble_rect_scale.r, .{ .x = 0.0, .w = 1.0, .y = 1.0 - h_ratio, .h = h_ratio });
                     for (bg_tris.vertexes) |*v| v.col = pmaScale(v.col, w);
                     a.bg.append(bg_tris);
+                    const bg_fill_tris = built.fillConvexTriangles(dvui.currentWindow().arena(), .{ .color = .{ .color = dvui.themeGet().color(.content, .fill) }, .fade = 0.0 }) catch return false;
+                    for (bg_fill_tris.vertexes) |*v| v.col = pmaScale(v.col, w);
+                    a.bg_fill.append(bg_fill_tris);
                 }
             }
             const outline_tris = built.strokeTriangles(dvui.currentWindow().arena(), .{ .color = .{ .color = color }, .thickness = dvui.currentWindow().natural_scale }) catch return false;
