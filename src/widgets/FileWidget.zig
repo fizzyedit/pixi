@@ -839,6 +839,15 @@ const TriAcc = struct {
         }, tex) catch {};
     }
 
+    /// One quad, corners top-left, top-right, bottom-right, bottom-left, wound as the cells are.
+    fn appendQuad(self: *TriAcc, q: [4]dvui.Vertex) void {
+        const base: dvui.Vertex.Index = @intCast(self.vtx.items.len);
+        self.vtx.appendSlice(self.alloc, &q) catch return;
+        self.idx.appendSlice(self.alloc, &.{ base + 1, base + 0, base + 3, base + 1, base + 3, base + 2 }) catch {
+            self.vtx.shrinkRetainingCapacity(base);
+        };
+    }
+
     fn clear(self: *TriAcc) void {
         self.vtx.clearRetainingCapacity();
         self.idx.clearRetainingCapacity();
@@ -1053,11 +1062,9 @@ const BubbleAccs = struct {
 
 /// Where a bubble row's frost is read from: what is behind that row's glass — the bubble
 /// headroom over every cell of `row` in `weights` — plus a margin of twice the blur radius up
-/// and to the sides, so the blur at those edges still draws from real content. Never below the
-/// seam: that is not behind the glass, and reaching into it blurred a cell's own selection box
-/// up into its bubble, cut off at the base. Within the viewport and on whole pixels (the rect
-/// the capture rounds to), its bottom on the pixel boundary the seam rounds to — where the
-/// bubble's fills stop. Null — no frost for the row — with nothing to cover, the blur off, or
+/// and to the sides, so the blur at those edges still draws from real content. Below the seam
+/// only as far as the glass's feathered foot reaches (`bubbleFeather`) and the blur beyond it.
+/// Within the viewport and on whole pixels (the rect the capture rounds to). Null — no frost for the row — with nothing to cover, the blur off, or
 /// the frame queued rather than drawn (a readback then would see none of the canvas).
 fn canvasFrostRect(file: *pixi.internal.File, weights: []const BubbleCell, row: usize) ?dvui.Rect.Physical {
     const radius = canvasFrostRadius(file);
@@ -1078,7 +1085,9 @@ fn canvasFrostRect(file: *pixi.internal.File, weights: []const BubbleCell, row: 
     }
     const cov = covered orelse return null;
     const margin = radius * 2;
-    const seam = @round(cov.y + cov.h);
+    // Down past the seam by the feather (`bubbleFeather`) and the blur's reach beyond it, so
+    // the glass's soft foot blurs what is really there rather than stretching its last row.
+    const seam = @round(cov.y + cov.h) + bubbleFeather(file) + radius;
     var r: dvui.Rect.Physical = .{ .x = cov.x - margin, .y = cov.y - margin, .w = cov.w + 2 * margin, .h = seam - (cov.y - margin) };
     r = r.intersect(file.editor.canvas.rect).intersect(dvui.windowRectPixels());
     const x = @floor(r.x);
@@ -1108,6 +1117,14 @@ const canvas_frost_radius_max: f32 = 256;
 /// nothing.
 /// How much of the next finer pyramid level the bubble frost blends in (`BlurBackdrop.detail`).
 const canvas_frost_detail: f32 = 0.35;
+
+/// How far a bubble's glass runs on past its base, fading out over the cell below (physical px):
+/// a share of the cell's height on screen, so it keeps its proportion at any zoom.
+fn bubbleFeather(file: *pixi.internal.File) f32 {
+    const cell_h: f32 = @floatFromInt(file.row_height);
+    return @round(cell_h * file.editor.canvas.screen_rect_scale.s * bubble_feather_share);
+}
+const bubble_feather_share: f32 = 0.15;
 
 fn canvasFrostRadius(file: *pixi.internal.File) f32 {
     const setting = runtime.state().settings.bubble_blur.get();
@@ -1373,7 +1390,14 @@ pub fn drawSpriteBubbles(self: *FileWidget) void {
                         accs.bg_fill.render(null);
                         accs.bg.render(t);
                     }
-                    if (frost_tex) |ft| accs.frost.render(ft);
+                    if (frost_tex) |ft| {
+                        // Past the seam by the feather: the glass's foot fades out over the cells.
+                        dvui.clipSet(prev_clip);
+                        var feather_clip = fill_clip_screen;
+                        feather_clip.h += bubbleFeather(file);
+                        _ = dvui.clip(feather_clip);
+                        accs.frost.render(ft);
+                    }
                     dvui.clipSet(prev_clip);
                     _ = dvui.clip(row_clip_screen);
                     accs.outline.render(null);
@@ -1776,6 +1800,27 @@ pub fn drawSpriteBubble(
                     const c: u8 = @intFromFloat(@round(255 * w));
                     for (frost_tris.vertexes) |*v| v.col = .{ .r = c, .g = c, .b = c, .a = c };
                     a.frost.append(frost_tris);
+                    // The foot: the glass does not stop dead on the seam but fades out over the
+                    // cell below, from the bubble's strength to nothing.
+                    const feather = bubbleFeather(self.init_options.file);
+                    if (feather > 0.5) {
+                        const base = sprite_rect_scale.r;
+                        const top_col: dvui.Color.PMA = .{ .r = c, .g = c, .b = c, .a = c };
+                        const clear: dvui.Color.PMA = .{ .r = 0, .g = 0, .b = 0, .a = 0 };
+                        const corners = [4]dvui.Point.Physical{
+                            .{ .x = base.x, .y = base.y },
+                            .{ .x = base.x + base.w, .y = base.y },
+                            .{ .x = base.x + base.w, .y = base.y + feather },
+                            .{ .x = base.x, .y = base.y + feather },
+                        };
+                        var q: [4]dvui.Vertex = undefined;
+                        for (corners, 0..) |pt, qi| q[qi] = .{
+                            .pos = pt,
+                            .col = if (qi < 2) top_col else clear,
+                            .uv = .{ (pt.x - fr.x) / fr.w, (pt.y - fr.y) / fr.h },
+                        };
+                        a.frost.appendQuad(q);
+                    }
                 };
             } else {
                 const fill_tris = built.fillConvexTriangles(dvui.currentWindow().arena(), .{ .color = .{ .color = cell_tint }, .fade = 1.0 }) catch return false;
