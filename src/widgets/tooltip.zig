@@ -30,6 +30,16 @@ pub fn options(id_extra: usize) dvui.Options {
     };
 }
 
+/// The surface under a shown tooltip and its fade in one — the SDK's `tooltipBegin`: the glass
+/// forms (blur, tint, lift rising) with the same fade that is applied to everything drawn after,
+/// so glass and contents arrive together. Returns the alpha to restore after the contents.
+/// Against an SDK without it: the surface at full strength, contents unfaded.
+pub fn begin(tooltip: *dvui.FloatingTooltipWidget, duration_us: i32) f32 {
+    if (comptime @hasDecl(dialogs, "tooltipBegin")) return dialogs.tooltipBegin(tooltip.data(), duration_us);
+    surface(tooltip);
+    return dvui.alpha(1);
+}
+
 /// Draw the surface under a shown tooltip — call right after `tooltip.shown()` is true, before
 /// its contents.
 pub fn surface(tooltip: *dvui.FloatingTooltipWidget) void {

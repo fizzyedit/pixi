@@ -272,14 +272,8 @@ pub fn drawTooltip(_: Tools, tool: Tool, rect: dvui.Rect.Physical, id_extra: u64
     defer tooltip.deinit();
 
     if (tooltip.shown()) {
-        pixi.tooltip.surface(&tooltip);
-        var animator = dvui.animate(@src(), .{
-            .kind = .alpha,
-            .duration = 500_000,
-        }, .{
-            .expand = .both,
-        });
-        defer animator.deinit();
+        const prev_alpha = pixi.tooltip.begin(&tooltip, 500_000);
+        defer dvui.alphaSet(prev_alpha);
 
         var vbox2 = dvui.box(@src(), .{ .dir = .vertical }, dvui.FloatingTooltipWidget.defaults.override(.{
             .background = false,

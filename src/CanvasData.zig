@@ -1248,9 +1248,8 @@ pub fn drawSampleButton(self: *CanvasData, container: *dvui.WidgetData) void {
         defer tooltip.deinit();
 
         if (tooltip.shown()) {
-            pixi.tooltip.surface(&tooltip);
-            var anim = dvui.animate(@src(), .{ .kind = .alpha, .duration = 250_000 }, .{ .expand = .both });
-            defer anim.deinit();
+            const prev_alpha = pixi.tooltip.begin(&tooltip, 250_000);
+            defer dvui.alphaSet(prev_alpha);
 
             var tl = dvui.textLayout(@src(), .{}, .{
                 .background = false,
