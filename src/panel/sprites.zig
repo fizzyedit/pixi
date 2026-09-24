@@ -1308,12 +1308,13 @@ fn drawRoundButton(
         dvui.themeGet().color(.highlight, .text)
     else
         dvui.themeGet().color(.content, .text);
-    const icon_color = if (enabled) text_color else text_color.opacity(0.35);
+    // Disabled: most of the way to the fill rather than see-through — at partial alpha a
+    // stroked icon's overlapping caps and joins drew darker than its lines.
+    const icon_color = if (enabled) text_color else text_color.lerp(fill, 0.65);
 
-    // `min_size_content.h` must be a real height: IconWidget derives width as
-    // `iconWidth(h)` but clamps it up to at least `min_size_content.w`. With a
-    // height of 1 a glyph taller than wide derives width < 1, gets clamped to a
-    // square min size, and `expand = .ratio` then stretches it. A full-size
+    // IconWidget takes `min_size_content` as-is and derives the width from the
+    // glyph (`iconWidth(h)`) only when `w` is 0 — any other `w` fixes the
+    // aspect `expand = .ratio` keeps (a `w` of 1 drew a 1px sliver). A real
     // height keeps the derived width true to the glyph's aspect.
     dvui.icon(
         src,
@@ -1324,7 +1325,7 @@ fn drawRoundButton(
             .expand = .ratio,
             .gravity_x = 0.5,
             .gravity_y = 0.5,
-            .min_size_content = .{ .w = 1.0, .h = size },
+            .min_size_content = .{ .w = 0, .h = size },
         },
     );
 

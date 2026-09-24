@@ -1527,17 +1527,19 @@ pub fn windowFn(id: dvui.Id) anyerror!void {
 
     var win = pixi.core.widgets.floatingWindow(@src(), .{
         .modal = modal,
+        .modal_alpha = pixi.core.dialogs.modalDimAlpha(1),
         .center_on = center_on,
         .window_avoid = .nudge,
         .process_events_in_deinit = true,
         .resize = .all,
+        .frost = pixi.core.dialogs.dialogFrost(),
     }, .{
         .id_extra = id.asUsize(),
         .color_text = .black,
         .corners = .round(10),
         .min_size_content = .{ .w = init_w, .h = @max(init_h, 400) },
         .border = .all(0),
-        .color_fill = .{ .color = dvui.themeGet().color(.content, .fill).opacity(0.85) },
+        .color_fill = .{ .color = pixi.core.dialogs.dialogFill() },
         .box_shadow = .{
             .color = .black,
             .alpha = 0.35,

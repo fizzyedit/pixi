@@ -246,6 +246,15 @@ pub fn drawTools() !void {
     }
 }
 
+/// A layer button's icon colour: the control text, or — disabled — most of the way to the
+/// button's fill. Not the whole button at partial alpha: a stroked icon is overlapping pieces,
+/// and see-through its caps and joins drew darker than its lines (and the button itself went
+/// see-through with it).
+fn disabledIconText(enabled: bool) dvui.Color {
+    const text = dvui.themeGet().color(.control, .text);
+    return if (enabled) text else text.lerp(dvui.themeGet().color(.control, .fill), 0.65);
+}
+
 pub fn drawLayerControls() !void {
     var box = dvui.box(@src(), .{ .dir = .vertical }, .{
         .expand = .horizontal,
@@ -266,10 +275,10 @@ pub fn drawLayerControls() !void {
         const merge_down_enabled = file.selected_layer_index + 1 < file.layers.len;
 
         {
-            const a = dvui.alpha(if (merge_up_enabled) 1.0 else 0.35);
-            defer dvui.alphaSet(a);
             if (dvui.buttonIcon(@src(), "MergeLayerUp", icons.tvg.lucide.@"arrow-up-to-line", .{}, .{}, .{
                 .expand = .none,
+                .padding = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).padding,
+                .min_size_content = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).min_size_content,
                 .gravity_y = 0.5,
                 .corners = .round(1000),
                 .box_shadow = .{
@@ -280,6 +289,7 @@ pub fn drawLayerControls() !void {
                     .corners = .round(1000),
                 },
                 .color_fill = .{ .color = dvui.themeGet().color(.control, .fill) },
+                .color_text = .{ .color = disabledIconText(merge_up_enabled) },
             })) {
                 if (merge_up_enabled) {
                     file.mergeSelectedLayerUp() catch {
@@ -290,10 +300,10 @@ pub fn drawLayerControls() !void {
         }
 
         {
-            const a = dvui.alpha(if (merge_down_enabled) 1.0 else 0.35);
-            defer dvui.alphaSet(a);
             if (dvui.buttonIcon(@src(), "MergeLayerDown", icons.tvg.lucide.@"arrow-down-to-line", .{}, .{}, .{
                 .expand = .none,
+                .padding = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).padding,
+                .min_size_content = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).min_size_content,
                 .gravity_y = 0.5,
                 .corners = .round(1000),
                 .box_shadow = .{
@@ -304,6 +314,7 @@ pub fn drawLayerControls() !void {
                     .corners = .round(1000),
                 },
                 .color_fill = .{ .color = dvui.themeGet().color(.control, .fill) },
+                .color_text = .{ .color = disabledIconText(merge_down_enabled) },
             })) {
                 if (merge_down_enabled) {
                     file.mergeSelectedLayerDown() catch {
@@ -321,6 +332,8 @@ pub fn drawLayerControls() !void {
             .{},
             .{
                 .expand = .none,
+                .padding = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).padding,
+                .min_size_content = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).min_size_content,
                 .gravity_y = 0.5,
                 .corners = .round(1000),
                 .box_shadow = .{
@@ -338,6 +351,8 @@ pub fn drawLayerControls() !void {
 
         if (dvui.buttonIcon(@src(), "AddLayer", icons.tvg.lucide.plus, .{}, .{}, .{
             .expand = .none,
+            .padding = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).padding,
+            .min_size_content = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).min_size_content,
             .gravity_y = 0.5,
             .corners = .round(1000),
             .box_shadow = .{
@@ -356,6 +371,8 @@ pub fn drawLayerControls() !void {
 
         if (dvui.buttonIcon(@src(), "DuplicateLayer", icons.tvg.lucide.@"copy-plus", .{}, .{}, .{
             .expand = .none,
+            .padding = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).padding,
+            .min_size_content = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).min_size_content,
             .gravity_y = 0.5,
             .corners = .round(1000),
             .box_shadow = .{
@@ -376,6 +393,8 @@ pub fn drawLayerControls() !void {
             if (dvui.buttonIcon(@src(), "DeleteLayer", icons.tvg.lucide.trash, .{}, .{ .stroke_color = .{ .color = dvui.themeGet().color(.window, .fill) } }, .{
                 .style = .err,
                 .expand = .none,
+                .padding = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).padding,
+                .min_size_content = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).min_size_content,
                 .gravity_y = 0.5,
                 .corners = .round(1000),
                 .box_shadow = .{
@@ -763,7 +782,7 @@ pub fn drawLayers(tools: *Tools) !?dvui.Rect.Physical {
                     .{},
                     .{
                         .expand = .ratio,
-                        .min_size_content = .{ .w = 1.0, .h = 11.0 },
+                        .min_size_content = .{ .w = 0, .h = 11.0 },
                         .id_extra = layer_index,
                         .corners = .round(1000),
                         .margin = dvui.Rect.all(1),
@@ -780,7 +799,7 @@ pub fn drawLayers(tools: *Tools) !?dvui.Rect.Physical {
                     .{},
                     .{
                         .expand = .ratio,
-                        .min_size_content = .{ .w = 1.0, .h = 11.0 },
+                        .min_size_content = .{ .w = 0, .h = 11.0 },
                         .id_extra = layer_index,
                         .corners = .round(1000),
                         .margin = dvui.Rect.all(1),
@@ -823,7 +842,7 @@ pub fn drawLayers(tools: *Tools) !?dvui.Rect.Physical {
                     .{},
                     .{
                         .expand = .ratio,
-                        .min_size_content = .{ .w = 1.0, .h = 11.0 },
+                        .min_size_content = .{ .w = 0, .h = 11.0 },
                         .id_extra = layer_index,
                         .corners = .round(1000),
                         .margin = dvui.Rect.all(1),
@@ -840,7 +859,7 @@ pub fn drawLayers(tools: *Tools) !?dvui.Rect.Physical {
                     .{},
                     .{
                         .expand = .ratio,
-                        .min_size_content = .{ .w = 1.0, .h = 11.0 },
+                        .min_size_content = .{ .w = 0, .h = 11.0 },
                         .id_extra = layer_index,
                         .corners = .round(1000),
                         .margin = dvui.Rect.all(1),
@@ -1010,13 +1029,8 @@ fn drawColorPicker(rect: dvui.Rect.Physical, backing_color: *[4]u8, id_extra: us
     defer context.deinit();
 
     if (context.activePoint()) |point| {
-        var fw2 = dvui.floatingMenu(@src(), .{ .from = dvui.Rect.Natural.fromPoint(point) }, .{ .box_shadow = .{
-            .color = .black,
-            .offset = .{ .x = 0, .y = 0 },
-            .shrink = 0,
-            .fade = 10,
-            .alpha = 0.15,
-        } });
+        // The shell's context menu: frosted, rounded and shadowed like every floating surface.
+        var fw2 = pixi.core.widgets.contextMenu(@src(), point, .{});
         defer fw2.deinit();
 
         var color: dvui.Color.HSV = .fromColor(.{
@@ -1059,6 +1073,8 @@ pub fn drawPaletteControls() !void {
 
     if (dvui.buttonIcon(@src(), "PinPalettes", dvui.entypo.pin, .{ .draw_focus = false }, .{}, .{
         .expand = .none,
+        .padding = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).padding,
+        .min_size_content = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).min_size_content,
         .gravity_y = 0.5,
         .gravity_x = 1.0,
         .corners = .round(1000),

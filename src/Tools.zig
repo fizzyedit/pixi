@@ -268,22 +268,11 @@ pub fn drawTooltip(_: Tools, tool: Tool, rect: dvui.Rect.Physical, id_extra: u64
         .active_rect = rect,
         .delay = 500_000,
         .interactive = if (tool == .selection) true else false,
-    }, .{
-        .id_extra = @intCast(id_extra),
-        .color_fill = .{ .color = dvui.themeGet().color(.content, .fill).opacity(0.9) },
-        .border = dvui.Rect.all(0),
-        .box_shadow = .{
-            .color = .black,
-            .shrink = 0,
-            .corners = .round(8),
-            .offset = .{ .x = 0, .y = 2 },
-            .fade = 4,
-            .alpha = 0.2,
-        },
-    });
+    }, pixi.tooltip.options(@intCast(id_extra)));
     defer tooltip.deinit();
 
     if (tooltip.shown()) {
+        pixi.tooltip.surface(&tooltip);
         var animator = dvui.animate(@src(), .{
             .kind = .alpha,
             .duration = 500_000,

@@ -105,16 +105,12 @@ pub fn drawRuler(self: *CanvasData, file: *File, orientation: RulerOrientation) 
             var corner_box = dvui.box(@src(), .{ .dir = .horizontal }, .{
                 .expand = .none,
                 .min_size_content = .{ .h = self.vertical_ruler_width, .w = self.vertical_ruler_width },
-                .background = true,
-                .color_fill = .{ .color = dvui.themeGet().color(.window, .fill) },
             });
             corner_box.deinit();
 
             var top_box = dvui.box(@src(), .{ .dir = .horizontal }, .{
                 .expand = .horizontal,
                 .min_size_content = .{ .h = ruler_thickness, .w = ruler_thickness },
-                .background = true,
-                .color_fill = .{ .color = dvui.themeGet().color(.window, .fill) },
             });
             defer top_box.deinit();
 
@@ -124,8 +120,6 @@ pub fn drawRuler(self: *CanvasData, file: *File, orientation: RulerOrientation) 
             var ruler_box = dvui.box(@src(), .{ .dir = .vertical }, .{
                 .expand = .vertical,
                 .min_size_content = .{ .w = ruler_thickness, .h = 1.0 },
-                .background = true,
-                .color_fill = .{ .color = dvui.themeGet().color(.window, .fill) },
             });
             defer ruler_box.deinit();
 
@@ -173,7 +167,7 @@ fn drawRulerContent(
         .process_events_after = true,
         .horizontal_bar = .hide,
         .vertical_bar = .hide,
-    }, .{ .expand = .both });
+    }, .{ .expand = .both, .background = false });
     defer scroll_area.deinit();
 
     const scale_rect = switch (orientation) {
@@ -297,7 +291,8 @@ fn drawRulerContent(
             target_rs_screen = trs;
         }
 
-        var button_color = if (reorder.drag_point != null) dvui.themeGet().color(.control, .fill).opacity(0.85) else dvui.themeGet().color(.window, .fill);
+        // Idle cells stay transparent so the workspace background (and its opacity) shows through.
+        var button_color: dvui.Color = if (reorder.drag_point != null) dvui.themeGet().color(.control, .fill).opacity(0.85) else .transparent;
 
         if (pixi.core.widgets.hovered(reorderable.data())) {
             button_color = dvui.themeGet().color(.control, .fill_hover);
@@ -779,20 +774,24 @@ pub fn drawTransformDialog(_: *CanvasData, file: *File, container: *dvui.WidgetD
     }
 }
 
-/// Floating rounded-pill quick-access bar anchored to the top-right of the workspace
-/// canvas. Mirrors the Edit menu (Undo / Redo / Copy / Paste / Transform / Grid Layout)
+/// Floating rounded-pill quick-access bar anchored to the top-left of the workspace
+/// canvas, like the sprites panel's round controls — the top-right corner is the shell's, for
+/// the region's own view picker. Mirrors the Edit menu (Undo / Redo / Copy / Paste / Transform / Grid Layout)
 /// with icon-only round buttons sized to match the toolbox buttons. Starts collapsed as a
 /// single hamburger circle; tapping toggles the row of action buttons in/out with a
 /// width animation.
 pub fn drawEditPill(self: *CanvasData, container: *dvui.WidgetData) void {
     const file = runtime.state().docs.activeFile(runtime.state().host) orelse return;
+    // The transform dialog takes the same top-left corner (`drawTransformDialog`), with its
+    // own accept/cancel; the pill steps aside while it is up.
+    if (file.editor.transform != null) return;
 
     const button_size: f32 = 36;
     const button_gap: f32 = 6;
     const pill_padding: f32 = 6;
     const margin: f32 = 10;
-    // Canvas scroll area uses a non-overlay vertical bar on the right edge; keep the
-    // pill clear of it (see `CanvasWidget.install` + dvui `ScrollBarWidget` width).
+    // Canvas scroll area uses a non-overlay vertical bar on the right edge; the width check
+    // below keeps the pill clear of it (see `CanvasWidget.install` + dvui `ScrollBarWidget`).
     const right_margin: f32 = margin + dvui.ScrollBarWidget.defaults.min_sizeGet().w;
     // Icons render at ~60% of their previous size — previous padding was 0.22 (icon
     // ≈ 56% of button); new padding is 0.33 so the icon ends up ≈ 34% of the button,
@@ -854,7 +853,7 @@ pub fn drawEditPill(self: *CanvasData, container: *dvui.WidgetData) void {
 
     if (canvas_nat.w < pill_w + margin + right_margin or canvas_nat.h < collapsed_h + 2 * margin) return;
 
-    const pill_x: f32 = canvas_nat.x + canvas_nat.w - right_margin - pill_w;
+    const pill_x: f32 = canvas_nat.x + margin;
     const pill_y: f32 = canvas_nat.y + margin;
 
     // Clamp the bottom edge so the expanded pill never spills past the canvas area —
@@ -999,7 +998,10 @@ pub fn drawEditPill(self: *CanvasData, container: *dvui.WidgetData) void {
         btn.processEvents();
         btn.drawBackground();
 
-        const icon_color = if (enabled) dvui.themeGet().color(.content, .text) else dvui.themeGet().color(.content, .text).opacity(0.35);
+        // Disabled: the text colour most of the way to the button's fill, not see-through —
+        // a stroked icon is overlapping pieces, and at partial alpha its caps and joins
+        // doubled up darker than the lines between them.
+        const icon_color = if (enabled) dvui.themeGet().color(.content, .text) else dvui.themeGet().color(.content, .text).lerp(dvui.themeGet().color(.content, .fill), 0.65);
 
         dvui.icon(
             @src(),
@@ -1061,7 +1063,7 @@ pub fn drawEditPill(self: *CanvasData, container: *dvui.WidgetData) void {
     }
 }
 
-/// Floating round button anchored just to the left of the Edit pill at the top-right of
+/// Floating round button anchored just to the right of the Edit pill at the top-left of
 /// the canvas. Tapping it shows a tooltip explaining the gesture; the primary action is
 /// to drag from the button toward whatever pixel you want to sample. The button itself
 /// stays put — instead, while the drag is in progress, we route the touch position
@@ -1070,6 +1072,8 @@ pub fn drawEditPill(self: *CanvasData, container: *dvui.WidgetData) void {
 /// color underneath the sample point and apply it to the primary color slot.
 pub fn drawSampleButton(self: *CanvasData, container: *dvui.WidgetData) void {
     const file = runtime.state().docs.activeFile(runtime.state().host) orelse return;
+    // Steps aside for the transform dialog with the pill (see `drawEditPill`).
+    if (file.editor.transform != null) return;
 
     const pill_button_size: f32 = 36;
     const pill_padding: f32 = 6;
@@ -1096,7 +1100,7 @@ pub fn drawSampleButton(self: *CanvasData, container: *dvui.WidgetData) void {
     if (canvas_nat.w < pill_outer_w + gap + button_size + margin + right_margin) return;
     if (canvas_nat.h < button_size + 2 * margin) return;
 
-    const btn_x = canvas_nat.x + canvas_nat.w - right_margin - pill_outer_w - gap - button_size;
+    const btn_x = canvas_nat.x + margin + pill_outer_w + gap;
     // Match the hamburger row inside the pill (pill top + inner vbox padding).
     const btn_y = canvas_nat.y + margin + pill_padding;
 
@@ -1240,21 +1244,11 @@ pub fn drawSampleButton(self: *CanvasData, container: *dvui.WidgetData) void {
         tooltip.init(@src(), .{
             .active_rect = btn.data().rectScale().r,
             .delay = 350_000,
-        }, .{
-            .color_fill = .{ .color = dvui.themeGet().color(.window, .fill) },
-            .border = dvui.Rect.all(0),
-            .box_shadow = .{
-                .color = .black,
-                .shrink = 0,
-                .corners = .round(8),
-                .offset = .{ .x = 0, .y = 2 },
-                .fade = 4,
-                .alpha = 0.2,
-            },
-        });
+        }, pixi.tooltip.options(0));
         defer tooltip.deinit();
 
         if (tooltip.shown()) {
+            pixi.tooltip.surface(&tooltip);
             var anim = dvui.animate(@src(), .{ .kind = .alpha, .duration = 250_000 }, .{ .expand = .both });
             defer anim.deinit();
 

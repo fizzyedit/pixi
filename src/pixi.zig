@@ -41,6 +41,8 @@ pub const Animation = @import("Animation.zig");
 
 pub const render = @import("render.zig");
 pub const sprite_render = @import("sprite_render.zig");
+pub const round_icon = @import("widgets/round_icon.zig");
+pub const tooltip = @import("widgets/tooltip.zig");
 pub const algorithms = @import("algorithms/algorithms.zig");
 
 pub const dialogs = struct {

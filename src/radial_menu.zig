@@ -242,6 +242,8 @@ pub fn draw() !void {
                 },
                 .color_fill = .{ .color = dvui.themeGet().color(.control, .fill_hover) },
                 .rect = rect,
+                .padding = pixi.round_icon.options(rect.w).padding,
+                .min_size_content = pixi.round_icon.options(rect.w).min_size_content,
             })) {
                 file.editor.playing = !file.editor.playing;
                 if (runtime.state().tools.radial_menu.opened_by_press) {
