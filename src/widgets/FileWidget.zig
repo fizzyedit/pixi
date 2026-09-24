@@ -1076,6 +1076,9 @@ const BubbleAccs = struct {
     bg_fill: TriAcc,
     /// Bubble interiors continuing the cell's blurred checkerboard (`cell_frost_tile`, tile UVs).
     bg: TriAcc,
+    /// Over `bg`: the art of the cell above, laid back on (UVs over the whole file) — see
+    /// `renderBubbleArt`.
+    art: TriAcc,
     /// Bubble interiors textured from the frost (UVs over `bubble_frost_rect`).
     frost: TriAcc,
     outline: TriAcc,
@@ -1087,6 +1090,7 @@ const BubbleAccs = struct {
             .tex = TriAcc.init(alloc),
             .bg_fill = TriAcc.init(alloc),
             .bg = TriAcc.init(alloc),
+            .art = TriAcc.init(alloc),
             .frost = TriAcc.init(alloc),
             .outline = TriAcc.init(alloc),
         };
@@ -1098,6 +1102,7 @@ const BubbleAccs = struct {
         self.tex.clear();
         self.bg_fill.clear();
         self.bg.clear();
+        self.art.clear();
         self.frost.clear();
         self.outline.clear();
     }
@@ -1160,6 +1165,22 @@ const canvas_frost_radius_max: f32 = 256;
 /// nothing.
 /// How much of the next finer pyramid level the bubble frost blends in (`BlurBackdrop.detail`).
 const canvas_frost_detail: f32 = 0.35;
+
+/// The file's art over `acc`'s shapes: the layer composite when there is one (it was synced
+/// drawing the layers this frame), otherwise each visible layer, bottom up. For the glass
+/// bubbles, whose blurred base must sit under the cell above's art, as the cell's own does.
+fn renderBubbleArt(file: *pixi.internal.File, acc: *const TriAcc) void {
+    if (acc.vtx.items.len == 0) return;
+    if (!file.editor.layer_composite_dirty) if (file.editor.layer_composite_target) |ct| {
+        if (dvui.Texture.fromTargetTemp(ct) catch null) |tex| return acc.render(tex);
+    };
+    var i: usize = file.layers.len;
+    while (i > 0) {
+        i -= 1;
+        if (!file.layers.items(.visible)[i]) continue;
+        if (file.layers.items(.source)[i].getTexture() catch null) |tex| acc.render(tex);
+    }
+}
 
 fn canvasFrostRadius(file: *pixi.internal.File) f32 {
     const setting = runtime.state().settings.bubble_blur.get();
@@ -1425,6 +1446,7 @@ pub fn drawSpriteBubbles(self: *FileWidget) void {
                         accs.bg_fill.render(null);
                         accs.bg.render(t);
                     }
+                    renderBubbleArt(file, &accs.art);
                     if (frost_tex) |ft| accs.frost.render(ft);
                     dvui.clipSet(prev_clip);
                     _ = dvui.clip(row_clip_screen);
@@ -1832,6 +1854,12 @@ pub fn drawSpriteBubble(
                         bg_tris.uvFromRectuv(cell_above_r, .{ .x = 0.0, .y = 0.0, .w = 1.0, .h = 1.0 });
                         for (bg_tris.vertexes) |*v| v.col = pmaScale(v.col, w);
                         a.bg.append(bg_tris);
+                        // The art back over it: the blurred checkerboard goes *under* the art, as
+                        // it does in the cell below, not over it — a dark band across the art
+                        // where the frost fades out otherwise.
+                        var art_tris = built.fillConvexTriangles(dvui.currentWindow().arena(), .{ .color = .{ .color = .white }, .fade = 0.0 }) catch return false;
+                        art_tris.uvFromRectuv(self.init_options.file.editor.canvas.rect, .{ .x = 0.0, .y = 0.0, .w = 1.0, .h = 1.0 });
+                        a.art.append(art_tris);
                     }
                     if (self.bubble_frost_rect) |fr| appendFrostFade(&a.frost, built.points, sprite_rect_scale.r.y, arc_height * 0.6, w, fr);
                 }
