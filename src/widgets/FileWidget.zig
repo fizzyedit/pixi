@@ -1132,10 +1132,20 @@ const bubble_feather_share: f32 = 0.15;
 fn canvasFrostRadius(file: *pixi.internal.File) f32 {
     const setting = runtime.state().settings.bubble_blur.get();
     if (setting <= 0) return 0;
+    if (!canvas_frost_follows_zoom) {
+        // Trying a constant blur: the same on screen at any zoom, like the dialogs' frost.
+        return std.math.clamp(setting * canvas_frost_px_per_setting * dvui.windowNaturalScale(), 0, canvas_frost_radius_max);
+    }
     const cell_data: f32 = @floatFromInt(@min(file.column_width, file.row_height));
     const cell_px = cell_data * file.editor.canvas.screen_rect_scale.s;
     return std.math.clamp(cell_px * setting / canvas_frost_setting_per_cell, 0, canvas_frost_radius_max);
 }
+
+/// Whether the bubble blur is a share of a cell on screen (grows as you zoom in) or constant.
+const canvas_frost_follows_zoom = false;
+/// With a constant blur: screen px (natural) of radius per step of the `bubble_blur` setting —
+/// the default 12 is a 24px blur.
+const canvas_frost_px_per_setting: f32 = 2;
 
 /// One bubble row's frost capture — its own backdrop, so a row's capture outlives the frame and
 /// can be held while the view moves (`heldCanvasFrost`).
@@ -1153,6 +1163,10 @@ fn canvasViewMoved(file: *pixi.internal.File) bool {
     const prev = dvui.dataGet(null, id, "_frost_view", View);
     dvui.dataSet(null, id, "_frost_view", now);
     const was = prev orelse return false;
+    // A held capture scales with the art, and so does its blur — right when the blur follows
+    // the zoom, but with a constant one it would swell while zooming and snap back after.
+    // Then only a pan holds.
+    if (!canvas_frost_follows_zoom and was.s != now.s) return false;
     return was.s != now.s or was.o.x != now.o.x or was.o.y != now.o.y;
 }
 
