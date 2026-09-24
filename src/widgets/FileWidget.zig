@@ -1158,6 +1158,9 @@ const canvas_frost_radius_max: f32 = 256;
 /// frosts share it, so the bubbles and the cells under them match. The setting scales the blur
 /// rather than capping it — as a cap, every value past where the cell's own share came out did
 /// nothing.
+/// How much of the next finer pyramid level the bubble frost blends in (`BlurBackdrop.detail`).
+const canvas_frost_detail: f32 = 0.35;
+
 fn canvasFrostRadius(file: *pixi.internal.File) f32 {
     const setting = runtime.state().settings.bubble_blur.get();
     if (setting <= 0) return 0;
@@ -1177,9 +1180,13 @@ fn captureCanvasFrost(file: *pixi.internal.File, comptime key: []const u8, rect:
     dvui.dataSetDeinitFunction(null, id, "_frost", &BlurBackdrop.releaseTexture);
     backdrop.mode = .readback;
     backdrop.radius_px = canvasFrostRadius(file);
-    // The canvas moves under it (zoom, pan): the full-size blur holds still where the pyramid's
-    // screen-fixed levels would shimmer. A no-op against an SDK without it.
-    if (@hasField(BlurBackdrop, "stable")) backdrop.stable = true;
+    // The pyramid, as every other frost in the app: its upsample back through each level is
+    // smooth, where the full-size blur (`stable`) blurs at a fraction of the size and is then
+    // stretched over the bubble — soft pixel art came out blocky. A little of the finer level
+    // blended in (`detail`) keeps the art's shapes readable through the glass. No-ops against an
+    // SDK without them.
+    if (@hasField(BlurBackdrop, "stable")) backdrop.stable = false;
+    if (@hasField(BlurBackdrop, "detail")) backdrop.detail = canvas_frost_detail;
     // Re-read every frame: the art under the bubbles changes as it is drawn.
     backdrop.init(dvui.windowRectScale().rectFromPhysical(rect), .{ rect, dvui.currentWindow().frame_time_ns });
     backdrop.deinit();
