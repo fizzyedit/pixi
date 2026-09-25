@@ -460,15 +460,10 @@ pub fn drawLayers(tools: *Tools) !?dvui.Rect.Physical {
         file.editor.layer_drag_preview_removed = null;
         file.editor.layer_drag_preview_insert_before = null;
 
-        // A scroll area reports no height of its own, and the layers/palettes split fits the
-        // layers half to what this pane reports — so it fitted to nothing and shut. Ask for the
-        // list's height as of last frame; the split's cap (`fit.max`) still bounds it, and past
-        // that the list scrolls.
         var scroll_area = dvui.scrollArea(@src(), .{ .scroll_info = &file.editor.layers_scroll_info }, .{
             .expand = .both,
             .background = false,
             .corners = .round(1000),
-            .min_size_content = .{ .h = file.editor.layers_scroll_info.virtual_size.h },
         });
 
         defer scroll_area.deinit();
