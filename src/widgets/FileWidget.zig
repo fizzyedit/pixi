@@ -1477,7 +1477,9 @@ pub fn drawSpriteBubbles(self: *FileWidget) void {
                                 .file = file,
                                 .rs = .{ .r = file.editor.canvas.rect, .s = file.editor.canvas.scale },
                             }) catch {};
-                            // And the selection boxes over that, as the cells have them.
+                            // Then the grid and the selection boxes over it, in the canvas's own
+                            // order — the art redrawn here would otherwise cover them.
+                            self.drawGrid(file.columns, file.rows, file.editor.canvas.dataFromScreenRect(file.editor.canvas.rect));
                             self.drawSelectedSpriteBoxes();
                         }
                     }
@@ -5158,21 +5160,19 @@ pub fn drawLayers(self: *FileWidget) void {
         }
     }
 
-    // Draw the grid lines for the canvas as a single batched draw call.
-    {
-        const grid_color = dvui.themeGet().color(.control, .fill);
-        const c_scale = self.init_options.file.editor.canvas.scale;
-        const grid_thickness = std.math.clamp(dvui.currentWindow().natural_scale * c_scale, 0, dvui.currentWindow().natural_scale);
-        const grid_y0 = canvas_rect.y;
-        const grid_y1 = canvas_rect.y + canvas_rect.h;
-        const grid_x0 = canvas_rect.x;
-        const grid_x1 = canvas_rect.x + canvas_rect.w;
-        const vertical_inner = @min(columns, file.columns);
-
-        drawBatchedGridLines(self, file, columns, rows, grid_color, grid_thickness, grid_x0, grid_x1, grid_y0, grid_y1, vertical_inner);
-    }
+    self.drawGrid(columns, rows, canvas_rect);
 
     self.drawSelectedSpriteBoxes();
+}
+
+/// The grid lines for the canvas as a single batched draw call, over `canvas_rect` (data).
+fn drawGrid(self: *FileWidget, columns: usize, rows: usize, canvas_rect: dvui.Rect) void {
+    const file = self.init_options.file;
+    const grid_color = dvui.themeGet().color(.control, .fill);
+    const c_scale = file.editor.canvas.scale;
+    const grid_thickness = std.math.clamp(dvui.currentWindow().natural_scale * c_scale, 0, dvui.currentWindow().natural_scale);
+    const vertical_inner = @min(columns, file.columns);
+    drawBatchedGridLines(self, file, columns, rows, grid_color, grid_thickness, canvas_rect.x, canvas_rect.x + canvas_rect.w, canvas_rect.y, canvas_rect.y + canvas_rect.h, vertical_inner);
 }
 
 /// The selected sprites' boxes (and, in the sprites pane, their origins), with the layers:
