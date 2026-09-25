@@ -381,7 +381,7 @@ fn settingsHeader(text: []const u8) void {
         .font = dvui.Font.theme(.heading).larger(-1.0),
         .padding = dvui.Rect.all(0),
         .margin = dvui.Rect.rect(2, 0, 2, 4),
-        .id_extra = std.hash.Wyhash.hash(0, text),
+        .id_extra = @truncate(std.hash.Wyhash.hash(0, text)),
     });
 }
 
