@@ -1039,6 +1039,9 @@ const BubbleAccs = struct {
     /// Bubble interiors textured from the frost (UVs over `bubble_frost_rect`).
     frost: TriAcc,
     outline: TriAcc,
+    /// Where the glass's feathered foot lies over the cells below (physical, the union of the
+    /// row's): the cells' art is drawn back over it (`drawSpriteBubbles`).
+    feather: ?dvui.Rect.Physical = null,
 
     fn init(alloc: std.mem.Allocator) BubbleAccs {
         return .{
@@ -1060,6 +1063,7 @@ const BubbleAccs = struct {
         self.bg.clear();
         self.frost.clear();
         self.outline.clear();
+        self.feather = null;
     }
 };
 
@@ -1463,6 +1467,17 @@ pub fn drawSpriteBubbles(self: *FileWidget) void {
                         feather_clip.h += bubbleFeather(file);
                         _ = dvui.clip(feather_clip);
                         accs.frost.render(ft);
+                        // The cells' art back over the foot: frost softens the empty checker
+                        // below the seam, never the art itself — least of all while it is drawn.
+                        // The canvas's own renderer, so a stroke in progress is there too.
+                        if (accs.feather) |f| {
+                            dvui.clipSet(prev_clip);
+                            _ = dvui.clip(f);
+                            pixi.render.renderLayers(.{
+                                .file = file,
+                                .rs = .{ .r = file.editor.canvas.rect, .s = file.editor.canvas.scale },
+                            }) catch {};
+                        }
                     }
                     dvui.clipSet(prev_clip);
                     _ = dvui.clip(row_clip_screen);
@@ -1886,6 +1901,8 @@ pub fn drawSpriteBubble(
                             .uv = .{ (pt.x - fr.x) / fr.w, (pt.y - fr.y) / fr.h },
                         };
                         a.frost.appendQuad(q);
+                        const strip: dvui.Rect.Physical = .{ .x = base.x, .y = base.y, .w = base.w, .h = feather };
+                        a.feather = if (a.feather) |f| f.unionWith(strip) else strip;
                     }
                 };
             } else {
