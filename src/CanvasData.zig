@@ -273,8 +273,52 @@ fn drawRulerContent(
     // Captured during iteration: the highlighted target slot (drop location) screen rect.
     var target_rs_screen: ?dvui.RectScale = null;
 
-    var index: usize = 0;
-    while (index < count) : (index += 1) {
+    // Only the columns (rows) in view get their cell, box and label; the runs either side are a
+    // spacer each, of their cells' size. Every one of them, each frame, was most of the rulers'
+    // cost on a big sheet, nearly all of it off screen. While one is dragged they all are built,
+    // as the reorder needs them.
+    const cell_len: f32 = switch (orientation) {
+        .horizontal => cell_min_size.w,
+        .vertical => cell_min_size.h,
+    };
+    var first: usize = 0;
+    var last: usize = count;
+    if (reorder.drag_point == null and self.columns_drag_index == null and self.rows_drag_index == null and cell_len > 0) {
+        const vis = @constCast(&file.editor.canvas).dataFromScreenRect(file.editor.canvas.rect);
+        const lo = switch (orientation) {
+            .horizontal => vis.x,
+            .vertical => vis.y,
+        };
+        const hi = lo + switch (orientation) {
+            .horizontal => vis.w,
+            .vertical => vis.h,
+        };
+        first = @min(count, @as(usize, @intFromFloat(@max(0, @floor(lo / cell_len) - 1))));
+        last = @min(count, @as(usize, @intFromFloat(@max(0, @ceil(hi / cell_len) + 1))));
+        if (last < first) last = first;
+    }
+    const spacer = struct {
+        fn at(n: usize, len: f32, o: RulerOrientation, expand: dvui.Options.Expand, id: usize) void {
+            if (n == 0) return;
+            const run = len * @as(f32, @floatFromInt(n));
+            var b = dvui.box(@src(), .{}, .{
+                .expand = expand,
+                .background = false,
+                .margin = dvui.Rect.all(0),
+                .padding = dvui.Rect.all(0),
+                .min_size_content = switch (o) {
+                    .horizontal => .{ .w = run, .h = 1 },
+                    .vertical => .{ .w = 1, .h = run },
+                },
+                .id_extra = id,
+            });
+            b.deinit();
+        }
+    };
+    spacer.at(first, cell_len, orientation, reorder_expand, 0);
+
+    var index: usize = first;
+    while (index < last) : (index += 1) {
         var reorderable = reorder.reorderable(@src(), .{
             .mode = reorder_mode,
             .clamp_to_edges = true,
@@ -419,6 +463,7 @@ fn drawRulerContent(
             }
         }
     }
+    spacer.at(count - last, cell_len, orientation, reorder_expand, 1);
 
     const final_slot_id = switch (orientation) {
         .horizontal => file.columns,

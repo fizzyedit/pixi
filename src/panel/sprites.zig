@@ -495,6 +495,8 @@ pub fn draw(self: *Sprites) !void {
             } else {
                 self.water.reanchor(center_i - self.prev_center_i);
             }
+            const prof_water = pixi.profile.section("water");
+            defer prof_water.end();
             self.water.step(scroll_dt);
 
             if (water_scroll_stir) {
@@ -570,6 +572,7 @@ pub fn draw(self: *Sprites) !void {
         var draws: [max_refl_ripple_slots]CardDraw = undefined;
         var draw_n: usize = 0;
         // Pass 1 — layout, then inject this card's motion into the shared water.
+        const prof_layout = pixi.profile.section("card layout");
         for (items[0..n]) |it| {
             const off = it.off;
 
@@ -691,8 +694,12 @@ pub fn draw(self: *Sprites) !void {
 
         const max_fly_off_draw = parent.h + item_h;
 
+        prof_layout.end();
+
         // Pass 2 — draw cards; reflections sample the shared water surface across
         // each card's slot span, so adjacent reflections distort continuously.
+        const prof_cards = pixi.profile.section("cards & reflections");
+        defer prof_cards.end();
         for (draws[0..draw_n]) |cd| {
             // Faded-out edge cards are invisible — skip them so we don't build and
             // render their reflection meshes (the per-card hot path) for nothing.

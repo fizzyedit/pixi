@@ -21,6 +21,9 @@ file_id: u64,
 layer_id: u64,
 source: dvui.ImageSource,
 ortho: bool = true,
+/// What `target_texture` was last rendered from (`FileWidget.processTransform`): re-rendered
+/// only when this changes, not every frame the transform is up.
+rendered_key: u64 = 0,
 
 pub fn point(self: *Transform, transform_point: TransformPoint) *dvui.Point {
     return &self.data_points[@intFromEnum(transform_point)];

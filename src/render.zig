@@ -22,6 +22,10 @@ pub const RenderFileOptions = struct {
     /// background. Leave null for normal (canvas) rendering.
     quad: ?[4]dvui.Point.Physical = null,
     quad_subdivisions: usize = 8,
+    /// Draw the selection and temporary layers (the selection's tint, a stroke in progress, the
+    /// brush preview) over the art. Off for the bubble frost's copy of the art: the brush preview
+    /// moves with every mouse move, and each move re-drew and re-blurred the frost.
+    overlays: bool = true,
 };
 
 /// Backends without `textureUpdateSubRect` recreate the GPU texture on upload (dvui's fallback);
@@ -805,7 +809,7 @@ pub fn renderLayers(init_opts: RenderFileOptions) !void {
         dimmed_triangles = dt;
     }
 
-    defer {
+    defer if (init_opts.overlays) {
         if (dvui.textureGetCached(init_opts.file.editor.selection_layer.source.hash()) == null)
             perf.draw_texture_creates += 1;
         dvui.renderTriangles(triangles, init_opts.file.editor.selection_layer.source.getTexture() catch null) catch {
@@ -826,7 +830,7 @@ pub fn renderLayers(init_opts: RenderFileOptions) !void {
                 };
             }
         }
-    }
+    };
 
     // Active stroke or transform: split composites (below + active + [transform] + above).
     if (splitCompositeEligible(init_opts, min_layer_index, needs_dimmed)) {

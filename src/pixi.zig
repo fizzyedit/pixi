@@ -13,6 +13,18 @@ pub const math = core.math;
 pub const image = core.image;
 pub const fs = core.fs;
 pub const perf = core.perf;
+/// Sections in fizzy's frame profiler (`core.profile`): `const s = pixi.profile.section("x");
+/// defer s.end();`. Nothing, against an SDK from before it.
+pub const profile = struct {
+    const has = @hasDecl(core, "profile");
+    pub const Scope = if (has) core.profile.Scope else struct {
+        pub fn end(_: @This()) void {}
+    };
+    pub fn section(name: []const u8) Scope {
+        if (comptime has) return core.profile.section(name);
+        return .{};
+    }
+};
 pub const Fling = core.Fling;
 pub const water_surface = core.water_surface;
 pub const core_sprite = core.Sprite;

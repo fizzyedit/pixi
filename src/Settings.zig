@@ -30,8 +30,8 @@ scrolling_cards: settings.Value(bool, .{
 
 bubble_blur: settings.Value(f32, .{
     .description = "How much the animation bubbles and the cells under them blur what is " ++
-        "behind them, as a share of a cell's size: it grows as you zoom in and eases off as " ++
-        "you zoom out so the grid still reads. 0 turns it off.",
+        "behind them. It stays the same on screen as you zoom in, and eases off as you zoom " ++
+        "out so the grid still reads. 0 turns it off.",
     .min = 0,
     .max = 20,
     .step = 0.5,
