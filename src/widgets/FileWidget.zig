@@ -79,6 +79,9 @@ cell_frost_tile: ?dvui.Texture = null,
 /// The canvas moved (zoom, pan) since last frame: the bubble frost holds its last capture,
 /// carried with the art, rather than re-reading it (`heldCanvasFrost`).
 frost_view_moving: bool = false,
+/// The cell under the pointer while it is being drawn in (`peek`), whose blur clears — see
+/// `peekCellFrost`. Null otherwise.
+peek_cell: ?usize = null,
 grid_reorder_point: ?dvui.Point = null,
 cell_reorder_point: ?dvui.Point = null,
 cell_reorder_mode: SpriteReorderMode = .replace,
@@ -1073,7 +1076,7 @@ const BubbleAccs = struct {
 /// only as far as the glass's feathered foot reaches (`bubbleFeather`) and the blur beyond it.
 /// Within the viewport and on whole pixels (the rect the capture rounds to). Null — no frost for the row — with nothing to cover, the blur off, or
 /// the frame queued rather than drawn (a readback then would see none of the canvas).
-fn canvasFrostRect(file: *pixi.internal.File, weights: []const BubbleCell, row: usize) ?dvui.Rect.Physical {
+fn canvasFrostRect(file: *pixi.internal.File, weights: []const BubbleCell, row: usize, peek_cell: ?usize) ?dvui.Rect.Physical {
     const radius = canvasFrostRadius(file);
     if (radius < 1) return null;
     if (!dvui.currentWindow().render_target.rendering) return null;
@@ -1082,14 +1085,16 @@ fn canvasFrostRect(file: *pixi.internal.File, weights: []const BubbleCell, row: 
     const headroom: f32 = @floatFromInt(@max(file.row_height, file.column_width));
     const rs = file.editor.canvas.screen_rect_scale;
     var covered: ?dvui.Rect.Physical = null;
-    for (weights) |c| {
+    // The cell being drawn in has no blur of its own, but its bubble is still glass.
+    const peek: [1]BubbleCell = .{.{ .sprite_index = peek_cell orelse n, .weight = 1 }};
+    for ([2][]const BubbleCell{ weights, &peek }) |list| for (list) |c| {
         if (c.sprite_index >= n or c.sprite_index / file.columns != row) continue;
         var above = file.spriteRect(c.sprite_index);
         above.y -= headroom;
         above.h = headroom;
         const pr = rs.rectToPhysical(above);
         covered = if (covered) |u| u.unionWith(pr) else pr;
-    }
+    };
     const cov = covered orelse return null;
     const margin = radius * 2;
     // Down past the seam by the feather (`bubbleFeather`) and the blur's reach beyond it, so
@@ -1136,12 +1141,16 @@ const bubble_feather_share: f32 = 0.15;
 fn canvasFrostRadius(file: *pixi.internal.File) f32 {
     const setting = runtime.state().settings.bubble_blur.get();
     if (setting <= 0) return 0;
-    if (!canvas_frost_follows_zoom) {
-        // Trying a constant blur: the same on screen at any zoom, like the dialogs' frost.
-        return std.math.clamp(setting * canvas_frost_px_per_setting * dvui.windowNaturalScale(), 0, canvas_frost_radius_max);
-    }
     const cell_data: f32 = @floatFromInt(@min(file.column_width, file.row_height));
     const cell_px = cell_data * file.editor.canvas.screen_rect_scale.s;
+    if (!canvas_frost_follows_zoom) {
+        // Constant on screen, like the dialogs' frost — but never more than a share of a cell:
+        // zoomed out, a fixed radius spans whole cells, and the glass became the cell above's
+        // average colour, art and all, unlike the cell below it.
+        const constant = setting * canvas_frost_px_per_setting * dvui.windowNaturalScale();
+        // The cap is the zoom-following blur at the same setting.
+        return std.math.clamp(@min(constant, cell_px * setting / canvas_frost_setting_per_cell), 0, canvas_frost_radius_max);
+    }
     return std.math.clamp(cell_px * setting / canvas_frost_setting_per_cell, 0, canvas_frost_radius_max);
 }
 
@@ -1151,12 +1160,226 @@ const canvas_frost_follows_zoom = false;
 /// the default 12 is a 24px blur.
 const canvas_frost_px_per_setting: f32 = 2;
 
-/// One bubble row's frost capture — its own backdrop, so a row's capture outlives the frame and
-/// can be held while the view moves (`heldCanvasFrost`).
-fn canvasFrostRowId(file: *pixi.internal.File, row: usize) dvui.Id {
-    var buf: [32]u8 = undefined;
-    const key = std.fmt.bufPrint(&buf, "bubble_frost:{d}", .{row}) catch "bubble_frost";
-    return file.editor.canvas.id.update(key);
+/// The bubbles' frost capture — one backdrop for every row, so the capture outlives the frame
+/// and can be held while the view moves (`heldCanvasFrost`).
+fn canvasFrostId(file: *pixi.internal.File) dvui.Id {
+    return file.editor.canvas.id.update("bubble_frost");
+}
+
+/// The bubbles' frost, blurred from the art itself rather than from the screen.
+///
+/// A capture of the screen reads the canvas as drawn — art pixels scaled with hard edges, each
+/// covering three screen pixels here and four there, the split sliding every frame of a zoom — and
+/// its blur passed that on as shimmer, worst for light art on a dark ground. Here the checkerboard
+/// and layers are drawn into a texture of their own on the art's grid: a power of two texels per
+/// art pixel (`k`), its origin on a whole `art_frost_block` of the art. While the view zooms that
+/// texture does not change — only the scale it is drawn at, and the blur's radius in its texels —
+/// so there is nothing to shimmer. Grid lines, selection boxes and other bubbles are not in it.
+/// `acc`'s frost shapes again, from `tex` (same UVs) at `share` of their opacity, over the frost.
+fn renderFrostDetail(acc: *const TriAcc, tex: dvui.Texture, share: f32) void {
+    if (acc.vtx.items.len == 0 or share <= 0) return;
+    const vtx = dvui.currentWindow().arena().dupe(dvui.Vertex, acc.vtx.items) catch return;
+    for (vtx) |*v| v.col = pmaScale(v.col, share);
+    var copy = acc.*;
+    copy.vtx = .{ .items = vtx, .capacity = vtx.len };
+    if (dvui.Backend.support_texture_blend) dvui.currentWindow().backend.textureBlend(tex, .over) catch {};
+    copy.render(tex);
+}
+
+const ArtFrost = struct {
+    target: ?dvui.Texture.Target = null,
+    blurred: ?dvui.Texture = null,
+    /// A lighter blur of the same source, mixed over `blurred` by `canvas_frost_detail` so the
+    /// art's shapes read through the glass (the screen frost's `BlurBackdrop.detail`).
+    detail: ?dvui.Texture = null,
+    /// What `target` holds (region, `k`, the art's state) and what `blurred` was made at.
+    src_key: u64 = 0,
+    blur_key: u64 = 0,
+    region: dvui.Rect = .{},
+
+    fn release(ptr: *anyopaque) void {
+        const self: *ArtFrost = @ptrCast(@alignCast(ptr));
+        if (self.target) |t| t.destroyLater();
+        if (self.blurred) |b| dvui.textureDestroyLater(b);
+        if (self.detail) |d| dvui.textureDestroyLater(d);
+        self.* = .{};
+    }
+};
+
+/// The art-space frost's alignment, in art pixels: its region grows and shrinks in whole blocks,
+/// so the texels under a given art pixel never shift.
+const art_frost_block: f32 = 32;
+/// Blur the bubbles' frost from the art (`artCanvasFrost`) rather than a capture of the screen.
+const use_art_frost = true;
+/// The blur's radius the texel size is chosen for: texels per art pixel is the power of two that
+/// puts the radius nearest this many texels.
+const art_frost_radius_texels: f32 = 6;
+/// The largest source texture, per side.
+const art_frost_max_texels: f32 = 2048;
+/// The detail blur's radius, as a share of the frost's.
+const art_frost_detail_radius: f32 = 0.35;
+
+/// The art's state the frost source is drawn from: edits, a stroke in progress, the checker.
+fn artFrostSignature(file: *pixi.internal.File) u64 {
+    var h = std.hash.Wyhash.init(0);
+    const history = &file.history;
+    h.update(std.mem.asBytes(&.{ history.bookmark, history.undo_stack.items.len, history.redo_stack.items.len }));
+    h.update(std.mem.asBytes(&.{ file.editor.layer_composite_generation, file.editor.temp_layer_generation, file.editor.selection_layer.source.hash() }));
+    h.update(std.mem.asBytes(&.{ runtime.state().checker_color_even, runtime.state().checker_color_odd, dvui.themeGet().color(.content, .fill) }));
+    return h.final();
+}
+
+/// The frost for the glass over `want` (physical): the blurred art texture and the screen rect it
+/// maps onto. Null with the blur off, nothing to draw into, or a frame queued rather than drawn.
+fn artCanvasFrost(file: *pixi.internal.File, want: dvui.Rect.Physical) ?struct { rect: dvui.Rect.Physical, tex: dvui.Texture, detail: ?dvui.Texture } {
+    const radius = canvasFrostRadius(file);
+    if (radius < 1) return null;
+    const cw = dvui.currentWindow();
+    if (!cw.render_target.rendering) return null;
+    const canvas = &file.editor.canvas;
+    const scale = canvas.screen_rect_scale.s;
+    if (scale <= 0) return null;
+
+    // The region, in whole blocks of the art, within the file.
+    const d = canvas.dataFromScreenRect(want);
+    const fw: f32 = @floatFromInt(file.width());
+    const fh: f32 = @floatFromInt(file.height());
+    const b = art_frost_block;
+    const x0 = std.math.clamp(@floor(d.x / b) * b, 0, fw);
+    const y0 = std.math.clamp(@floor(d.y / b) * b, 0, fh);
+    const x1 = std.math.clamp(@ceil((d.x + d.w) / b) * b, 0, fw);
+    const y1 = std.math.clamp(@ceil((d.y + d.h) / b) * b, 0, fh);
+    if (x1 - x0 < 1 or y1 - y0 < 1) return null;
+    const region: dvui.Rect = .{ .x = x0, .y = y0, .w = x1 - x0, .h = y1 - y0 };
+
+    // Texels per art pixel: a power of two, so the art's pixels land on whole texels (or whole
+    // groups of them) and never between.
+    var k = std.math.pow(f32, 2, @round(std.math.log2(art_frost_radius_texels * scale / radius)));
+    k = std.math.clamp(k, 1.0 / 16.0, 16);
+    while (@max(region.w, region.h) * k > art_frost_max_texels and k > 1.0 / 64.0) k /= 2;
+    const tw: u32 = @max(1, @as(u32, @intFromFloat(@ceil(region.w * k))));
+    const th: u32 = @max(1, @as(u32, @intFromFloat(@ceil(region.h * k))));
+
+    const id = canvas.id.update("art_frost");
+    const af = dvui.dataGetPtrDefault(null, id, "_af", ArtFrost, .{});
+    dvui.dataSetDeinitFunction(null, id, "_af", &ArtFrost.release);
+
+    var kh = std.hash.Wyhash.init(0);
+    kh.update(std.mem.asBytes(&.{ region.x, region.y, region.w, region.h, k }));
+    kh.update(std.mem.asBytes(&artFrostSignature(file)));
+    // The selection boxes are stroked at a width on screen: with any to draw, the texture follows
+    // the zoom (their width in texels), and the selection itself.
+    const boxes = runtime.state().tools.current == .pointer and file.editor.transform == null and file.editor.selected_sprites.count() > 0;
+    if (boxes) {
+        const sel = file.editor.selected_sprites.unmanaged;
+        kh.update(std.mem.sliceAsBytes(sel.masks[0 .. (sel.bit_length + @bitSizeOf(usize) - 1) / @bitSizeOf(usize)]));
+        kh.update(std.mem.asBytes(&.{ k / scale, dvui.themeGet().color(.highlight, .fill) }));
+    }
+    const src_key = kh.final();
+
+    if (af.target == null or af.src_key != src_key) {
+        if (af.target) |t| if (t.width != tw or t.height != th) {
+            t.destroyLater();
+            af.target = null;
+        };
+        if (af.target == null) af.target = dvui.Texture.Target.create(.{ .width = tw, .height = th, .interpolation = .linear }) catch return null;
+        const target = af.target.?;
+        target.clear();
+        const prev_rt = dvui.renderTarget(.{ .texture = target, .offset = .{} });
+        defer _ = dvui.renderTarget(prev_rt);
+        const prev_clip = dvui.clipGet();
+        defer dvui.clipSet(prev_clip);
+        const full: dvui.Rect.Physical = .{ .w = @floatFromInt(tw), .h = @floatFromInt(th) };
+        dvui.clipSet(full);
+        const prev_alpha = dvui.alpha(1);
+        defer dvui.alphaSet(prev_alpha);
+
+        // Art pixel → texel.
+        const S = struct {
+            fn at(r: dvui.Rect, reg: dvui.Rect, kk: f32) dvui.Rect.Physical {
+                return .{ .x = (r.x - reg.x) * kk, .y = (r.y - reg.y) * kk, .w = r.w * kk, .h = r.h * kk };
+            }
+        };
+        // What the canvas draws under the art: the content fill, and each cell's checker.
+        full.fill(.{}, .{ .color = .{ .color = dvui.themeGet().color(.content, .fill) }, .fade = 0 });
+        if (file.checkerboardTileTexture()) |tile| {
+            const n = file.spriteCount();
+            const cols = file.columns;
+            const cw_f: f32 = @floatFromInt(file.column_width);
+            const ch_f: f32 = @floatFromInt(file.row_height);
+            if (cols > 0 and cw_f > 0 and ch_f > 0) {
+                const c0: usize = @intFromFloat(@floor(region.x / cw_f));
+                const c1: usize = @intFromFloat(@ceil((region.x + region.w) / cw_f));
+                const r0: usize = @intFromFloat(@floor(region.y / ch_f));
+                const r1: usize = @intFromFloat(@ceil((region.y + region.h) / ch_f));
+                var r = r0;
+                while (r < r1) : (r += 1) {
+                    var c = c0;
+                    while (c < @min(c1, cols)) : (c += 1) {
+                        const i = r * cols + c;
+                        if (i >= n) continue;
+                        dvui.renderTexture(tile, .{ .r = S.at(file.spriteRect(i), region, k) }, .{
+                            .colormod = checkerboardTintAtSpriteCellCenter(file, i),
+                        }) catch {};
+                    }
+                }
+            }
+        }
+        // The layers, the stroke in progress and the selection's pixels, as the canvas has them.
+        pixi.render.renderLayers(.{
+            .file = file,
+            .rs = .{ .r = S.at(.{ .w = fw, .h = fh }, region, k), .s = k },
+        }) catch {};
+        // The selection boxes over them, as the canvas strokes them (`drawSelectedSpriteBoxes`):
+        // inset and wide by the same screen pixels, here in texels.
+        if (boxes) {
+            const px = k / scale;
+            const w = 1.5 * cw.natural_scale * px;
+            const color = dvui.themeGet().color(.highlight, .fill);
+            var iter = file.editor.selected_sprites.iterator(.{ .kind = .set, .direction = .forward });
+            while (iter.next()) |i| {
+                const sr = file.spriteRect(i);
+                if (sr.intersect(region).empty()) continue;
+                const r = S.at(sr, region, k);
+                r.inset(.all(w)).stroke(dvui.CornerRect.Physical.round(@min(r.w, r.h) / 8), .{ .thickness = w, .color = .{ .color = color }, .closed = true });
+            }
+        }
+
+        af.src_key = src_key;
+        af.region = region;
+        af.blur_key = 0;
+    }
+
+    // The blur, in the source's texels: the constant on-screen radius, over the texel's size on
+    // screen. Redone when that changes (a zoom) or the source does.
+    const radius_texels = radius * k / scale;
+    var bh = std.hash.Wyhash.init(src_key);
+    bh.update(std.mem.asBytes(&radius_texels));
+    const blur_key = bh.final();
+    if (af.blurred == null or af.blur_key != blur_key) {
+        const src_tex = dvui.Texture.fromTargetTemp(af.target.?) catch return null;
+        const out = pixi.core.widgets.BlurBackdrop.blurred(src_tex, radius_texels) orelse return null;
+        if (af.blurred) |old| dvui.textureDestroyLater(old);
+        af.blurred = out;
+        if (af.detail) |old| dvui.textureDestroyLater(old);
+        af.detail = pixi.core.widgets.BlurBackdrop.blurred(src_tex, radius_texels * art_frost_detail_radius);
+        af.blur_key = blur_key;
+    }
+    return .{ .rect = canvas.screenFromDataRect(af.region), .tex = af.blurred.?, .detail = af.detail };
+}
+
+/// Every bubble row's frost rect in `first_row..last_row` (`canvasFrostRect`), as one: the rows
+/// share a single capture a frame. A capture is a flush of the frame drawn so far and a run of
+/// render-target switches whatever its size, so one over the lot costs a row's, where a capture
+/// per row cost that once for every row with a bubble open.
+fn canvasFrostUnion(file: *pixi.internal.File, weights: []const BubbleCell, first_row: usize, last_row: usize, peek_cell: ?usize) ?dvui.Rect.Physical {
+    var all: ?dvui.Rect.Physical = null;
+    var row = first_row;
+    while (row < last_row) : (row += 1) {
+        const r = canvasFrostRect(file, weights, row, peek_cell) orelse continue;
+        all = if (all) |u| u.unionWith(r) else r;
+    }
+    return all;
 }
 
 /// Whether the canvas view (zoom or pan) changed since last frame. Once a frame.
@@ -1195,11 +1418,47 @@ fn heldCanvasFrost(file: *pixi.internal.File, id: dvui.Id, want: dvui.Rect.Physi
     return .{ .rect = rect, .tex = tex };
 }
 
-/// Blur what the canvas shows under `rect` right now, at `canvasFrostRadius` — one capture per
-/// `key` a frame, however many shapes then sample it. The texture keeps the backdrop's copy
-/// blend: like a frosted dialog, it replaces what it covers rather than letting the sharp art
-/// through.
-fn captureCanvasFrost(file: *pixi.internal.File, id: dvui.Id, rect: dvui.Rect.Physical) ?dvui.Texture {
+/// Everything the bubbles' frost sees that can change without its rect moving: the view, the art
+/// (every edit is a history entry; a stroke in progress, the temp layer), the selection and its
+/// boxes, which cells soften under the bubbles, the checker's colours. The frost is re-read only
+/// when this changes (`captureCanvasFrost`) — hovering over still art, the bubbles springing open,
+/// cost nothing but the draw of the last capture.
+///
+/// Anything under the bubbles that is not in here would leave the glass stale, so the frost is
+/// also re-read on a slow clock (`canvas_frost_refresh_ns`) as a floor: a missed change lags by
+/// at most that, never for good.
+fn canvasFrostSignature(file: *pixi.internal.File, weights: []const BubbleCell) u64 {
+    var h = std.hash.Wyhash.init(0);
+    const canvas = &file.editor.canvas;
+    h.update(std.mem.asBytes(&canvas.screen_rect_scale.s));
+    h.update(std.mem.asBytes(&canvas.screenFromDataPoint(.{})));
+    h.update(std.mem.asBytes(&canvasFrostRadius(file)));
+    const history = &file.history;
+    h.update(std.mem.asBytes(&.{ history.bookmark, history.undo_stack.items.len, history.redo_stack.items.len, file.animations.len }));
+    h.update(std.mem.asBytes(&.{ file.editor.layer_composite_generation, file.editor.temp_layer_generation, file.editor.selection_layer.source.hash() }));
+    const sel = file.editor.selected_sprites.unmanaged;
+    h.update(std.mem.sliceAsBytes(sel.masks[0 .. (sel.bit_length + @bitSizeOf(usize) - 1) / @bitSizeOf(usize)]));
+    h.update(std.mem.asBytes(&plugin.sidebarShows(runtime.state().host, plugin.view_sprites)));
+    // Which cells soften under the bubbles, not how far: their amounts follow the bubbles' size,
+    // which follows the pointer, so they move every frame it does — and under a blur this wide a
+    // softened checker and a sharp one come out the same mean tone. The slow floor catches the rest.
+    for (weights) |c| h.update(std.mem.asBytes(&c.sprite_index));
+    const effect = runtime.state().settings.transparency_effect.get();
+    h.update(std.mem.asBytes(&effect));
+    if (effect == .rainbow) h.update(std.mem.asBytes(&(dvui.dataGet(null, canvas.id, "checkerboard_mouse_uv", dvui.Point) orelse dvui.Point{})));
+    h.update(std.mem.asBytes(&.{ runtime.state().checker_color_even, runtime.state().checker_color_odd, dvui.themeGet().color(.content, .fill) }));
+    h.update(std.mem.asBytes(&@divTrunc(dvui.currentWindow().frame_time_ns, canvas_frost_refresh_ns)));
+    return h.final();
+}
+
+/// The floor under `canvasFrostSignature`: the frost is re-read at least this often.
+const canvas_frost_refresh_ns: i128 = 500 * std.time.ns_per_ms;
+
+/// Blur what the canvas shows under `rect`, at `canvasFrostRadius` — one capture per `id` a
+/// frame, however many shapes then sample it, and none while `sig` (`canvasFrostSignature`) and
+/// the rect hold: the last one is still right. The texture keeps the backdrop's copy blend: like
+/// a frosted dialog, it replaces what it covers rather than letting the sharp art through.
+fn captureCanvasFrost(file: *pixi.internal.File, id: dvui.Id, rect: dvui.Rect.Physical, sig: u64) ?dvui.Texture {
     const BlurBackdrop = pixi.core.widgets.BlurBackdrop;
     // Where on the art this capture sits, for carrying it while the view moves.
     dvui.dataSet(null, id, "_held", file.editor.canvas.dataFromScreenRect(rect));
@@ -1214,8 +1473,7 @@ fn captureCanvasFrost(file: *pixi.internal.File, id: dvui.Id, rect: dvui.Rect.Ph
     // SDK without them.
     if (@hasField(BlurBackdrop, "stable")) backdrop.stable = false;
     if (@hasField(BlurBackdrop, "detail")) backdrop.detail = canvas_frost_detail;
-    // Re-read every frame: the art under the bubbles changes as it is drawn.
-    backdrop.init(dvui.windowRectScale().rectFromPhysical(rect), .{ rect, dvui.currentWindow().frame_time_ns });
+    backdrop.init(dvui.windowRectScale().rectFromPhysical(rect), .{ rect, sig });
     backdrop.deinit();
     return backdrop.small;
 }
@@ -1315,6 +1573,10 @@ pub fn drawSpriteBubbles(self: *FileWidget) void {
         .selection_nonempty = selection_nonempty,
         .tool_not_pointer = tool_not_pointer,
     };
+    self.peek_cell = if (pan_shared.peek)
+        self.init_options.file.spriteIndex(self.init_options.file.editor.canvas.dataFromScreenPoint(cw.mouse_pt))
+    else
+        null;
 
     const visible_data = self.init_options.file.editor.canvas.dataFromScreenRect(self.init_options.file.editor.canvas.rect);
     const file = self.init_options.file;
@@ -1349,13 +1611,37 @@ pub fn drawSpriteBubbles(self: *FileWidget) void {
     const checkerboard_tex = file.checkerboardTileTexture();
     var accs = BubbleAccs.init(dvui.currentWindow().arena());
 
-    // The frost is taken per bubble row, just before that row draws (`canvasFrostRect`): its
-    // glass sees what is behind it as it is by then — layers, selection boxes, rows above.
+    // The frost is taken once for every bubble row (`canvasFrostUnion`), before the first row's
+    // bubbles draw: its glass sees what is behind it — layers, selection boxes.
     self.cell_frost_weights = stepCellFrostWeights(file);
     self.bubble_frost_rect = null;
     self.bubble_glass = canvasFrostRadius(file) >= 1 and dvui.currentWindow().render_target.rendering;
     self.cell_frost_tile = if (self.cell_frost_weights.len > 0) cellFrostTile(file) else null;
     self.frost_view_moving = canvasViewMoved(file);
+
+    // The frost every row's glass reads, captured once — at the first row that has glass, before
+    // any bubble has drawn — over all of them (`canvasFrostUnion`). While the view moves, the
+    // last capture carried with the art instead, if it still covers them.
+    var frost_rect = canvasFrostUnion(file, self.cell_frost_weights, first_vis_row, last_vis_row, self.peek_cell);
+    const frost_id = canvasFrostId(file);
+    var frost_shared: ?dvui.Texture = null;
+    var frost_detail: ?dvui.Texture = null;
+    var frost_taken = false;
+    // From the art, not the screen (`artCanvasFrost`): nothing to shimmer while the view moves.
+    if (use_art_frost) {
+        frost_taken = true;
+        if (frost_rect) |want| if (artCanvasFrost(file, want)) |af| {
+            frost_rect = af.rect;
+            frost_shared = af.tex;
+            frost_detail = af.detail;
+        } else {
+            frost_rect = null;
+        };
+    } else if (self.frost_view_moving) if (frost_rect) |want| if (heldCanvasFrost(file, frost_id, want)) |h| {
+        frost_rect = h.rect;
+        frost_shared = h.tex;
+        frost_taken = true;
+    };
 
     // Row-based iteration with batched geometry rendering.
     // Geometry is accumulated into TriAccs and rendered in bulk to minimize draw calls.
@@ -1416,15 +1702,8 @@ pub fn drawSpriteBubbles(self: *FileWidget) void {
 
             if (pass_i == 0) {
                 // Pass 0 — geometry: accumulate shadow + fill + tex + outline in one pass.
-                // The row's frost rect first: the geometry maps the glass onto it.
-                self.bubble_frost_rect = canvasFrostRect(file, self.cell_frost_weights, row);
-                const frost_id = canvasFrostRowId(file, row);
-                // Moving: last capture, where the art has gone, if it still covers the glass.
-                var held_tex: ?dvui.Texture = null;
-                if (self.frost_view_moving) if (self.bubble_frost_rect) |want| if (heldCanvasFrost(file, frost_id, want)) |h| {
-                    self.bubble_frost_rect = h.rect;
-                    held_tex = h.tex;
-                };
+                // The frost's rect first, for a row with glass: the geometry maps it onto it.
+                self.bubble_frost_rect = if (canvasFrostRect(file, self.cell_frost_weights, row, self.peek_cell) != null) frost_rect else null;
                 {
                     var si: usize = si_end_excl;
                     while (si > si_start) {
@@ -1436,12 +1715,15 @@ pub fn drawSpriteBubbles(self: *FileWidget) void {
                     }
                 }
 
-                // This row's glass: what is behind it, captured just before the row draws —
-                // everything drawn so far, rows above included — so a bubble frosts exactly what
-                // it covers, a neighbour's selection box and all.
+                // This row's glass: what is behind it — everything drawn before the bubbles, a
+                // neighbour's selection box and all. Captured for every row at the first to need it.
                 var frost_tex: ?dvui.Texture = null;
                 if (accs.frost.vtx.items.len > 0) if (self.bubble_frost_rect) |fr| {
-                    frost_tex = held_tex orelse captureCanvasFrost(file, frost_id, fr);
+                    if (!frost_taken) {
+                        frost_shared = captureCanvasFrost(file, frost_id, fr, canvasFrostSignature(file, self.cell_frost_weights));
+                        frost_taken = true;
+                    }
+                    frost_tex = frost_shared;
                     // Faded in by the cell's amount, so drawn over what is under it, not copied.
                     if (frost_tex) |ft| if (dvui.Backend.support_texture_blend) dvui.currentWindow().backend.textureBlend(ft, .over) catch {};
                 };
@@ -1467,6 +1749,7 @@ pub fn drawSpriteBubbles(self: *FileWidget) void {
                         feather_clip.h += bubbleFeather(file);
                         _ = dvui.clip(feather_clip);
                         accs.frost.render(ft);
+                        if (frost_detail) |dt| renderFrostDetail(&accs.frost, dt, canvas_frost_detail);
                         // The cells' art back over the foot: frost softens the empty checker
                         // below the seam, never the art itself — least of all while it is drawn.
                         // The canvas's own renderer, so a stroke in progress is there too.
@@ -1478,9 +1761,11 @@ pub fn drawSpriteBubbles(self: *FileWidget) void {
                                 .rs = .{ .r = file.editor.canvas.rect, .s = file.editor.canvas.scale },
                             }) catch {};
                             // Then the grid and the selection boxes over it, in the canvas's own
-                            // order — the art redrawn here would otherwise cover them.
-                            self.drawGrid(file.columns, file.rows, file.editor.canvas.dataFromScreenRect(file.editor.canvas.rect));
-                            self.drawSelectedSpriteBoxes();
+                            // order — the art redrawn here would otherwise cover them. Only what
+                            // reaches the foot: every row with glass redraws its own strip, and the
+                            // whole canvas's boxes each time made a full selection cost once a row.
+                            self.drawGrid(file.columns, file.rows, file.editor.canvas.dataFromScreenRect(f));
+                            self.drawSelectedSpriteBoxes(f);
                         }
                     }
                     dvui.clipSet(prev_clip);
@@ -1645,6 +1930,12 @@ fn drawSpriteBubbleForRow(
         if (drawSpriteBubble(self, sprite_index, sprite_rect, t, color, animation_index, accs, pan.bubble_open, pan.bubble_close, pan.tool_not_pointer)) {
             self.hovered_bubble_sprite_index = sprite_index;
         }
+        // A bubble lowered for the cell above it to be drawn in keeps its cell frosted: it is
+        // the cell *being drawn in* that clears (`peekCellFrost`), not the one below it.
+        if (accs != null) {
+            if (!open) self.setCellFrostTarget(sprite_index, 1);
+            self.peekCellFrost(sprite_index);
+        }
     } else {
         if (pan.selection_nonempty) {
             if (!file.editor.selected_sprites.isSet(sprite_index) or (animation_index != file.selected_animation_index and !file.editor.selected_sprites.isSet(sprite_index))) {
@@ -1695,8 +1986,28 @@ fn drawSpriteBubbleForRow(
             )) {
                 self.hovered_bubble_sprite_index = sprite_index;
             }
+            if (accs != null) self.peekCellFrost(sprite_index);
         }
     }
+}
+
+/// The cell under the pointer while it is being drawn in (`peek`: a drawing tool, a modifier,
+/// a sample) shows its checkerboard sharp — its blur cleared whatever its own bubble does, so
+/// the frost never sits behind the pixels being placed.
+fn peekCellFrost(self: *FileWidget, sprite_index: usize) void {
+    if (self.peek_cell == sprite_index) self.setCellFrostTarget(sprite_index, 0);
+}
+
+/// Set (or add) `sprite_index`'s cell blur target for this frame — what `bubble_cells`
+/// publishes and `stepCellFrostWeights` eases toward — apart from its bubble's height.
+fn setCellFrostTarget(self: *FileWidget, sprite_index: usize, weight: f32) void {
+    const items = self.bubble_cells.items;
+    if (items.len > 0 and items[items.len - 1].sprite_index == sprite_index) {
+        items[items.len - 1].weight = weight;
+        return;
+    }
+    if (weight <= 0) return;
+    self.bubble_cells.append(dvui.currentWindow().arena(), .{ .sprite_index = sprite_index, .weight = weight }) catch {};
 }
 
 /// Draw a single sprite bubble based on sprite index and progress. Animation index just lets us know if not null, its part of an animation,
@@ -1878,7 +2189,10 @@ pub fn drawSpriteBubble(
                 // by the cell's eased amount (`stepCellFrostWeights`), right down to the seam.
                 // Over the sharp canvas, nothing of its own beneath: it goes from the cell above
                 // as it is to the same thing frosted.
-                const w = cellFrostWeight(self.cell_frost_weights, sprite_index);
+                // At least as frosted as the bubble is up: the cell's own blur comes and goes
+                // with drawing in it (`peekCellFrost`), and the glass over the cell above must not
+                // clear and frost over again with it — leaving the cell replayed the fade.
+                const w = @max(cellFrostWeight(self.cell_frost_weights, sprite_index), cellFrostEase(std.math.clamp(t, 0, 1)));
                 if (w > 0.001) if (self.bubble_frost_rect) |fr| {
                     var frost_tris = built.fillConvexTriangles(dvui.currentWindow().arena(), .{ .color = .{ .color = .white }, .fade = 0.0 }) catch return false;
                     frost_tris.uvFromRectuv(fr, .{ .x = 0.0, .y = 0.0, .w = 1.0, .h = 1.0 });
@@ -1890,13 +2204,18 @@ pub fn drawSpriteBubble(
                     const feather = bubbleFeather(self.init_options.file);
                     if (feather > 0.5) {
                         const base = sprite_rect_scale.r;
+                        // From the pixel boundary the seam rounds to — where the glass's fill
+                        // clip stops — not the fractional edge: between the two, the art redrawn
+                        // over the foot (clipped from here too) left a row of the foot's frost
+                        // uncovered, a light line along the seam.
+                        const seam = @round(base.y);
                         const top_col: dvui.Color.PMA = .{ .r = c, .g = c, .b = c, .a = c };
                         const clear: dvui.Color.PMA = .{ .r = 0, .g = 0, .b = 0, .a = 0 };
                         const corners = [4]dvui.Point.Physical{
-                            .{ .x = base.x, .y = base.y },
-                            .{ .x = base.x + base.w, .y = base.y },
-                            .{ .x = base.x + base.w, .y = base.y + feather },
-                            .{ .x = base.x, .y = base.y + feather },
+                            .{ .x = base.x, .y = seam },
+                            .{ .x = base.x + base.w, .y = seam },
+                            .{ .x = base.x + base.w, .y = seam + feather },
+                            .{ .x = base.x, .y = seam + feather },
                         };
                         var q: [4]dvui.Vertex = undefined;
                         for (corners, 0..) |pt, qi| q[qi] = .{
@@ -1905,7 +2224,7 @@ pub fn drawSpriteBubble(
                             .uv = .{ (pt.x - fr.x) / fr.w, (pt.y - fr.y) / fr.h },
                         };
                         a.frost.appendQuad(q);
-                        const strip: dvui.Rect.Physical = .{ .x = base.x, .y = base.y, .w = base.w, .h = feather };
+                        const strip: dvui.Rect.Physical = .{ .x = base.x, .y = seam, .w = base.w, .h = feather };
                         a.feather = if (a.feather) |f| f.unionWith(strip) else strip;
                     }
                 };
@@ -1965,12 +2284,7 @@ pub fn drawSpriteBubble(
 
         var show_hint: bool = false;
         if (self.hovered_bubble_sprite_index) |hovered_button_index| {
-            var iter = self.init_options.file.editor.selected_sprites.iterator(.{ .kind = .set, .direction = .forward });
-            while (iter.next()) |selected_index| {
-                if (selected_index == sprite_index) {
-                    show_hint = true;
-                }
-            }
+            if (self.init_options.file.editor.selected_sprites.isSet(sprite_index)) show_hint = true;
 
             if (self.init_options.file.selected_animation_index) |selected_animation_index| {
                 const selected_animation = self.init_options.file.animations.get(selected_animation_index);
@@ -1997,16 +2311,7 @@ pub fn drawSpriteBubble(
                 }
             }
 
-            var found_current_in_selection: bool = false;
-
-            iter = self.init_options.file.editor.selected_sprites.iterator(.{ .kind = .set, .direction = .forward });
-            while (iter.next()) |selected_index| {
-                if (selected_index == hovered_button_index) {
-                    found_current_in_selection = true;
-                }
-            }
-
-            if (!found_current_in_selection)
+            if (!self.init_options.file.editor.selected_sprites.isSet(hovered_button_index))
                 show_hint = false;
         }
 
@@ -2042,7 +2347,13 @@ pub fn drawSpriteBubble(
             }
         }
 
-        button.drawBackground();
+        // At rest the pill is the hover colour at zero alpha: nothing to see, but still a rounded
+        // mesh triangulated and drawn for every bubble — with a sheet's worth of bubbles up, most of
+        // their cost. Drawn only while it shows: hovered, pressed, bordered, or still fading out
+        // (dvui's own `hoverFade` state, stepped only by the draw itself, so it runs out to zero).
+        const fading = (dvui.dataGet(null, button.data().id, "__hover_fade", f32) orelse 0) > 0;
+        if (button.hovered() or dvui.captured(button.data().id) or button.data().options.color_border != null or fading)
+            button.drawBackground();
 
         if (button.clicked()) { // Toggle animation frame on or off for this selection/animation
             if (self.init_options.file.selected_animation_index) |anim_index| {
@@ -5162,7 +5473,7 @@ pub fn drawLayers(self: *FileWidget) void {
 
     self.drawGrid(columns, rows, canvas_rect);
 
-    self.drawSelectedSpriteBoxes();
+    self.drawSelectedSpriteBoxes(null);
 }
 
 /// The grid lines for the canvas as a single batched draw call, over `canvas_rect` (data).
@@ -5177,41 +5488,96 @@ fn drawGrid(self: *FileWidget, columns: usize, rows: usize, canvas_rect: dvui.Re
 
 /// The selected sprites' boxes (and, in the sprites pane, their origins), with the layers:
 /// canvas the bubbles' glass frosts like anything else behind it.
-fn drawSelectedSpriteBoxes(self: *FileWidget) void {
+/// `within` (physical) skips the boxes that miss it; null draws every one on the canvas.
+///
+/// Every box is the same rounded stroke at the same size (the cells are one size), so it is
+/// rasterized once (`selectionBoxTexture`) and each selected cell is a quad of it, all in one
+/// draw. A stroke apiece was a triangulated, antialiased mesh per cell — dozens of vertices, each
+/// converted on the CPU — and selecting every cell of a sheet cost more than the rest of the frame.
+fn drawSelectedSpriteBoxes(self: *FileWidget, within: ?dvui.Rect.Physical) void {
     const file = self.init_options.file;
-    if (runtime.state().tools.current == .pointer and file.editor.transform == null and self.resize_data_point == null) {
-        var iter = file.editor.selected_sprites.iterator(.{ .kind = .set, .direction = .forward });
-        while (iter.next()) |i| {
-            const sprite_rect = file.spriteRect(i);
-            const sprite_rect_physical = self.init_options.file.editor.canvas.screenFromDataRect(sprite_rect);
+    if (runtime.state().tools.current != .pointer or file.editor.transform != null or self.resize_data_point != null) return;
+    if (file.editor.selected_sprites.count() == 0) return;
+    const canvas = &file.editor.canvas;
+    const visible = within orelse canvas.rect;
+    const arena = dvui.currentWindow().arena();
+    const scale = dvui.currentWindow().natural_scale;
+    const show_origins = plugin.sidebarShows(runtime.state().host, plugin.view_sprites);
+    const origin_opts: dvui.Path.StrokeOptions = .{ .thickness = 1, .color = .{ .color = dvui.themeGet().color(.err, .fill) } };
+    const tint: dvui.Color.PMA = .fromColor(dvui.themeGet().color(.highlight, .fill));
 
-            // Draw the origins when in the sprites pane
-            if (plugin.sidebarShows(runtime.state().host, plugin.view_sprites)) {
-                const origin: dvui.Point = .{ .x = sprite_rect.topLeft().x + file.sprites.get(i).origin[0], .y = sprite_rect.topLeft().y + file.sprites.get(i).origin[1] };
+    var boxes = TriAcc.init(arena);
+    var origins = TriAcc.init(arena);
+    var box_tex: ?dvui.Texture = null;
+    var iter = file.editor.selected_sprites.iterator(.{ .kind = .set, .direction = .forward });
+    while (iter.next()) |i| {
+        const sprite_rect = file.spriteRect(i);
+        const cell = canvas.screenFromDataRect(sprite_rect);
+        if (cell.intersect(visible).empty()) continue;
 
-                const horizontal_line_start: dvui.Point = .{ .x = sprite_rect.topLeft().x, .y = origin.y };
-                const horizontal_line_end: dvui.Point = .{ .x = sprite_rect.topRight().x, .y = origin.y };
-                const vertical_line_start: dvui.Point = .{ .x = origin.x, .y = sprite_rect.topLeft().y };
-                const vertical_line_end: dvui.Point = .{ .x = origin.x, .y = sprite_rect.bottomLeft().y };
-
-                dvui.Path.stroke(.{ .points = &.{
-                    file.editor.canvas.screenFromDataPoint(horizontal_line_start),
-                    file.editor.canvas.screenFromDataPoint(horizontal_line_end),
-                } }, .{ .thickness = 1, .color = .{ .color = dvui.themeGet().color(.err, .fill) } });
-
-                dvui.Path.stroke(.{ .points = &.{
-                    file.editor.canvas.screenFromDataPoint(vertical_line_start),
-                    file.editor.canvas.screenFromDataPoint(vertical_line_end),
-                } }, .{ .thickness = 1, .color = .{ .color = dvui.themeGet().color(.err, .fill) } });
+        // The origins, when in the sprites pane.
+        if (show_origins) {
+            const origin: dvui.Point = .{ .x = sprite_rect.topLeft().x + file.sprites.get(i).origin[0], .y = sprite_rect.topLeft().y + file.sprites.get(i).origin[1] };
+            const lines = [2][2]dvui.Point{
+                .{ .{ .x = sprite_rect.topLeft().x, .y = origin.y }, .{ .x = sprite_rect.topRight().x, .y = origin.y } },
+                .{ .{ .x = origin.x, .y = sprite_rect.topLeft().y }, .{ .x = origin.x, .y = sprite_rect.bottomLeft().y } },
+            };
+            for (lines) |l| {
+                const path: dvui.Path = .{ .points = &.{ canvas.screenFromDataPoint(l[0]), canvas.screenFromDataPoint(l[1]) } };
+                origins.append(path.strokeTriangles(arena, origin_opts) catch continue);
             }
-
-            sprite_rect_physical.inset(.all(dvui.currentWindow().natural_scale * 1.5)).stroke(dvui.CornerRect.Physical.round(@min(sprite_rect_physical.w, sprite_rect_physical.h) / 8), .{
-                .thickness = 1.5 * dvui.currentWindow().natural_scale,
-                .color = .{ .color = dvui.themeGet().color(.highlight, .fill) },
-                .closed = true,
-            });
         }
+
+        // The quad is the cell grown to whole pixels, so the baked stroke lands where the mesh's
+        // did: the texture is the cell's size rounded up, drawn from the cell's corner.
+        const w = @ceil(cell.w);
+        const h = @ceil(cell.h);
+        if (box_tex == null) box_tex = selectionBoxTexture(@intFromFloat(w), @intFromFloat(h), @min(cell.w, cell.h) / 8, 1.5 * scale);
+        const r: dvui.Rect.Physical = .{ .x = cell.x, .y = cell.y, .w = w, .h = h };
+        const corners = [4]dvui.Point.Physical{ r.topLeft(), r.topRight(), r.bottomRight(), r.bottomLeft() };
+        const uvs = [4]@Vector(2, f32){ .{ 0, 0 }, .{ 1, 0 }, .{ 1, 1 }, .{ 0, 1 } };
+        var q: [4]dvui.Vertex = undefined;
+        for (0..4) |k| q[k] = .{ .pos = corners[k], .col = tint, .uv = uvs[k] };
+        boxes.appendQuad(q);
     }
+    origins.render(null);
+    if (box_tex) |t| boxes.render(t);
+}
+
+/// The selection box — a rounded stroke inset from a `w`×`h` cell — in white, rasterized once
+/// per size and kept in dvui's texture cache, which drops it when a zoom stops using it. Drawn
+/// tinted (`drawSelectedSpriteBoxes`).
+fn selectionBoxTexture(w: u32, h: u32, radius: f32, thickness: f32) ?dvui.Texture {
+    if (w == 0 or h == 0) return null;
+    var hasher = std.hash.Wyhash.init(0x5e1);
+    hasher.update("pixi_selection_box");
+    hasher.update(std.mem.asBytes(&.{ w, h }));
+    hasher.update(std.mem.asBytes(&.{ radius, thickness }));
+    const key = hasher.final();
+    if (dvui.textureGetCached(key)) |t| return t;
+
+    const target = dvui.Texture.Target.create(.{ .width = w, .height = h, .interpolation = .linear }) catch return null;
+    {
+        const cw = dvui.currentWindow();
+        const prev_rendering = dvui.renderingSet(true);
+        defer _ = dvui.renderingSet(prev_rendering);
+        const prev_alpha = dvui.alpha(1);
+        defer dvui.alphaSet(prev_alpha);
+        const prev_clip = dvui.clipGet();
+        defer dvui.clipSet(prev_clip);
+        var rt = cw.render_target;
+        rt.texture = target;
+        rt.offset = .{};
+        const prev_target = dvui.renderTarget(rt);
+        defer _ = dvui.renderTarget(prev_target);
+        const size: dvui.Rect.Physical = .{ .w = @floatFromInt(w), .h = @floatFromInt(h) };
+        dvui.clipSet(size);
+        const inset = dvui.currentWindow().natural_scale * 1.5;
+        size.inset(.all(inset)).stroke(dvui.CornerRect.Physical.round(radius), .{ .thickness = thickness, .color = .{ .color = .white }, .closed = true });
+    }
+    const tex = dvui.textureFromTarget(target) catch return null;
+    dvui.textureAddToCache(key, tex);
+    return tex;
 }
 
 const ReorderAxis = enum { columns, rows };
@@ -5320,6 +5686,42 @@ fn drawCanvasCheckerboardBackground(self: *FileWidget) void {
         drawCheckerboardCellsBatched(file);
     }
 }
+
+/// Behind what is being dragged — cells, a column, a row — a light frost of the canvas under it,
+/// so the pieces show their bounds rather than floating as bare art. What is under `capture`
+/// (physical; the union of `pieces`) is read back and blurred now, then drawn into each piece with
+/// a wash of the content fill; the caller draws the art over it. Without the bubble blur (its
+/// setting at 0), just the wash.
+fn drawDragFrost(file: *pixi.internal.File, key: []const u8, capture: dvui.Rect.Physical, pieces: []const dvui.Rect.Physical) void {
+    const tint = dvui.themeGet().color(.content, .fill);
+    const radius = @max(canvasFrostRadius(file), 4 * dvui.windowNaturalScale());
+    var tex: ?dvui.Texture = null;
+    if (dvui.currentWindow().render_target.rendering and capture.w >= 2 and capture.h >= 2 and runtime.state().settings.bubble_blur.get() > 0) {
+        const BlurBackdrop = pixi.core.widgets.BlurBackdrop;
+        const id = file.editor.canvas.id.update(key);
+        const backdrop = dvui.dataGetPtrDefault(null, id, "_frost", BlurBackdrop, .{});
+        dvui.dataSetDeinitFunction(null, id, "_frost", &BlurBackdrop.releaseTexture);
+        backdrop.mode = .readback;
+        backdrop.radius_px = radius;
+        if (@hasField(BlurBackdrop, "detail")) backdrop.detail = canvas_frost_detail;
+        backdrop.init(dvui.windowRectScale().rectFromPhysical(capture), .{ capture, dvui.currentWindow().frame_time_ns });
+        backdrop.deinit();
+        tex = backdrop.small;
+    }
+    for (pieces) |r| {
+        if (tex) |t| dvui.renderTexture(t, .{ .r = r }, .{ .uv = .{
+            .x = (r.x - capture.x) / capture.w,
+            .y = (r.y - capture.y) / capture.h,
+            .w = r.w / capture.w,
+            .h = r.h / capture.h,
+        } }) catch {};
+        r.fill(.{}, .{ .color = .{ .color = tint.opacity(if (tex != null) drag_frost_wash else drag_frost_wash_plain) }, .fade = 0 });
+    }
+}
+
+/// How much of the content fill washes over the dragged pieces' frost (and without one).
+const drag_frost_wash: f32 = 0.35;
+const drag_frost_wash_plain: f32 = 0.6;
 
 fn drawColumnRowReorderPreview(self: *FileWidget) void {
     const file = self.init_options.file;
@@ -5595,11 +5997,14 @@ fn drawReorderPreviewForAxis(
             });
         }
 
+        // Frosted: the canvas under the dragged slice, read before its box (and shadow) draws.
+        const strip_phys = file.editor.canvas.screenFromDataRect(target_box_rect);
+        const strip_frost_ok = dvui.currentWindow().render_target.rendering;
         const target_box = dvui.box(@src(), .{ .dir = box_dir }, .{
             .expand = .none,
             .rect = target_box_rect,
             .border = dvui.Rect.all(0),
-            .background = true,
+            .background = !strip_frost_ok,
             .color_fill = .{ .color = if (same_slot)
                 dvui.themeGet().color(.control, .fill).opacity(0.75)
             else
@@ -5617,6 +6022,7 @@ fn drawReorderPreviewForAxis(
         });
         defer target_box.deinit();
 
+        if (strip_frost_ok) drawDragFrost(file, "drag_strip_frost", strip_phys, &.{target_box.data().rectScale().r});
         self.renderLayersInDataRect(file, removed_rect, target_box.data().rectScale().r);
         self.drawCheckerboardReorderFloatingStrip(file, removed_rect, target_box.data().rectScale().r, axis, removed_index);
     }
@@ -5901,6 +6307,19 @@ pub fn drawCellReorderPreview(self: *FileWidget) void {
                     } }, .{ .thickness = grid_thickness, .color = .{ .color = grid_color } });
                 }
             }
+        }
+
+        { // A frost behind each dragged cell, from the canvas under it.
+            const arena = dvui.currentWindow().arena();
+            var pieces: std.ArrayList(dvui.Rect.Physical) = .empty;
+            var cap: ?dvui.Rect.Physical = null;
+            for (removed_sprite_indices) |ri| {
+                var r = file.editor.canvas.screenFromDataRect(file.spriteRect(ri));
+                if (self.cell_reorder_point) |crp| r = r.offsetPoint(dvui.currentWindow().mouse_pt.diff(file.editor.canvas.screenFromDataPoint(crp)));
+                pieces.append(arena, r) catch break;
+                cap = if (cap) |c| c.unionWith(r) else r;
+            }
+            if (cap) |c| drawDragFrost(file, "drag_cells_frost", c.intersect(dvui.windowRectPixels()), pieces.items);
         }
 
         { // Render the sprites that are being dragged
