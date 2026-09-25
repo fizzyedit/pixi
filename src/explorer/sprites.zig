@@ -512,7 +512,8 @@ pub fn drawAnimationControls(self: *Sprites) !void {
             add_animation_button.init(@src(), .{}, .{
                 .expand = .none,
                 .gravity_y = 0.5,
-                .padding = dvui.Rect.all(4),
+                .padding = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).padding,
+                .min_size_content = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).min_size_content,
                 .corners = .round(1000),
                 .box_shadow = .{
                     .color = .black,
@@ -568,7 +569,8 @@ pub fn drawAnimationControls(self: *Sprites) !void {
             duplicate_animation_button.init(@src(), .{}, .{
                 .expand = .none,
                 .gravity_y = 0.5,
-                .padding = dvui.Rect.all(4),
+                .padding = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).padding,
+                .min_size_content = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).min_size_content,
                 .corners = .round(1000),
                 .box_shadow = .{
                     .color = .black,
@@ -582,14 +584,14 @@ pub fn drawAnimationControls(self: *Sprites) !void {
 
             defer duplicate_animation_button.deinit();
             duplicate_animation_button.processEvents();
-            const alpha = dvui.alpha(if (file.selected_animation_index != null and file.animations.len > 0) 1.0 else 0.5);
+            const enabled = file.selected_animation_index != null and file.animations.len > 0;
             duplicate_animation_button.drawBackground();
 
             dvui.icon(
                 @src(),
                 "DuplicateAnimationIcon",
                 icons.tvg.lucide.@"copy-plus",
-                .{ .fill_color = .{ .color = icon_color }, .stroke_color = .{ .color = icon_color } },
+                .{ .fill_color = .{ .color = disabledIcon(icon_color, dvui.themeGet().color(.control, .fill), enabled) }, .stroke_color = .{ .color = disabledIcon(icon_color, dvui.themeGet().color(.control, .fill), enabled) } },
                 .{
                     .gravity_x = 0.5,
                     .gravity_y = 0.5,
@@ -599,8 +601,6 @@ pub fn drawAnimationControls(self: *Sprites) !void {
                     .padding = dvui.Rect.all(0),
                 },
             );
-
-            dvui.alphaSet(alpha);
 
             if (duplicate_animation_button.clicked()) {
                 if (file.animations.len > 0) {
@@ -628,7 +628,8 @@ pub fn drawAnimationControls(self: *Sprites) !void {
             delete_animation_button.init(@src(), .{}, .{
                 .expand = .none,
                 .gravity_y = 0.5,
-                .padding = dvui.Rect.all(4),
+                .padding = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).padding,
+                .min_size_content = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).min_size_content,
                 .corners = .round(1000),
                 .box_shadow = .{
                     .color = .black,
@@ -642,14 +643,14 @@ pub fn drawAnimationControls(self: *Sprites) !void {
             defer delete_animation_button.deinit();
             delete_animation_button.processEvents();
 
-            const alpha = dvui.alpha(if (file.selected_animation_index != null and file.animations.len > 0) 1.0 else 0.5);
+            const enabled = file.selected_animation_index != null and file.animations.len > 0;
             delete_animation_button.drawBackground();
 
             dvui.icon(
                 @src(),
                 "DeleteAnimationIcon",
                 icons.tvg.lucide.trash,
-                .{ .fill_color = .{ .color = dvui.themeGet().color(.window, .fill) }, .stroke_color = .{ .color = dvui.themeGet().color(.window, .fill) } },
+                .{ .fill_color = .{ .color = disabledIcon(dvui.themeGet().color(.window, .fill), dvui.themeGet().color(.err, .fill), enabled) }, .stroke_color = .{ .color = disabledIcon(dvui.themeGet().color(.window, .fill), dvui.themeGet().color(.err, .fill), enabled) } },
                 .{
                     .gravity_x = 0.5,
                     .gravity_y = 0.5,
@@ -658,8 +659,6 @@ pub fn drawAnimationControls(self: *Sprites) !void {
                     .padding = dvui.Rect.all(0),
                 },
             );
-
-            dvui.alphaSet(alpha);
 
             if (delete_animation_button.clicked()) {
                 if (file.animations.len > 0) {
@@ -1073,7 +1072,8 @@ pub fn drawFrameControls(_: *Sprites) !void {
             sort_anim_asc_button.init(@src(), .{}, .{
                 .expand = .none,
                 .gravity_y = 0.5,
-                .padding = dvui.Rect.all(4),
+                .padding = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).padding,
+                .min_size_content = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).min_size_content,
                 .corners = .round(1000),
                 .box_shadow = .{
                     .color = .black,
@@ -1087,14 +1087,14 @@ pub fn drawFrameControls(_: *Sprites) !void {
 
             defer sort_anim_asc_button.deinit();
             sort_anim_asc_button.processEvents();
-            const alpha = dvui.alpha(if (file.selected_animation_index != null and file.animations.len > 0) 1.0 else 0.5);
+            const enabled = file.selected_animation_index != null and file.animations.len > 0;
             sort_anim_asc_button.drawBackground();
 
             dvui.icon(
                 @src(),
                 "SortAnimationAscIcon",
                 icons.tvg.lucide.@"arrow-up-from-line",
-                .{ .fill_color = .{ .color = icon_color }, .stroke_color = .{ .color = icon_color } },
+                .{ .fill_color = .{ .color = disabledIcon(icon_color, dvui.themeGet().color(.control, .fill), enabled) }, .stroke_color = .{ .color = disabledIcon(icon_color, dvui.themeGet().color(.control, .fill), enabled) } },
                 .{
                     .gravity_x = 0.5,
                     .gravity_y = 0.5,
@@ -1104,8 +1104,6 @@ pub fn drawFrameControls(_: *Sprites) !void {
                     .padding = dvui.Rect.all(0),
                 },
             );
-
-            dvui.alphaSet(alpha);
 
             if (sort_anim_asc_button.clicked()) {
                 const prev_order = try runtime.allocator().dupe(pixi.Animation.Frame, animation.frames);
@@ -1133,7 +1131,8 @@ pub fn drawFrameControls(_: *Sprites) !void {
                 sort_anim_desc_button.init(@src(), .{}, .{
                     .expand = .none,
                     .gravity_y = 0.5,
-                    .padding = dvui.Rect.all(4),
+                    .padding = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).padding,
+                    .min_size_content = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).min_size_content,
                     .corners = .round(1000),
                     .box_shadow = .{
                         .color = .black,
@@ -1147,14 +1146,14 @@ pub fn drawFrameControls(_: *Sprites) !void {
 
                 defer sort_anim_desc_button.deinit();
                 sort_anim_desc_button.processEvents();
-                const alpha = dvui.alpha(if (file.selected_animation_index != null and file.animations.len > 0) 1.0 else 0.5);
+                const enabled = file.selected_animation_index != null and file.animations.len > 0;
                 sort_anim_desc_button.drawBackground();
 
                 dvui.icon(
                     @src(),
                     "SortAnimationDescIcon",
                     icons.tvg.lucide.@"arrow-down-from-line",
-                    .{ .fill_color = .{ .color = icon_color }, .stroke_color = .{ .color = icon_color } },
+                    .{ .fill_color = .{ .color = disabledIcon(icon_color, dvui.themeGet().color(.control, .fill), enabled) }, .stroke_color = .{ .color = disabledIcon(icon_color, dvui.themeGet().color(.control, .fill), enabled) } },
                     .{
                         .gravity_x = 0.5,
                         .gravity_y = 0.5,
@@ -1164,8 +1163,6 @@ pub fn drawFrameControls(_: *Sprites) !void {
                         .padding = dvui.Rect.all(0),
                     },
                 );
-
-                dvui.alphaSet(alpha);
 
                 if (sort_anim_desc_button.clicked()) {
                     const prev_order = try runtime.allocator().dupe(pixi.Animation.Frame, animation.frames);
@@ -1194,7 +1191,8 @@ pub fn drawFrameControls(_: *Sprites) !void {
             add_sprite_button.init(@src(), .{}, .{
                 .expand = .none,
                 .gravity_y = 0.5,
-                .padding = dvui.Rect.all(4),
+                .padding = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).padding,
+                .min_size_content = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).min_size_content,
                 .corners = .round(1000),
                 .box_shadow = .{
                     .color = .black,
@@ -1208,14 +1206,14 @@ pub fn drawFrameControls(_: *Sprites) !void {
 
             defer add_sprite_button.deinit();
             add_sprite_button.processEvents();
-            const alpha = dvui.alpha(if (file.selected_animation_index != null and file.animations.len > 0) 1.0 else 0.5);
+            const enabled = file.selected_animation_index != null and file.animations.len > 0;
             add_sprite_button.drawBackground();
 
             dvui.icon(
                 @src(),
                 "AddSpriteIcon",
                 icons.tvg.lucide.plus,
-                .{ .fill_color = .{ .color = icon_color }, .stroke_color = .{ .color = icon_color } },
+                .{ .fill_color = .{ .color = disabledIcon(icon_color, dvui.themeGet().color(.control, .fill), enabled) }, .stroke_color = .{ .color = disabledIcon(icon_color, dvui.themeGet().color(.control, .fill), enabled) } },
                 .{
                     .gravity_x = 0.5,
                     .gravity_y = 0.5,
@@ -1225,8 +1223,6 @@ pub fn drawFrameControls(_: *Sprites) !void {
                     .padding = dvui.Rect.all(0),
                 },
             );
-
-            dvui.alphaSet(alpha);
 
             if (add_sprite_button.clicked()) {
                 if (file.editor.selected_sprites.count() > 0) {
@@ -1283,7 +1279,8 @@ pub fn drawFrameControls(_: *Sprites) !void {
             duplicate_animation_button.init(@src(), .{}, .{
                 .expand = .none,
                 .gravity_y = 0.5,
-                .padding = dvui.Rect.all(4),
+                .padding = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).padding,
+                .min_size_content = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).min_size_content,
                 .corners = .round(1000),
                 .box_shadow = .{
                     .color = .black,
@@ -1297,14 +1294,14 @@ pub fn drawFrameControls(_: *Sprites) !void {
 
             defer duplicate_animation_button.deinit();
             duplicate_animation_button.processEvents();
-            const alpha = dvui.alpha(if (selection_in_animation) 1.0 else 0.5);
+            const enabled = selection_in_animation;
             duplicate_animation_button.drawBackground();
 
             dvui.icon(
                 @src(),
                 "DuplicateAnimationIcon",
                 icons.tvg.lucide.@"copy-plus",
-                .{ .fill_color = .{ .color = icon_color }, .stroke_color = .{ .color = icon_color } },
+                .{ .fill_color = .{ .color = disabledIcon(icon_color, dvui.themeGet().color(.control, .fill), enabled) }, .stroke_color = .{ .color = disabledIcon(icon_color, dvui.themeGet().color(.control, .fill), enabled) } },
                 .{
                     .gravity_x = 0.5,
                     .gravity_y = 0.5,
@@ -1314,8 +1311,6 @@ pub fn drawFrameControls(_: *Sprites) !void {
                     .padding = dvui.Rect.all(0),
                 },
             );
-
-            dvui.alphaSet(alpha);
 
             if (duplicate_animation_button.clicked()) {
                 var iter = file.editor.selected_sprites.iterator(.{ .kind = .set, .direction = .forward });
@@ -1355,7 +1350,8 @@ pub fn drawFrameControls(_: *Sprites) !void {
             delete_animation_button.init(@src(), .{}, .{
                 .expand = .none,
                 .gravity_y = 0.5,
-                .padding = dvui.Rect.all(4),
+                .padding = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).padding,
+                .min_size_content = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).min_size_content,
                 .corners = .round(1000),
                 .box_shadow = .{
                     .color = .black,
@@ -1369,14 +1365,14 @@ pub fn drawFrameControls(_: *Sprites) !void {
 
             defer delete_animation_button.deinit();
             delete_animation_button.processEvents();
-            const alpha = dvui.alpha(if (selection_in_animation) 1.0 else 0.5);
+            const enabled = selection_in_animation;
             delete_animation_button.drawBackground();
 
             dvui.icon(
                 @src(),
                 "DeleteAnimationIcon",
                 icons.tvg.lucide.minus,
-                .{ .fill_color = .{ .color = dvui.themeGet().color(.err, .text) }, .stroke_color = .{ .color = dvui.themeGet().color(.err, .text) } },
+                .{ .fill_color = .{ .color = disabledIcon(dvui.themeGet().color(.err, .text), dvui.themeGet().color(.err, .fill), enabled) }, .stroke_color = .{ .color = disabledIcon(dvui.themeGet().color(.err, .text), dvui.themeGet().color(.err, .fill), enabled) } },
                 .{
                     .gravity_x = 0.5,
                     .gravity_y = 0.5,
@@ -1386,8 +1382,6 @@ pub fn drawFrameControls(_: *Sprites) !void {
                     .padding = dvui.Rect.all(0),
                 },
             );
-
-            dvui.alphaSet(alpha);
 
             if (delete_animation_button.clicked()) {
                 var iter = file.editor.selected_sprites.iterator(.{ .kind = .set, .direction = .forward });
@@ -2498,3 +2492,10 @@ const FrameSort = struct {
         return a.sprite_index > b.sprite_index;
     }
 };
+
+/// A disabled button's icon: most of the way to the button's fill, drawn opaque. Not the whole
+/// button at partial alpha — the button went see-through, and a stroked icon's overlapping caps
+/// and joins drew darker than its lines.
+fn disabledIcon(color: dvui.Color, fill: dvui.Color, enabled: bool) dvui.Color {
+    return if (enabled) color else color.lerp(fill, 0.65);
+}
