@@ -992,31 +992,33 @@ pub fn drawColors() !void {
         .color_fill_press = .{ .color = secondary },
     };
 
+    // Each swatch: a tap swaps the two, a hold (or right-click) opens its colour picker. The
+    // picker's context area comes *after* its button, over the button's rect — the order the
+    // shell's context widget (`core.widgets.context`) expects: it watches touch presses the
+    // button has already handled, and times a hold from the press, so a tap after the app sat
+    // idle is still a tap. dvui's own, declared first, counted the idle gap as a hold — the
+    // menu opened on the tap and ate it.
     var clicked: bool = false;
     {
         var primary_button: dvui.ButtonWidget = undefined;
         primary_button.init(@src(), .{}, button_opts);
-        defer primary_button.deinit();
-
-        try drawColorPicker(primary_button.data().rectScale().r, &runtime.state().colors.primary, 0);
-
         primary_button.processEvents();
         primary_button.drawBackground();
-
         if (primary_button.clicked()) clicked = true;
+        const r = primary_button.data().rectScale().r;
+        primary_button.deinit();
+        try drawColorPicker(r, &runtime.state().colors.primary, 0);
     }
 
     {
         var secondary_button: dvui.ButtonWidget = undefined;
         secondary_button.init(@src(), .{}, button_opts.override(secondary_overrider));
-        defer secondary_button.deinit();
-
-        try drawColorPicker(secondary_button.data().rectScale().r, &runtime.state().colors.secondary, 1);
-
         secondary_button.processEvents();
         secondary_button.drawBackground();
-
         if (secondary_button.clicked()) clicked = true;
+        const r = secondary_button.data().rectScale().r;
+        secondary_button.deinit();
+        try drawColorPicker(r, &runtime.state().colors.secondary, 1);
     }
 
     if (clicked) {
@@ -1025,7 +1027,7 @@ pub fn drawColors() !void {
 }
 
 fn drawColorPicker(rect: dvui.Rect.Physical, backing_color: *[4]u8, id_extra: usize) !void {
-    var context = dvui.context(@src(), .{ .rect = rect }, .{ .id_extra = id_extra });
+    var context = pixi.core.widgets.context(@src(), .{ .rect = rect }, .{ .id_extra = id_extra });
     defer context.deinit();
 
     if (context.activePoint()) |point| {
