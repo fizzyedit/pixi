@@ -79,9 +79,6 @@ cell_frost_weights: []const BubbleCell = &.{},
 /// The blurred checker tile the bubble cells draw this frame (`cellFrostTile`), for the bubbles
 /// to continue over their bases.
 cell_frost_tile: ?dvui.Texture = null,
-/// The canvas moved (zoom, pan) since last frame: the bubble frost holds its last capture,
-/// carried with the art, rather than re-reading it (`heldCanvasFrost`).
-frost_view_moving: bool = false,
 /// The cell under the pointer while it is being drawn in (`peek`), whose blur clears — see
 /// `peekCellFrost`. Null otherwise.
 peek_cell: ?usize = null,
@@ -1149,28 +1146,17 @@ fn canvasFrostRadius(file: *pixi.internal.File) f32 {
     if (setting <= 0) return 0;
     const cell_data: f32 = @floatFromInt(@min(file.column_width, file.row_height));
     const cell_px = cell_data * file.editor.canvas.screen_rect_scale.s;
-    if (!canvas_frost_follows_zoom) {
-        // Constant on screen, as the dialogs' frost is — zoomed in, the art grows past it and
-        // reads more clearly — but never more than a share of a cell: zoomed out, a fixed radius
-        // spans whole cells, and the glass became the cell above's average colour, art and all,
-        // unlike the cell below it. The cap is the zoom-following blur at the same setting.
-        const constant = setting * canvas_frost_px_per_setting * dvui.windowNaturalScale();
-        return std.math.clamp(@min(constant, cell_px * setting / canvas_frost_setting_per_cell), 0, canvas_frost_radius_max);
-    }
-    return std.math.clamp(cell_px * setting / canvas_frost_setting_per_cell, 0, canvas_frost_radius_max);
+    // Constant on screen, as the dialogs' frost is — zoomed in, the art grows past it and reads
+    // more clearly — but never more than a share of a cell: zoomed out, a fixed radius spans
+    // whole cells, and the glass became the cell above's average colour, art and all, unlike the
+    // cell below it.
+    const constant = setting * canvas_frost_px_per_setting * dvui.windowNaturalScale();
+    return std.math.clamp(@min(constant, cell_px * setting / canvas_frost_setting_per_cell), 0, canvas_frost_radius_max);
 }
 
-/// Whether the bubble blur is a share of a cell on screen (grows as you zoom in) or constant.
-const canvas_frost_follows_zoom = false;
-/// With a constant blur: screen px (natural) of radius per step of the `bubble_blur` setting —
-/// the default 12 is a 24px blur.
+/// Screen px (natural) of radius per step of the `bubble_blur` setting — the default 12 is a
+/// 24px blur.
 const canvas_frost_px_per_setting: f32 = 2;
-
-/// The bubbles' frost capture — one backdrop for every row, so the capture outlives the frame
-/// and can be held while the view moves (`heldCanvasFrost`).
-fn canvasFrostId(file: *pixi.internal.File) dvui.Id {
-    return file.editor.canvas.id.update("bubble_frost");
-}
 
 /// The bubbles' frost, blurred from the art itself rather than from the screen.
 ///
@@ -1236,8 +1222,6 @@ const art_frost_block_texels: f32 = 64;
 /// How far past the glass each level's region reaches, in texels: past the main blur's reach
 /// (3σ at a quarter size, σ up to 8 there), so the region's edges never touch what the glass shows.
 const art_frost_pad_texels: f32 = 128;
-/// Blur the bubbles' frost from the art (`artCanvasFrost`) rather than a capture of the screen.
-const use_art_frost = true;
 /// The frost's Gaussian σ on screen, per unit of `canvasFrostRadius` — the strength the
 /// screen frost had (`BlurBackdrop` spreads a point to σ ≈ 1.45 radius), so the far-zoom look holds.
 const art_frost_sigma_per_radius: f32 = 1.45;
@@ -1642,9 +1626,7 @@ fn artHalve(src: dvui.Texture, dst: dvui.Texture.Target) void {
 }
 
 /// Every bubble row's frost rect in `first_row..last_row` (`canvasFrostRect`), as one: the rows
-/// share a single capture a frame. A capture is a flush of the frame drawn so far and a run of
-/// render-target switches whatever its size, so one over the lot costs a row's, where a capture
-/// per row cost that once for every row with a bubble open.
+/// share a single frost (`artCanvasFrost`), and one over the lot costs no more than one row's.
 fn canvasFrostUnion(file: *pixi.internal.File, weights: []const BubbleCell, first_row: usize, last_row: usize, peek_cell: ?usize) ?dvui.Rect.Physical {
     var all: ?dvui.Rect.Physical = null;
     var row = first_row;
@@ -1653,102 +1635,6 @@ fn canvasFrostUnion(file: *pixi.internal.File, weights: []const BubbleCell, firs
         all = if (all) |u| u.unionWith(r) else r;
     }
     return all;
-}
-
-/// Whether the canvas view (zoom or pan) changed since last frame. Once a frame.
-fn canvasViewMoved(file: *pixi.internal.File) bool {
-    const View = struct { s: f32, o: dvui.Point.Physical };
-    const id = file.editor.canvas.id;
-    const now: View = .{ .s = file.editor.canvas.screen_rect_scale.s, .o = file.editor.canvas.screenFromDataPoint(.{}) };
-    const prev = dvui.dataGet(null, id, "_frost_view", View);
-    dvui.dataSet(null, id, "_frost_view", now);
-    const was = prev orelse return false;
-    // A held capture scales with the art, and so does its blur — right when the blur follows
-    // the zoom, but with a constant one it would swell while zooming and snap back after.
-    // Then only a pan holds.
-    if (!canvas_frost_follows_zoom and was.s != now.s) return false;
-    return was.s != now.s or was.o.x != now.o.x or was.o.y != now.o.y;
-}
-
-/// While the view moves, a row's last capture carried with the art — scaled and shifted to
-/// where the art it was read from now is — instead of a fresh one. Re-read each frame, the
-/// frost shimmered as the canvas slid through the screen's pixels under the capture (a full-
-/// size blur as much as the pyramid: it is the capture that changes, not the blur). Held, it
-/// moves rigidly with the art, and is read fresh once the view stops. Null when there is none,
-/// or it does not cover the glass `want` needs (less the blur margin, which may soften at the
-/// edge) — then the row captures as usual.
-fn heldCanvasFrost(file: *pixi.internal.File, id: dvui.Id, want: dvui.Rect.Physical) ?struct { rect: dvui.Rect.Physical, tex: dvui.Texture } {
-    const BlurBackdrop = pixi.core.widgets.BlurBackdrop;
-    const held = dvui.dataGet(null, id, "_held", dvui.Rect) orelse return null;
-    const backdrop = dvui.dataGetPtr(null, id, "_frost", BlurBackdrop) orelse return null;
-    const tex = backdrop.small orelse return null;
-    const rect = file.editor.canvas.screenFromDataRect(held);
-    const margin = canvasFrostRadius(file) * 2;
-    const need: dvui.Rect.Physical = .{ .x = want.x + margin, .y = want.y + margin, .w = @max(0, want.w - 2 * margin), .h = @max(0, want.h - margin) };
-    const slack = 1.0;
-    if (need.x < rect.x - slack or need.y < rect.y - slack or
-        need.x + need.w > rect.x + rect.w + slack or need.y + need.h > rect.y + rect.h + slack) return null;
-    return .{ .rect = rect, .tex = tex };
-}
-
-/// Everything the bubbles' frost sees that can change without its rect moving: the view, the art
-/// (every edit is a history entry; a stroke in progress, the temp layer), the selection and its
-/// boxes, which cells soften under the bubbles, the checker's colours. The frost is re-read only
-/// when this changes (`captureCanvasFrost`) — hovering over still art, the bubbles springing open,
-/// cost nothing but the draw of the last capture.
-///
-/// Anything under the bubbles that is not in here would leave the glass stale, so the frost is
-/// also re-read on a slow clock (`canvas_frost_refresh_ns`) as a floor: a missed change lags by
-/// at most that, never for good.
-fn canvasFrostSignature(file: *pixi.internal.File, weights: []const BubbleCell) u64 {
-    var h = std.hash.Wyhash.init(0);
-    const canvas = &file.editor.canvas;
-    h.update(std.mem.asBytes(&canvas.screen_rect_scale.s));
-    h.update(std.mem.asBytes(&canvas.screenFromDataPoint(.{})));
-    h.update(std.mem.asBytes(&canvasFrostRadius(file)));
-    const history = &file.history;
-    h.update(std.mem.asBytes(&.{ history.bookmark, history.undo_stack.items.len, history.redo_stack.items.len, file.animations.len }));
-    h.update(std.mem.asBytes(&.{ file.editor.layer_composite_generation, file.editor.temp_layer_generation, file.editor.selection_layer.source.hash() }));
-    const sel = file.editor.selected_sprites.unmanaged;
-    h.update(std.mem.sliceAsBytes(sel.masks[0 .. (sel.bit_length + @bitSizeOf(usize) - 1) / @bitSizeOf(usize)]));
-    h.update(std.mem.asBytes(&plugin.sidebarShows(runtime.state().host, plugin.view_sprites)));
-    // Which cells soften under the bubbles, not how far: their amounts follow the bubbles' size,
-    // which follows the pointer, so they move every frame it does — and under a blur this wide a
-    // softened checker and a sharp one come out the same mean tone. The slow floor catches the rest.
-    for (weights) |c| h.update(std.mem.asBytes(&c.sprite_index));
-    const effect = runtime.state().settings.transparency_effect.get();
-    h.update(std.mem.asBytes(&effect));
-    if (effect == .rainbow) h.update(std.mem.asBytes(&(dvui.dataGet(null, canvas.id, "checkerboard_mouse_uv", dvui.Point) orelse dvui.Point{})));
-    h.update(std.mem.asBytes(&.{ runtime.state().checker_color_even, runtime.state().checker_color_odd, dvui.themeGet().color(.content, .fill) }));
-    h.update(std.mem.asBytes(&@divTrunc(dvui.currentWindow().frame_time_ns, canvas_frost_refresh_ns)));
-    return h.final();
-}
-
-/// The floor under `canvasFrostSignature`: the frost is re-read at least this often.
-const canvas_frost_refresh_ns: i128 = 500 * std.time.ns_per_ms;
-
-/// Blur what the canvas shows under `rect`, at `canvasFrostRadius` — one capture per `id` a
-/// frame, however many shapes then sample it, and none while `sig` (`canvasFrostSignature`) and
-/// the rect hold: the last one is still right. The texture keeps the backdrop's copy blend: like
-/// a frosted dialog, it replaces what it covers rather than letting the sharp art through.
-fn captureCanvasFrost(file: *pixi.internal.File, id: dvui.Id, rect: dvui.Rect.Physical, sig: u64) ?dvui.Texture {
-    const BlurBackdrop = pixi.core.widgets.BlurBackdrop;
-    // Where on the art this capture sits, for carrying it while the view moves.
-    dvui.dataSet(null, id, "_held", file.editor.canvas.dataFromScreenRect(rect));
-    const backdrop = dvui.dataGetPtrDefault(null, id, "_frost", BlurBackdrop, .{});
-    dvui.dataSetDeinitFunction(null, id, "_frost", &BlurBackdrop.releaseTexture);
-    backdrop.mode = .readback;
-    backdrop.radius_px = canvasFrostRadius(file);
-    // The pyramid, as every other frost in the app: its upsample back through each level is
-    // smooth, where the full-size blur (`stable`) blurs at a fraction of the size and is then
-    // stretched over the bubble — soft pixel art came out blocky. A little of the finer level
-    // blended in (`detail`) keeps the art's shapes readable through the glass. No-ops against an
-    // SDK without them.
-    if (@hasField(BlurBackdrop, "stable")) backdrop.stable = false;
-    if (@hasField(BlurBackdrop, "detail")) backdrop.detail = canvas_frost_detail;
-    backdrop.init(dvui.windowRectScale().rectFromPhysical(rect), .{ rect, sig });
-    backdrop.deinit();
-    return backdrop.small;
 }
 
 /// Responsible for drawing the indicators for animation frames as bubbles over each sprite.
@@ -1909,23 +1795,17 @@ pub fn drawSpriteBubbles(self: *FileWidget) void {
     self.bubble_frost_rect = null;
     self.bubble_glass = canvasFrostRadius(file) >= 1 and dvui.currentWindow().render_target.rendering;
     self.cell_frost_tile = if (self.cell_frost_weights.len > 0) cellFrostTile(file) else null;
-    self.frost_view_moving = canvasViewMoved(file);
 
-    // The frost every row's glass reads, captured once — at the first row that has glass, before
-    // any bubble has drawn — over all of them (`canvasFrostUnion`). While the view moves, the
-    // last capture carried with the art instead, if it still covers them.
+    // The frost every row's glass reads, over all of them (`canvasFrostUnion`), blurred from the
+    // art (`artCanvasFrost`): nothing to shimmer while the view moves.
     var frost_rect = canvasFrostUnion(file, self.cell_frost_weights, first_vis_row, last_vis_row, self.peek_cell);
-    const frost_id = canvasFrostId(file);
     var frost_shared: ?dvui.Texture = null;
     var frost_detail: ?dvui.Texture = null;
     var frost_fine: ?dvui.Texture = null;
     var frost_fine_detail: ?dvui.Texture = null;
     var frost_fine_share: f32 = 0;
     var frost_fine_rect: dvui.Rect.Physical = .{};
-    var frost_taken = false;
-    // From the art, not the screen (`artCanvasFrost`): nothing to shimmer while the view moves.
-    if (use_art_frost) {
-        frost_taken = true;
+    {
         const prof_frost = pixi.profile.section("frost");
         defer prof_frost.end();
         if (frost_rect) |want| if (artCanvasFrost(file, want)) |af| {
@@ -1939,11 +1819,7 @@ pub fn drawSpriteBubbles(self: *FileWidget) void {
         } else {
             frost_rect = null;
         };
-    } else if (self.frost_view_moving) if (frost_rect) |want| if (heldCanvasFrost(file, frost_id, want)) |h| {
-        frost_rect = h.rect;
-        frost_shared = h.tex;
-        frost_taken = true;
-    };
+    }
 
     // Row-based iteration with batched geometry rendering.
     // Geometry is accumulated into TriAccs and rendered in bulk to minimize draw calls.
@@ -2017,14 +1893,9 @@ pub fn drawSpriteBubbles(self: *FileWidget) void {
                     }
                 }
 
-                // This row's glass: what is behind it — everything drawn before the bubbles, a
-                // neighbour's selection box and all. Captured for every row at the first to need it.
+                // This row's glass: the frost of the art behind it, shared by every row.
                 var frost_tex: ?dvui.Texture = null;
-                if (accs.frost.vtx.items.len > 0) if (self.bubble_frost_rect) |fr| {
-                    if (!frost_taken) {
-                        frost_shared = captureCanvasFrost(file, frost_id, fr, canvasFrostSignature(file, self.cell_frost_weights));
-                        frost_taken = true;
-                    }
+                if (accs.frost.vtx.items.len > 0) if (self.bubble_frost_rect != null) {
                     frost_tex = frost_shared;
                     // Faded in by the cell's amount, so drawn over what is under it, not copied.
                     if (frost_tex) |ft| if (dvui.Backend.support_texture_blend) dvui.currentWindow().backend.textureBlend(ft, .over) catch {};
@@ -4704,15 +4575,7 @@ fn doubleStrokeDimensionLike(points: []const dvui.Point.Physical, thickness: f32
     });
 }
 
-fn doubleStrokeDimension(points: []const dvui.Point.Physical, thickness: f32) void {
-    doubleStrokeDimensionLike(points, thickness, thickness, .magenta);
-}
-
 /// Tick marks: inner stroke is one physical pixel thicker for visibility.
-fn doubleStrokeDimensionTick(points: []const dvui.Point.Physical, thickness: f32) void {
-    doubleStrokeDimensionLike(points, thickness, thickness + 1.0, .magenta);
-}
-
 fn doubleStrokeDimensionTickColor(points: []const dvui.Point.Physical, thickness: f32, inner_color: dvui.Color) void {
     doubleStrokeDimensionLike(points, thickness, thickness + 1.0, inner_color);
 }
