@@ -241,8 +241,40 @@ pub fn drawTools() !void {
         };
 
         if (button.clicked()) {
-            runtime.state().tools.set(tool);
+            const tools = &runtime.state().tools;
+            // A tap on the tool already in hand opens its settings: on touch there is no hover
+            // to bring up the tooltip that carries them.
+            if (selected and pixi.Tools.hasSettings(tool)) {
+                tools.settings_popover = !(tools.settings_popover and tools.settings_popover_tool == tool);
+                tools.settings_popover_tool = tool;
+                const r = button.data().rectScale().r.toNatural();
+                tools.settings_popover_from = .{ .x = r.x, .y = r.y + r.h + 4 };
+            } else {
+                tools.settings_popover = false;
+                tools.set(tool);
+            }
         }
+    }
+
+    drawToolSettingsPopover();
+}
+
+/// The current tool's settings in a frosted popover under its button, dismissed by a click
+/// outside, escape, a second tap on the tool, or picking another tool.
+fn drawToolSettingsPopover() void {
+    const tools = &runtime.state().tools;
+    if (tools.settings_popover and tools.settings_popover_tool != tools.current) tools.settings_popover = false;
+    if (pixi.core.widgets.popup(@src(), .{
+        .open_flag = &tools.settings_popover,
+        .from = tools.settings_popover_from,
+        .frost = pixi.core.widgets.menuFrost(),
+    }, pixi.core.widgets.menuSurfaceOptions())) |popup| {
+        defer popup.deinit();
+        dvui.labelNoFmt(@src(), "TOOL SETTINGS", .{}, .{
+            .font = dvui.Font.theme(.heading),
+            .margin = dvui.Rect.all(4),
+        });
+        tools.drawToolSettings(tools.settings_popover_tool, 100);
     }
 }
 
