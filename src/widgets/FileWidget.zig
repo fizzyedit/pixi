@@ -1477,6 +1477,8 @@ pub fn drawSpriteBubbles(self: *FileWidget) void {
                                 .file = file,
                                 .rs = .{ .r = file.editor.canvas.rect, .s = file.editor.canvas.scale },
                             }) catch {};
+                            // And the selection boxes over that, as the cells have them.
+                            self.drawSelectedSpriteBoxes();
                         }
                     }
                     dvui.clipSet(prev_clip);
