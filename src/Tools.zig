@@ -63,15 +63,20 @@ pub const RadialMenu = struct {
 };
 
 pub const default_pencil_stroke_size: u8 = 1;
+/// Larger than the pencil's: erasing usually clears more than a line of pixels.
+pub const default_eraser_stroke_size: u8 = 4;
 pub const default_selection_stroke_size: u8 = 6;
 
 current: Tool = .pointer,
 previous: Tool = .pointer,
 /// The stroke size for the currently active tool. Mirrors either
-/// `pencil_stroke_size` or `selection_stroke_size` depending on `current`.
+/// the current tool's own size (`pencil_stroke_size`, `eraser_stroke_size` or
+/// `selection_stroke_size`).
 stroke_size: u8 = default_pencil_stroke_size,
-/// Independent stroke size used by pencil/eraser/bucket.
+/// Independent stroke size used by pencil and bucket.
 pencil_stroke_size: u8 = default_pencil_stroke_size,
+/// Independent stroke size used by the eraser.
+eraser_stroke_size: u8 = default_eraser_stroke_size,
 /// Independent stroke size used by the selection tool.
 selection_stroke_size: u8 = default_selection_stroke_size,
 stroke_shape: Shape = .circle,
@@ -108,7 +113,18 @@ pub fn init(allocator: std.mem.Allocator) !Tools {
 fn strokeSizeFor(self: *const Tools, tool: Tool) u8 {
     return switch (tool) {
         .selection => self.selection_stroke_size,
+        .eraser => self.eraser_stroke_size,
         else => self.pencil_stroke_size,
+    };
+}
+
+/// Where `tool`'s own size is kept; null for the pointer, which has none.
+fn strokeSizeSlot(self: *Tools, tool: Tool) ?*u8 {
+    return switch (tool) {
+        .selection => &self.selection_stroke_size,
+        .eraser => &self.eraser_stroke_size,
+        .pencil, .bucket => &self.pencil_stroke_size,
+        .pointer => null,
     };
 }
 
@@ -123,32 +139,20 @@ pub fn hasSettings(tool: Tool) bool {
     };
 }
 
-/// Store `size` as `tool`'s brush size. When `tool` shares its size with the current tool
-/// (pencil and eraser share one), the live stroke is rebuilt too; otherwise the size waits
-/// until that tool is picked.
+/// Store `size` as `tool`'s brush size. When `tool` keeps its size where the current tool
+/// does (the bucket shares the pencil's), the live stroke is rebuilt too; otherwise the size
+/// waits until that tool is picked.
 pub fn setToolStrokeSize(self: *Tools, tool: Tool, size: u8) void {
-    const shares_current = switch (tool) {
-        .selection => self.current == .selection,
-        .pointer => false,
-        else => self.current == .pencil or self.current == .eraser or self.current == .bucket,
-    };
-    if (shares_current) return self.setStrokeSize(size);
-    switch (tool) {
-        .selection => self.selection_stroke_size = size,
-        .pencil, .eraser, .bucket => self.pencil_stroke_size = size,
-        .pointer => {},
-    }
+    const slot = self.strokeSizeSlot(tool) orelse return;
+    if (slot == self.strokeSizeSlot(self.current)) return self.setStrokeSize(size);
+    slot.* = size;
 }
 
 /// Recreates the stroke bitset and writes-through the size to the
 /// per-tool storage for the currently active tool.
 pub fn setStrokeSize(self: *Tools, size: u8) void {
     self.stroke_size = size;
-    switch (self.current) {
-        .selection => self.selection_stroke_size = size,
-        .pencil, .eraser, .bucket => self.pencil_stroke_size = size,
-        .pointer => {},
-    }
+    if (self.strokeSizeSlot(self.current)) |slot| slot.* = size;
 
     const stroke_size: usize = @intCast(size);
 
@@ -380,10 +384,7 @@ fn drawStrokeSizeSlider(self: *Tools, tool: Tool, id_extra: u64) void {
     });
     defer size_box.deinit();
 
-    const current: u8 = switch (tool) {
-        .selection => self.selection_stroke_size,
-        else => self.pencil_stroke_size,
-    };
+    const current = self.strokeSizeFor(tool);
     var value: f32 = @floatFromInt(@min(current, slider_max_stroke_size));
     if (dvui.sliderEntry(@src(), "{d:0} px", .{
         .value = &value,
