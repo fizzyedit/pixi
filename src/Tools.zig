@@ -375,14 +375,24 @@ pub fn drawToolSettings(self: *Tools, tool: Tool, id_extra: u64) void {
     if (sized) self.drawStrokeSizeSlider(tool, id_extra);
 }
 
+/// A tool-settings area's title: the explorer's section header, a size down to sit in a tooltip.
+fn settingsHeader(text: []const u8) void {
+    dvui.labelNoFmt(@src(), text, .{}, .{
+        .font = dvui.Font.theme(.heading).larger(-1.0),
+        .padding = dvui.Rect.all(0),
+        .margin = dvui.Rect.rect(2, 0, 2, 4),
+        .id_extra = std.hash.Wyhash.hash(0, text),
+    });
+}
+
 fn drawStrokeSizeSlider(self: *Tools, tool: Tool, id_extra: u64) void {
-    var size_box = dvui.groupBox(@src(), if (tool == .selection) "BRUSH SIZE" else "STROKE SIZE", .{
+    var size_box = dvui.box(@src(), .{ .dir = .vertical }, .{
         .expand = .horizontal,
         .margin = dvui.Rect.all(4),
-        .font = dvui.Font.theme(.heading),
         .id_extra = @intCast(id_extra),
     });
     defer size_box.deinit();
+    settingsHeader(if (tool == .selection) "BRUSH SIZE" else "STROKE SIZE");
 
     const current = self.strokeSizeFor(tool);
     var value: f32 = @floatFromInt(@min(current, slider_max_stroke_size));
@@ -404,9 +414,7 @@ fn drawStrokeSizeSlider(self: *Tools, tool: Tool, id_extra: u64) void {
 
 fn drawSelectionModes(_: *Tools, id_extra: u64) void {
     var mode_row = dvui.box(@src(), .{ .dir = .horizontal }, .{
-        .expand = .none,
-        .gravity_x = 0.5,
-        .margin = dvui.Rect.all(4),
+        .expand = .horizontal,
     });
     defer mode_row.deinit();
 
@@ -418,15 +426,16 @@ fn drawSelectionModes(_: *Tools, id_extra: u64) void {
     }
 
     {
-        var mode_box = dvui.groupBox(@src(), "SELECTION MODE", .{
+        var mode_box = dvui.box(@src(), .{ .dir = .vertical }, .{
             .expand = .horizontal,
             .margin = dvui.Rect.all(4),
-            .font = dvui.Font.theme(.heading),
         });
         defer mode_box.deinit();
+        settingsHeader("SELECTION MODE");
 
         var mode_arrange_box = dvui.box(@src(), .{ .dir = .horizontal }, .{
             .expand = .none,
+            .gravity_x = 0.5,
         });
         defer mode_arrange_box.deinit();
 
