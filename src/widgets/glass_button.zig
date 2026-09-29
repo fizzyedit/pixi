@@ -23,10 +23,20 @@ pub const shadow: dvui.Options.BoxShadow = .{
 /// Glass over `r` (physical, at `scale`) with corners of `radius` points: the frost (or the plain
 /// fill with the blur off) and the ring shadow round it. `id` keys the frost's capture — one per
 /// pane of glass.
-pub fn pane(id: dvui.Id, r: dvui.Rect.Physical, radius: f32, scale: f32) void {
+///
+/// `witness`, when the caller can give one, is a signature of what lies under the glass — the
+/// canvas's art, zoom and pan for the buttons over it — and the frost is read again only when it
+/// changes (`core.dialogs.frostPaneKept`). Without it the glass re-read and re-blurred what was
+/// under it every frame the app drew, a quarter of a Debug frame across the canvas's buttons
+/// with nothing under them moving.
+pub fn pane(id: dvui.Id, r: dvui.Rect.Physical, radius: f32, scale: f32, witness: ?u64) void {
     if (r.w < 1 or r.h < 1) return;
     const corners: dvui.CornerRect = .round(radius);
-    if (!dialogs.frostPane(id, r, corners, scale)) {
+    const frosted = if (witness) |w|
+        dialogs.frostPaneKept(id, r, corners, scale, w)
+    else
+        dialogs.frostPane(id, r, corners, scale);
+    if (!frosted) {
         r.fill(corners.scale(scale, dvui.CornerRect.Physical), .{ .color = .{ .color = dialogs.dialogFill() }, .fade = 1 });
     }
     dialogs.glassShadow(r, corners, scale, shadow, 1);
@@ -50,10 +60,25 @@ pub fn wash(btn: *dvui.ButtonWidget, active: bool) void {
 
 /// A round button's whole background: its own disc of glass, then the wash. Call after
 /// `processEvents`, in place of `drawBackground`, with the button made `.background = false`.
-pub fn background(btn: *dvui.ButtonWidget, active: bool) void {
+/// `witness` as `pane`'s.
+pub fn background(btn: *dvui.ButtonWidget, active: bool, witness: ?u64) void {
     const rs = btn.data().borderRectScale();
-    pane(btn.data().id, rs.r, @min(rs.r.w, rs.r.h) / 2 / rs.s, rs.s);
+    pane(btn.data().id, rs.r, @min(rs.r.w, rs.r.h) / 2 / rs.s, rs.s, witness);
     wash(btn, active);
+}
+
+/// A witness for glass over `file`'s canvas at `r` (physical): the art (edits, a stroke, the
+/// checker), where the canvas is on screen and at what zoom, and where the glass is. What else
+/// passes under a button — a cell's hover bubble — is left out: under a blur it is a smudge, and
+/// following it would mean re-reading on every move of the pointer.
+pub fn canvasWitness(file: *pixi.internal.File, r: dvui.Rect.Physical) u64 {
+    var h = std.hash.Wyhash.init(0);
+    h.update(std.mem.asBytes(&pixi.widgets.FileWidget.artFrostSignature(file)));
+    const rs = file.editor.canvas.screen_rect_scale;
+    h.update(std.mem.asBytes(&.{ rs.r.x, rs.r.y, rs.r.w, rs.r.h, rs.s }));
+    h.update(std.mem.asBytes(&.{ r.x, r.y, r.w, r.h }));
+    h.update(std.mem.asBytes(&.{ pixi.core.dialogs.style().blur, dvui.themeGet().color(.content, .fill) }));
+    return h.final();
 }
 
 /// Button options for a round glass button of `size` points: no fill, border or shadow of its

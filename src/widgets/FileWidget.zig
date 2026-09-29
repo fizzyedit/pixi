@@ -1244,7 +1244,7 @@ const art_frost_size_step: f32 = 256;
 const art_frost_max_texels: f32 = 4096;
 
 /// The art's state the frost source is drawn from: edits, a stroke in progress, the checker.
-fn artFrostSignature(file: *pixi.internal.File) u64 {
+pub fn artFrostSignature(file: *pixi.internal.File) u64 {
     var h = std.hash.Wyhash.init(0);
     const history = &file.history;
     h.update(std.mem.asBytes(&.{ history.bookmark, history.undo_stack.items.len, history.redo_stack.items.len }));

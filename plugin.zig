@@ -265,9 +265,9 @@ fn drawDocument(_: *anyopaque, doc: DocHandle) anyerror!void {
     }
 
     canvas.drawTransformDialog(file, container);
-    canvas.drawEditPill(container);
+    canvas.drawEditPill(container, file);
     // Before the file widget so FloatingWidget uses window-scale coords (not canvas zoom).
-    canvas.drawSampleButton(container);
+    canvas.drawSampleButton(container, file);
 
     var file_widget = FileWidget.init(@src(), .{
         .file = file,

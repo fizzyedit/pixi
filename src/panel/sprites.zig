@@ -1199,7 +1199,7 @@ fn handleInput(self: *Sprites, file: anytype, mode: ScrollMode, count: usize, px
     }
 }
 
-pub fn drawAnimationControlsDialog(_: *Sprites) void {
+pub fn drawAnimationControlsDialog(self: *Sprites) void {
     if (runtime.state().docs.activeFile(runtime.state().host)) |file| {
         const rect = dvui.parentGet().data().rectScale().r;
 
@@ -1218,6 +1218,7 @@ pub fn drawAnimationControlsDialog(_: *Sprites) void {
         // Play / pause. Always present; "disabled" (muted, no action) when no
         // animation is selected.
         const play_enabled = file.selected_animation_index != null;
+        const witness = self.glassWitness(file);
         if (drawRoundButton(
             @src(),
             base_x,
@@ -1227,6 +1228,7 @@ pub fn drawAnimationControlsDialog(_: *Sprites) void {
             if (file.editor.playing) icons.tvg.entypo.pause else icons.tvg.entypo.play,
             play_enabled,
             file.editor.playing,
+            witness,
         ) and play_enabled) {
             file.editor.playing = !file.editor.playing;
         }
@@ -1246,12 +1248,30 @@ pub fn drawAnimationControlsDialog(_: *Sprites) void {
             if (flown) icons.tvg.entypo.doc else icons.tvg.entypo.docs,
             !fly_forced,
             flown,
+            witness,
         ) and !fly_forced) {
             runtime.state().settings.scrolling_cards.set(!runtime.state().settings.scrolling_cards.get());
             runtime.state().saveSettings(runtime.state().host);
             dvui.refresh(null, @src(), dvui.parentGet().data().id);
         }
     }
+}
+
+/// A signature of what lies under the panel's round buttons, for their glass
+/// (`pixi.glass_button`): null while anything there is moving — cards playing, dragged, flung,
+/// flying or settling in the water — so the glass follows them every frame; otherwise where the
+/// strip rests and what its cards show, and the glass keeps the picture it has.
+fn glassWitness(self: *const Sprites, file: *pixi.internal.File) ?u64 {
+    if (file.editor.playing or self.drag_active or self.fling.coasting) return null;
+    if (self.water.energy() > water_settle_energy) return null;
+    if (@abs(self.goal - self.scroll_pos) > 1e-4 or @abs(self.shelf_vel) > 1e-4) return null;
+    var h = std.hash.Wyhash.init(0);
+    h.update(std.mem.asBytes(&.{ self.scroll_pos, self.goal, self.was_flown, self.fly_anim_out }));
+    h.update(std.mem.sliceAsBytes(&self.prev_fly_offset));
+    h.update(std.mem.asBytes(&pixi.widgets.FileWidget.artFrostSignature(file)));
+    h.update(std.mem.asBytes(&.{ file.selected_animation_index, file.spriteCount() }));
+    h.update(std.mem.asBytes(&dvui.parentGet().data().rectScale().r));
+    return h.final();
 }
 
 /// One round, floating action button in liquid glass, matching the workspace hamburger / sample
@@ -1267,6 +1287,8 @@ fn drawRoundButton(
     icon_tvg: []const u8,
     enabled: bool,
     active: bool,
+    /// What lies under the button, for its glass (`glassWitness`); null re-reads every frame.
+    witness: ?u64,
 ) bool {
     const btn_radius: f32 = size / 2;
     const icon_padding: f32 = size * 0.33;
@@ -1297,7 +1319,7 @@ fn drawRoundButton(
     defer btn.deinit();
     btn.processEvents();
     // Liquid glass over the panel, like the canvas's floating buttons.
-    pixi.glass_button.background(&btn, active);
+    pixi.glass_button.background(&btn, active, if (witness) |w| w ^ std.hash.Wyhash.hash(0, std.mem.asBytes(&btn.data().borderRectScale().r)) else null);
 
     const text_color = if (active)
         dvui.themeGet().color(.highlight, .text)

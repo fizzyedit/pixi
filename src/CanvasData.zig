@@ -849,7 +849,9 @@ pub fn drawTransformDialog(_: *CanvasData, file: *File, container: *dvui.WidgetD
 /// with icon-only round buttons sized to match the toolbox buttons. Starts collapsed as a
 /// single hamburger circle; tapping toggles the row of action buttons in/out with a
 /// width animation.
-pub fn drawEditPill(self: *CanvasData, container: *dvui.WidgetData) void {
+/// `pane_file` is the document this pane shows — what lies under the pill, for its glass's
+/// witness (`pixi.glass_button.canvasWitness`).
+pub fn drawEditPill(self: *CanvasData, container: *dvui.WidgetData, pane_file: *File) void {
     const file = runtime.state().docs.activeFile(runtime.state().host) orelse return;
     // The transform dialog takes the same top-left corner (`drawTransformDialog`), with its
     // own accept/cancel; the pill steps aside while it is up.
@@ -952,7 +954,7 @@ pub fn drawEditPill(self: *CanvasData, container: *dvui.WidgetData) void {
         const open = std.math.clamp(anim_value, 0, 1);
         const inset = pill_padding * (1 - open);
         const glass = rs.r.insetAll(inset * rs.s);
-        pixi.glass_button.pane(fw.data().id, glass, pill_w / 2 - inset, rs.s);
+        pixi.glass_button.pane(fw.data().id, glass, pill_w / 2 - inset, rs.s, pixi.glass_button.canvasWitness(pane_file, glass));
     }
 
     var vbox = dvui.box(@src(), .{ .dir = .vertical }, .{
@@ -1116,7 +1118,8 @@ pub fn drawEditPill(self: *CanvasData, container: *dvui.WidgetData) void {
 /// through to `file.editor.canvas.sample_data_point` so `FileWidget.drawSample` renders
 /// the existing color-dropper magnifier at the touch location. On release we read the
 /// color underneath the sample point and apply it to the primary color slot.
-pub fn drawSampleButton(self: *CanvasData, container: *dvui.WidgetData) void {
+/// `pane_file` as `drawEditPill`'s.
+pub fn drawSampleButton(self: *CanvasData, container: *dvui.WidgetData, pane_file: *File) void {
     const file = runtime.state().docs.activeFile(runtime.state().host) orelse return;
     // Steps aside for the transform dialog with the pill (see `drawEditPill`).
     if (file.editor.transform != null) return;
@@ -1245,7 +1248,7 @@ pub fn drawSampleButton(self: *CanvasData, container: *dvui.WidgetData) void {
     // (non-claimed) events — i.e. plain mouse hover when we're not in a drag.
     btn.processEvents();
     // Its own disc of liquid glass over the canvas.
-    pixi.glass_button.background(&btn, false);
+    pixi.glass_button.background(&btn, false, pixi.glass_button.canvasWitness(pane_file, btn.data().borderRectScale().r));
 
     const icon_color = dvui.themeGet().color(.content, .text);
     dvui.icon(
