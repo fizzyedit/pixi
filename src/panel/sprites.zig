@@ -1254,8 +1254,8 @@ pub fn drawAnimationControlsDialog(_: *Sprites) void {
     }
 }
 
-/// One round, floating action button matching the workspace hamburger / sample
-/// buttons. Returns true on click. `enabled` mutes the icon (the caller also
+/// One round, floating action button in liquid glass, matching the workspace hamburger / sample
+/// buttons (`pixi.glass_button`). Returns true on click. `enabled` mutes the icon (the caller also
 /// gates the action on it); `active` tints the fill to show a toggled-on state.
 /// Each call site supplies its own `@src()` for a stable, distinct id.
 fn drawRoundButton(
@@ -1285,31 +1285,19 @@ fn drawRoundButton(
         dvui.themeGet().color(.content, .fill);
 
     var btn: dvui.ButtonWidget = undefined;
-    btn.init(src, .{}, .{
+    btn.init(src, .{}, pixi.glass_button.options(size, .{
         .expand = .both,
-        .min_size_content = .{ .w = size, .h = size },
-        .background = true,
         .corners = .round(btn_radius),
-        .color_fill = .{ .color = fill },
-        .color_fill_hover = .{ .color = fill.lighten(if (dvui.themeGet().dark) 10.0 else -10.0) },
-        .color_border = .transparent,
         // Inset lives on the button (not the icon): a uniform pad on the icon
         // would force its content rect square and skew non-square glyphs like
         // the entypo play/pause. Padding here keeps the icon's own rect free to
         // take the glyph's native aspect under `expand = .ratio`.
         .padding = dvui.Rect.all(icon_padding),
-        .margin = .{},
-        .box_shadow = .{
-            .color = .black,
-            .alpha = 0.2,
-            .fade = 4,
-            .offset = .{ .x = 0, .y = 2 },
-            .corners = .round(btn_radius),
-        },
-    });
+    }));
     defer btn.deinit();
     btn.processEvents();
-    btn.drawBackground();
+    // Liquid glass over the panel, like the canvas's floating buttons.
+    pixi.glass_button.background(&btn, active);
 
     const text_color = if (active)
         dvui.themeGet().color(.highlight, .text)

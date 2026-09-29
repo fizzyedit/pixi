@@ -939,18 +939,21 @@ pub fn drawEditPill(self: *CanvasData, container: *dvui.WidgetData) void {
             .h = effective_pill_h,
         },
         .expand = .none,
-        .background = self.edit_pill_expanded,
-        .color_fill = .{ .color = dvui.themeGet().color(.window, .fill) },
+        .background = false,
         .corners = .round(pill_radius),
-        .box_shadow = if (self.edit_pill_expanded) .{
-            .color = .black,
-            .alpha = 0.25,
-            .fade = 10,
-            .offset = .{ .x = 0, .y = 3 },
-            .corners = .round(pill_radius),
-        } else null,
     });
     defer fw.deinit();
+
+    // The pill is one pane of liquid glass over the canvas (`pixi.glass_button`): shut, exactly
+    // the hamburger's disc; opening, it grows out of that disc into the whole pill, and the
+    // buttons in it are washes on it, as a menu's rows are.
+    {
+        const rs = fw.data().borderRectScale();
+        const open = std.math.clamp(anim_value, 0, 1);
+        const inset = pill_padding * (1 - open);
+        const glass = rs.r.insetAll(inset * rs.s);
+        pixi.glass_button.pane(fw.data().id, glass, pill_w / 2 - inset, rs.s);
+    }
 
     var vbox = dvui.box(@src(), .{ .dir = .vertical }, .{
         .expand = .both,
@@ -963,30 +966,15 @@ pub fn drawEditPill(self: *CanvasData, container: *dvui.WidgetData) void {
     // buttons grows downward beneath it as the pill expands.
     {
         var btn: dvui.ButtonWidget = undefined;
-        btn.init(@src(), .{}, .{
+        btn.init(@src(), .{}, pixi.glass_button.options(button_size, .{
             .id_extra = entries.len, // distinct from action button ids below
-            .min_size_content = .{ .w = button_size, .h = button_size },
-            .expand = .none,
             .gravity_x = 0.5,
             .gravity_y = 0.0,
-            .background = true,
             .corners = .round(btn_radius),
-            .color_fill = .{ .color = dvui.themeGet().color(.content, .fill) },
-            .color_fill_hover = .{ .color = dvui.themeGet().color(.content, .fill).lighten(if (dvui.themeGet().dark) 10.0 else -10.0) },
-            .color_border = .transparent,
-            .padding = .all(0),
-            .margin = .{},
-            .box_shadow = .{
-                .color = .black,
-                .alpha = 0.2,
-                .fade = 4,
-                .offset = .{ .x = 0, .y = 2 },
-                .corners = .round(btn_radius),
-            },
-        });
+        }));
         defer btn.deinit();
         btn.processEvents();
-        btn.drawBackground();
+        pixi.glass_button.wash(&btn, false);
 
         const icon_color = dvui.themeGet().color(.content, .text);
         dvui.icon(
@@ -1006,11 +994,14 @@ pub fn drawEditPill(self: *CanvasData, container: *dvui.WidgetData) void {
         if (btn.clicked()) {
             self.edit_pill_expanded = !self.edit_pill_expanded;
             const target: f32 = if (self.edit_pill_expanded) 1.0 else 0.0;
+            // On the app's motion, as a menu opens: past its size and back when motion is
+            // playful, straight in at minimal, not at all when it is off.
+            const motion = pixi.core.motion;
             dvui.animation(anim_id, "_t", .{
                 .start_val = anim_value,
                 .end_val = target,
-                .end_time = 250_000,
-                .easing = dvui.easing.outBack,
+                .end_time = motion.duration(300_000),
+                .easing = if (self.edit_pill_expanded) motion.enter else motion.settle,
             });
         }
     }
@@ -1043,29 +1034,15 @@ pub fn drawEditPill(self: *CanvasData, container: *dvui.WidgetData) void {
         };
 
         var btn: dvui.ButtonWidget = undefined;
-        btn.init(@src(), .{}, .{
+        btn.init(@src(), .{}, pixi.glass_button.options(button_size, .{
             .id_extra = i,
-            .min_size_content = .{ .w = button_size, .h = button_size },
-            .expand = .none,
             .gravity_x = 0.5,
-            .background = true,
             .corners = .round(btn_radius),
-            .color_fill = .{ .color = dvui.themeGet().color(.content, .fill) },
-            .color_fill_hover = .{ .color = dvui.themeGet().color(.content, .fill).lighten(if (dvui.themeGet().dark) 10.0 else -10.0) },
-            .color_border = .transparent,
-            .padding = .all(0),
             .margin = .{ .y = button_gap },
-            .box_shadow = .{
-                .color = .black,
-                .alpha = 0.2,
-                .fade = 4,
-                .offset = .{ .x = 0, .y = 2 },
-                .corners = .round(btn_radius),
-            },
-        });
+        }));
         defer btn.deinit();
         btn.processEvents();
-        btn.drawBackground();
+        pixi.glass_button.wash(&btn, false);
 
         // Disabled: the text colour most of the way to the button's fill, not see-through —
         // a stroked icon is overlapping pieces, and at partial alpha its caps and joins
@@ -1186,24 +1163,10 @@ pub fn drawSampleButton(self: *CanvasData, container: *dvui.WidgetData) void {
     // dragging away from the button — without it, dvui's default `clickedEx` releases
     // capture as soon as the drag crosses the threshold (treating the gesture as a
     // canceled scroll), which would also cancel our custom drag-to-sample handler.
-    btn.init(@src(), .{ .touch_drag = true }, .{
+    btn.init(@src(), .{ .touch_drag = true }, pixi.glass_button.options(button_size, .{
         .expand = .both,
-        .background = true,
-        .min_size_content = .{ .w = button_size, .h = button_size },
         .corners = .round(btn_radius),
-        .color_fill = .{ .color = dvui.themeGet().color(.content, .fill) },
-        .color_fill_hover = .{ .color = dvui.themeGet().color(.content, .fill).lighten(if (dvui.themeGet().dark) 10.0 else -10.0) },
-        .color_border = .transparent,
-        .padding = .all(0),
-        .margin = .{},
-        .box_shadow = .{
-            .color = .black,
-            .alpha = 0.2,
-            .fade = 4,
-            .offset = .{ .x = 0, .y = 2 },
-            .corners = .round(btn_radius),
-        },
-    });
+    }));
     defer btn.deinit();
 
     // Persistent drag state (a press is "drag-sampling" once motion clears the dvui drag
@@ -1281,7 +1244,8 @@ pub fn drawSampleButton(self: *CanvasData, container: *dvui.WidgetData) void {
     // Now let the button run its own pass to handle hover styling against any remaining
     // (non-claimed) events — i.e. plain mouse hover when we're not in a drag.
     btn.processEvents();
-    btn.drawBackground();
+    // Its own disc of liquid glass over the canvas.
+    pixi.glass_button.background(&btn, false);
 
     const icon_color = dvui.themeGet().color(.content, .text);
     dvui.icon(
