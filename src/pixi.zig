@@ -56,6 +56,7 @@ pub const sprite_render = @import("sprite_render.zig");
 pub const round_icon = @import("widgets/round_icon.zig");
 pub const tooltip = @import("widgets/tooltip.zig");
 pub const glass_button = @import("widgets/glass_button.zig");
+pub const natural_text = @import("widgets/natural_text.zig");
 pub const scroll_shadows = @import("widgets/scroll_shadows.zig");
 pub const algorithms = @import("algorithms/algorithms.zig");
 

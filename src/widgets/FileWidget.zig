@@ -2294,7 +2294,8 @@ pub fn drawSpriteBubble(
         return false;
     };
 
-    const text_size = font.textSize(sprite_label);
+    // At the natural scale it is drawn at, never the zoom (`pixi.natural_text`).
+    const text_size = pixi.natural_text.size(font, sprite_label);
 
     var button_width = @max(button_height, (text_size.w + 4.0) / self.init_options.file.editor.canvas.scale);
 
@@ -2750,8 +2751,9 @@ pub fn drawSpriteBubble(
                 var message_size: dvui.Size = .{};
 
                 if (add_rem_message) |message| {
-                    message_size.w = font.textSize(message).w * dvui.currentWindow().natural_scale;
-                    message_size.h = font.textSize(message).h * dvui.currentWindow().natural_scale + 2.0 * dvui.currentWindow().natural_scale;
+                    const measured = pixi.natural_text.size(font, message);
+                    message_size.w = measured.w * dvui.currentWindow().natural_scale;
+                    message_size.h = measured.h * dvui.currentWindow().natural_scale + 2.0 * dvui.currentWindow().natural_scale;
 
                     fill_rect.w += message_size.w * 1.5;
                     fill_rect.h = @max(fill_rect.h, message_size.h);

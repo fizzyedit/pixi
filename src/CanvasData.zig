@@ -632,11 +632,11 @@ pub fn drawRulerLabel(_: *CanvasData, options: TextLabelOptions) void {
     const natural = dvui.currentWindow().natural_scale;
 
     const ref_for_layout = options.largest_label orelse label;
-    const label_size = options.ref_size_physical orelse font.textSize(ref_for_layout).scale(natural, dvui.Size.Physical);
+    const label_size = options.ref_size_physical orelse pixi.natural_text.size(font, ref_for_layout).scale(natural, dvui.Size.Physical);
     const actual_label_size = if (std.mem.eql(u8, ref_for_layout, label))
         label_size
     else
-        font.textSize(label).scale(natural, dvui.Size.Physical);
+        pixi.natural_text.size(font, label).scale(natural, dvui.Size.Physical);
 
     const padding = runtime.state().ruler_padding * natural;
 
