@@ -85,20 +85,24 @@ pub fn draw() !void {
     outer_rect.y -= outer_rect.h / 2.0;
 
     // The disc is frosted glass like every other floating surface (`core.dialogs.frostPane`,
-    // at the app's dialog style): the box paints its shadow, the frost replaces what the shadow
-    // covered inside the disc, the tools draw on top. Only when the style has the blur off
-    // does the box paint a plain fill.
+    // at the app's dialog style), its shadow a ring round the glass drawn after it
+    // (`core.dialogs.glassShadow`) — a box shadow under the disc was read back by the frost and
+    // blurred into it: a darker middle and a halo round the rim. The tools draw on top. With the
+    // blur off (or an SDK before the ring) the box paints its shadow and a plain fill.
+    const shadow: dvui.Options.BoxShadow = .{
+        .color = .black,
+        .offset = .{ .x = -4.0, .y = 4.0 },
+        .fade = 8.0,
+        .alpha = 0.35,
+    };
+    const ring = comptime @hasDecl(pixi.core.dialogs, "glassShadow");
+    const frosted = pixi.core.dialogs.dialogFrost() != null;
     var box = dvui.box(@src(), .{ .dir = .horizontal }, .{
         .rect = outer_rect,
         .expand = .none,
         .background = false,
         .corners = .round(100000),
-        .box_shadow = .{
-            .color = .black,
-            .offset = .{ .x = -4.0, .y = 4.0 },
-            .fade = 8.0,
-            .alpha = 0.35,
-        },
+        .box_shadow = if (ring and frosted) null else shadow,
         .border = dvui.Rect.all(0.0),
     });
     {
@@ -107,6 +111,7 @@ pub fn draw() !void {
         if (!pixi.core.dialogs.frostPane(box.data().id, brs.r, corners, brs.s)) {
             brs.r.fill(corners.scale(brs.s, dvui.CornerRect.Physical), .{ .color = .{ .color = pixi.core.dialogs.dialogFill() }, .fade = 1.0 });
         }
+        if (ring and frosted) pixi.core.dialogs.glassShadow(brs.r, corners, brs.s, shadow, 1);
     }
     box.deinit();
     outer_anim.deinit();

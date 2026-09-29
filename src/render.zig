@@ -298,22 +298,22 @@ pub fn renderLayersMagnifierSample(init_opts: RenderFileOptions) !void {
 
     const vs = layerViewStateForRender(init_opts);
 
-    var path: dvui.Path.Builder = .init(runtime.allocator());
+    var path: dvui.Path.Builder = .init(dvui.currentWindow().arena());
     defer path.deinit();
 
     path.addRect(init_opts.rs.r, dvui.CornerRect.Physical.square);
 
-    var triangles = try path.build().fillConvexTriangles(runtime.allocator(), .{ .color = .{ .color = init_opts.color_mod }, .fade = init_opts.fade });
-    defer triangles.deinit(runtime.allocator());
+    var triangles = try path.build().fillConvexTriangles(dvui.currentWindow().arena(), .{ .color = .{ .color = init_opts.color_mod }, .fade = init_opts.fade });
+    defer triangles.deinit(dvui.currentWindow().arena());
 
     triangles.uvFromRectuv(init_opts.rs.r, init_opts.uv);
 
     var dimmed_triangles: ?dvui.Triangles = null;
     defer {
-        if (dimmed_triangles) |*dt| dt.deinit(runtime.allocator());
+        if (dimmed_triangles) |*dt| dt.deinit(dvui.currentWindow().arena());
     }
     if (vs.needs_dimmed) {
-        var dt = try triangles.dupe(runtime.allocator());
+        var dt = try triangles.dupe(dvui.currentWindow().arena());
         dt.color(.gray);
         dimmed_triangles = dt;
     }
@@ -573,12 +573,12 @@ fn renderLayersIntoTarget(
     defer dvui.clipSet(prev_clip);
     dvui.clipSet(image_rect);
 
-    var path: dvui.Path.Builder = .init(runtime.allocator());
+    var path: dvui.Path.Builder = .init(dvui.currentWindow().arena());
     defer path.deinit();
     path.addRect(image_rect, dvui.CornerRect.Physical.square);
 
-    var tris = try path.build().fillConvexTriangles(runtime.allocator(), .{ .color = .white, .fade = 0 });
-    defer tris.deinit(runtime.allocator());
+    var tris = try path.build().fillConvexTriangles(dvui.currentWindow().arena(), .{ .color = .white, .fade = 0 });
+    defer tris.deinit(dvui.currentWindow().arena());
     tris.uvFromRectuv(image_rect, .{ .x = 0, .y = 0, .w = 1, .h = 1 });
 
     var order_buf: [1024]usize = undefined;
@@ -668,32 +668,32 @@ pub fn syncPreviewComposite(file: *pixi.internal.File) !void {
 
     // 1) Opaque content-fill base — the transparency backdrop, matching the card.
     {
-        var path: dvui.Path.Builder = .init(runtime.allocator());
+        var path: dvui.Path.Builder = .init(dvui.currentWindow().arena());
         defer path.deinit();
         path.addRect(image_rect, dvui.CornerRect.Physical.square);
-        var tris = try path.build().fillConvexTriangles(runtime.allocator(), .{ .color = .{ .color = dvui.themeGet().color(.content, .fill) }, .fade = 0 });
-        defer tris.deinit(runtime.allocator());
+        var tris = try path.build().fillConvexTriangles(dvui.currentWindow().arena(), .{ .color = .{ .color = dvui.themeGet().color(.content, .fill) }, .fade = 0 });
+        defer tris.deinit(dvui.currentWindow().arena());
         dvui.renderTriangles(tris, null) catch {};
     }
 
     // 2) Checkerboard tile — one tile per sprite cell (uv repeats columns × rows).
     if (file.checkerboardTileTexture()) |checker| {
-        var path: dvui.Path.Builder = .init(runtime.allocator());
+        var path: dvui.Path.Builder = .init(dvui.currentWindow().arena());
         defer path.deinit();
         path.addRect(image_rect, dvui.CornerRect.Physical.square);
         const tint = dvui.themeGet().color(.content, .fill).lighten(6.0).opacity(0.5);
-        var tris = try path.build().fillConvexTriangles(runtime.allocator(), .{ .color = .{ .color = tint }, .fade = 0 });
-        defer tris.deinit(runtime.allocator());
+        var tris = try path.build().fillConvexTriangles(dvui.currentWindow().arena(), .{ .color = .{ .color = tint }, .fade = 0 });
+        defer tris.deinit(dvui.currentWindow().arena());
         tris.uvFromRectuv(image_rect, .{ .x = 0, .y = 0, .w = @floatFromInt(file.columns), .h = @floatFromInt(file.rows) });
         dvui.renderTriangles(tris, checker) catch {};
     }
 
     // 3) Flattened layers, then selection + temp overlays — sampled 1:1.
-    var path: dvui.Path.Builder = .init(runtime.allocator());
+    var path: dvui.Path.Builder = .init(dvui.currentWindow().arena());
     defer path.deinit();
     path.addRect(image_rect, dvui.CornerRect.Physical.square);
-    var tris = try path.build().fillConvexTriangles(runtime.allocator(), .{ .color = .white, .fade = 0 });
-    defer tris.deinit(runtime.allocator());
+    var tris = try path.build().fillConvexTriangles(dvui.currentWindow().arena(), .{ .color = .white, .fade = 0 });
+    defer tris.deinit(dvui.currentWindow().arena());
     tris.uvFromRectuv(image_rect, .{ .x = 0, .y = 0, .w = 1, .h = 1 });
 
     if (file.editor.layer_composite_target) |ct| {
@@ -776,35 +776,35 @@ pub fn renderLayers(init_opts: RenderFileOptions) !void {
     var triangles = if (init_opts.quad) |q| blk: {
         // Skewed quad: build a subdivided mesh so the texture follows the
         // perspective instead of being mapped onto an axis-aligned rect.
-        var qpath: dvui.Path.Builder = .init(runtime.allocator());
+        var qpath: dvui.Path.Builder = .init(dvui.currentWindow().arena());
         defer qpath.deinit();
         qpath.addPoint(q[0]);
         qpath.addPoint(q[1]);
         qpath.addPoint(q[2]);
         qpath.addPoint(q[3]);
-        break :blk try pixi.sprite_render.pathToSubdividedQuad(qpath.build(), runtime.allocator(), .{
+        break :blk try pixi.sprite_render.pathToSubdividedQuad(qpath.build(), dvui.currentWindow().arena(), .{
             .subdivisions = init_opts.quad_subdivisions,
             .uv = init_opts.uv,
             .color_mod = init_opts.color_mod,
         });
     } else blk: {
-        var path: dvui.Path.Builder = .init(runtime.allocator());
+        var path: dvui.Path.Builder = .init(dvui.currentWindow().arena());
         defer path.deinit();
 
         path.addRect(content_rs.r, init_opts.corners.scale(content_rs.s, dvui.CornerRect.Physical));
 
-        var t = try path.build().fillConvexTriangles(runtime.allocator(), .{ .color = .{ .color = init_opts.color_mod }, .fade = init_opts.fade });
+        var t = try path.build().fillConvexTriangles(dvui.currentWindow().arena(), .{ .color = .{ .color = init_opts.color_mod }, .fade = init_opts.fade });
         t.uvFromRectuv(content_rs.r, init_opts.uv);
         break :blk t;
     };
-    defer triangles.deinit(runtime.allocator());
+    defer triangles.deinit(dvui.currentWindow().arena());
 
     var dimmed_triangles: ?dvui.Triangles = null;
     defer {
-        if (dimmed_triangles) |*dt| dt.deinit(runtime.allocator());
+        if (dimmed_triangles) |*dt| dt.deinit(dvui.currentWindow().arena());
     }
     if (needs_dimmed) {
-        var dt = try triangles.dupe(runtime.allocator());
+        var dt = try triangles.dupe(dvui.currentWindow().arena());
         dt.color(.gray);
         dimmed_triangles = dt;
     }

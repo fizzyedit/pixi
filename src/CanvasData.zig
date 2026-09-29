@@ -317,6 +317,10 @@ fn drawRulerContent(
     };
     spacer.at(first, cell_len, orientation, reorder_expand, 0);
 
+    // Every cell's separator, drawn in one batch once the cells are laid out: a stroke apiece was
+    // a path, its triangles and a draw call for every column (row) in view, each frame.
+    var separators: std.ArrayListUnmanaged(dvui.Rect.Physical) = .empty;
+
     var index: usize = first;
     while (index < last) : (index += 1) {
         var reorderable = reorder.reorderable(@src(), .{
@@ -395,7 +399,8 @@ fn drawRulerContent(
             // appear at the cursor. Skip the visible cell rendering entirely while floating;
             // the dragged label is drawn over the highlighted target slot below instead.
             if (!reorderable.floating()) {
-                cell_box.drawBackground();
+                // Idle cells are transparent: nothing to fill.
+                if (button_color.a != 0) cell_box.drawBackground();
 
                 const label = switch (orientation) {
                     .horizontal => file.fmtColumn(dvui.currentWindow().arena(), @intCast(index)) catch {
@@ -421,12 +426,12 @@ fn drawRulerContent(
                     .ref_size_physical = vertical_row_layout_size_phys,
                 });
 
+                // The line along the cell's leading edge, 2px wide and centred on it.
                 const cell_rect = cell_box.data().rectScale().r;
-                const cell_stroke_points = switch (orientation) {
-                    .horizontal => .{ cell_rect.topLeft(), cell_rect.bottomLeft() },
-                    .vertical => .{ cell_rect.topLeft(), cell_rect.topRight() },
-                };
-                dvui.Path.stroke(.{ .points = &cell_stroke_points }, .{ .color = .{ .color = ruler_stroke_color }, .thickness = 2.0 });
+                separators.append(dvui.currentWindow().arena(), switch (orientation) {
+                    .horizontal => .{ .x = cell_rect.x - 1, .y = cell_rect.y, .w = 2, .h = cell_rect.h },
+                    .vertical => .{ .x = cell_rect.x, .y = cell_rect.y - 1, .w = cell_rect.w, .h = 2 },
+                }) catch {};
             }
 
             loop: for (dvui.events()) |*e| {
@@ -464,6 +469,7 @@ fn drawRulerContent(
         }
     }
     spacer.at(count - last, cell_len, orientation, reorder_expand, 1);
+    drawRulerSeparators(separators.items, ruler_stroke_color);
 
     const final_slot_id = switch (orientation) {
         .horizontal => file.columns,
@@ -599,6 +605,24 @@ pub const TextLabelOptions = struct {
     /// When set, layout size for that widest string (already × `natural_scale`); skips `textSize(largest_label)` per cell.
     ref_size_physical: ?dvui.Size.Physical = null,
 };
+
+/// The rulers' cell separators as one batch of quads (physical rects).
+fn drawRulerSeparators(rects: []const dvui.Rect.Physical, color: dvui.Color) void {
+    if (rects.len == 0) return;
+    const cw = dvui.currentWindow();
+    var b = dvui.Triangles.Builder.init(cw.arena(), rects.len * 4, rects.len * 6) catch return;
+    defer b.deinit(cw.arena());
+    const col: dvui.Color.PMA = .fromColor(color.opacity(cw.alpha));
+    for (rects) |r| {
+        const base: dvui.Vertex.Index = @intCast(b.vertexes.items.len);
+        b.appendVertex(.{ .pos = r.topLeft(), .col = col });
+        b.appendVertex(.{ .pos = r.topRight(), .col = col });
+        b.appendVertex(.{ .pos = r.bottomRight(), .col = col });
+        b.appendVertex(.{ .pos = r.bottomLeft(), .col = col });
+        b.appendTriangles(&.{ base, base + 1, base + 2, base, base + 2, base + 3 });
+    }
+    dvui.renderTriangles(b.build_unowned(), null) catch {};
+}
 
 pub fn drawRulerLabel(_: *CanvasData, options: TextLabelOptions) void {
     const font = options.font;

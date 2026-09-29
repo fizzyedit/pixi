@@ -1142,7 +1142,7 @@ pub fn drawPalettes() !void {
         dvui.themeSet(t);
         defer dvui.themeSet(oldt);
 
-        var dropdown: dvui.DropdownWidget = undefined;
+        var dropdown: pixi.core.widgets.DropdownWidget = undefined;
         dropdown.init(@src(), .{ .label = "Palette" }, .{
             .expand = .horizontal,
             .corners = .round(1000),
@@ -1317,7 +1317,7 @@ pub fn drawPalettes() !void {
         }
     }
 }
-fn searchPalettes(dropdown: *dvui.DropdownWidget) !void {
+fn searchPalettes(dropdown: *pixi.core.widgets.DropdownWidget) !void {
     const io = dvui.io;
     const palette_folder = runtime.state().host.paletteFolder() orelse return;
     var dir_opt = std.Io.Dir.cwd().openDir(io, palette_folder, .{ .access_sub_paths = false, .iterate = true }) catch null;
