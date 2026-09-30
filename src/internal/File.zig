@@ -552,7 +552,7 @@ pub fn fromPath(path: []const u8) !?pixi.internal.File {
 /// `.pixi` is pixi's native extension; `.fiz` is kept as a fallback for files created
 /// while pixi shipped as part of the whole fizzy app rather than as a plugin.
 pub fn isFizzyExtension(ext: []const u8) bool {
-    return std.mem.eql(u8, ext, ".fiz") or std.mem.eql(u8, ext, ".pixi");
+    return std.ascii.eqlIgnoreCase(ext, ".fiz") or std.ascii.eqlIgnoreCase(ext, ".pixi");
 }
 
 pub fn fromPathFizzy(path: []const u8) !?pixi.internal.File {
@@ -810,7 +810,7 @@ fn loadFizzyZip(path: []const u8, file_bytes: ?[]const u8) !?pixi.internal.File 
 
     //         while (try iter.next()) |entry| {
     //             const ext = std.fs.path.extension(entry.name);
-    //             if (std.mem.eql(u8, ext, ".json")) {
+    //             if (std.ascii.eqlIgnoreCase(ext, ".json")) {
     //                 entry.writeAll(json_content.writer()) catch return error.FileLoadError;
     //             }
     //         }
@@ -893,9 +893,9 @@ fn loadFizzyZip(path: []const u8, file_bytes: ?[]const u8) !?pixi.internal.File 
 }
 
 pub fn isFlatImageExtension(ext: []const u8) bool {
-    return std.mem.eql(u8, ext, ".png") or
-        std.mem.eql(u8, ext, ".jpg") or
-        std.mem.eql(u8, ext, ".jpeg");
+    return std.ascii.eqlIgnoreCase(ext, ".png") or
+        std.ascii.eqlIgnoreCase(ext, ".jpg") or
+        std.ascii.eqlIgnoreCase(ext, ".jpeg");
 }
 
 /// Extensions that `saveAsync` can write without a Save As dialog.
@@ -3354,9 +3354,9 @@ pub fn savedBytes(self: *File, allocator: std.mem.Allocator, window: *dvui.Windo
         defer snap.deinit(runtime.allocator());
         return try writeSnapshotToZipBytes(&snap, allocator);
     }
-    const raw = if (std.mem.eql(u8, ext, ".png"))
+    const raw = if (std.ascii.eqlIgnoreCase(ext, ".png"))
         try flattenedImageBytes(self, window, .png)
-    else if (std.mem.eql(u8, ext, ".jpg") or std.mem.eql(u8, ext, ".jpeg"))
+    else if (std.ascii.eqlIgnoreCase(ext, ".jpg") or std.ascii.eqlIgnoreCase(ext, ".jpeg"))
         try flattenedImageBytes(self, window, .jpg)
     else
         return error.UnsupportedSaveExtension;
@@ -3391,11 +3391,11 @@ pub fn saveToDownload(self: *File, window: *dvui.Window) !void {
         const bytes = try writeSnapshotToZipBytes(&snap, runtime.allocator());
         defer runtime.allocator().free(bytes);
         try @import("../web_file_io.zig").downloadBytesWithExtension(basename, ".pixi", bytes);
-    } else if (std.mem.eql(u8, ext, ".png")) {
+    } else if (std.ascii.eqlIgnoreCase(ext, ".png")) {
         const bytes = try flattenedImageBytes(self, window, .png);
         defer runtime.allocator().free(bytes);
         try @import("../web_file_io.zig").downloadBytesWithExtension(basename, ".png", bytes);
-    } else if (std.mem.eql(u8, ext, ".jpg") or std.mem.eql(u8, ext, ".jpeg")) {
+    } else if (std.ascii.eqlIgnoreCase(ext, ".jpg") or std.ascii.eqlIgnoreCase(ext, ".jpeg")) {
         const bytes = try flattenedImageBytes(self, window, .jpg);
         defer runtime.allocator().free(bytes);
         try @import("../web_file_io.zig").downloadBytesWithExtension(basename, ".jpg", bytes);
@@ -3554,8 +3554,8 @@ pub fn saveAsFlattened(self: *File, output_path: []const u8, window: *dvui.Windo
     }
 
     const ext = std.fs.path.extension(output_path);
-    const is_png = std.mem.eql(u8, ext, ".png");
-    const is_jpg = std.mem.eql(u8, ext, ".jpg") or std.mem.eql(u8, ext, ".jpeg");
+    const is_png = std.ascii.eqlIgnoreCase(ext, ".png");
+    const is_jpg = std.ascii.eqlIgnoreCase(ext, ".jpg") or std.ascii.eqlIgnoreCase(ext, ".jpeg");
     if (!is_png and !is_jpg) {
         self.setSaving(false);
         return error.InvalidExtension;
@@ -4056,10 +4056,10 @@ pub fn saveAsync(self: *File) !void {
             self.setSaving(false);
             return err;
         };
-    } else if (std.mem.eql(u8, ext, ".png")) {
+    } else if (std.ascii.eqlIgnoreCase(ext, ".png")) {
         // `writeFlattenedLayersToPath` uses `syncLayerComposite` + `readTarget` (GPU); must run on the GUI thread.
         try savePng(self, dvui.currentWindow());
-    } else if (std.mem.eql(u8, ext, ".jpg") or std.mem.eql(u8, ext, ".jpeg")) {
+    } else if (std.ascii.eqlIgnoreCase(ext, ".jpg") or std.ascii.eqlIgnoreCase(ext, ".jpeg")) {
         try saveJpg(self, dvui.currentWindow());
     }
 }

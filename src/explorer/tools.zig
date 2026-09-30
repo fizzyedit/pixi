@@ -1183,7 +1183,7 @@ pub fn drawPalettes() !void {
                 switch (entry.data) {
                     .file => |data| {
                         const ext = std.fs.path.extension(entry.name);
-                        if (std.mem.eql(u8, ext, ".hex")) {
+                        if (std.ascii.eqlIgnoreCase(ext, ".hex")) {
                             if (dropdown.addChoiceLabel(entry.name)) {
                                 runtime.state().colors.palette = pixi.internal.Palette.loadFromBytes(runtime.allocator(), entry.name, data) catch |err| {
                                     dvui.log.err("Failed to load palette: {s}", .{@errorName(err)});
@@ -1327,7 +1327,7 @@ fn searchPalettes(dropdown: *pixi.core.widgets.DropdownWidget) !void {
         while (try iter.next(io)) |entry| {
             if (entry.kind == .file) {
                 const ext = std.fs.path.extension(entry.name);
-                if (std.mem.eql(u8, ext, ".hex")) {
+                if (std.ascii.eqlIgnoreCase(ext, ".hex")) {
                     const label = try std.fmt.allocPrint(dvui.currentWindow().arena(), "{s}", .{entry.name});
                     if (dropdown.addChoiceLabel(label)) {
                         const abs_path = try std.fs.path.join(dvui.currentWindow().arena(), &.{ palette_folder, entry.name });

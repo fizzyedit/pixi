@@ -345,7 +345,7 @@ pub fn saveDocumentAs(st: *State, doc: DocHandle, path: []const u8, window: *dvu
     const ext = std.fs.path.extension(path);
     if (Internal.File.isFizzyExtension(ext)) {
         try file.saveAsFizzy(path, window);
-    } else if (std.mem.eql(u8, ext, ".png") or std.mem.eql(u8, ext, ".jpg") or std.mem.eql(u8, ext, ".jpeg")) {
+    } else if (std.ascii.eqlIgnoreCase(ext, ".png") or std.ascii.eqlIgnoreCase(ext, ".jpg") or std.ascii.eqlIgnoreCase(ext, ".jpeg")) {
         try file.saveAsFlattened(path, window);
     } else {
         return error.UnsupportedSaveExtension;

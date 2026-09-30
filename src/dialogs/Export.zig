@@ -826,8 +826,8 @@ pub fn exportAllCallback(paths: ?[][:0]const u8) void {
 
 pub fn exportCurrentSprite(path: []const u8) anyerror!void {
     const ext = std.fs.path.extension(path);
-    const is_png = std.mem.eql(u8, ext, ".png");
-    const is_jpg = std.mem.eql(u8, ext, ".jpg") or std.mem.eql(u8, ext, ".jpeg");
+    const is_png = std.ascii.eqlIgnoreCase(ext, ".png");
+    const is_jpg = std.ascii.eqlIgnoreCase(ext, ".jpg") or std.ascii.eqlIgnoreCase(ext, ".jpeg");
     if (!is_png and !is_jpg) {
         dvui.log.err("Export: File must be .png or .jpg, got {s}", .{ext});
         return error.InvalidExtension;
@@ -888,8 +888,8 @@ pub fn exportCurrentSprite(path: []const u8) anyerror!void {
 
 pub fn exportLayerToPath(path: []const u8) anyerror!void {
     const ext = std.fs.path.extension(path);
-    const is_png = std.mem.eql(u8, ext, ".png");
-    const is_jpg = std.mem.eql(u8, ext, ".jpg") or std.mem.eql(u8, ext, ".jpeg");
+    const is_png = std.ascii.eqlIgnoreCase(ext, ".png");
+    const is_jpg = std.ascii.eqlIgnoreCase(ext, ".jpg") or std.ascii.eqlIgnoreCase(ext, ".jpeg");
     if (!is_png and !is_jpg) {
         dvui.log.err("Export: File must be .png, .jpg, or .jpeg, got {s}", .{ext});
         return error.InvalidExtension;
@@ -908,8 +908,8 @@ pub fn exportLayerToPath(path: []const u8) anyerror!void {
 
 pub fn exportAllToPath(path: []const u8) anyerror!void {
     const ext = std.fs.path.extension(path);
-    const is_png = std.mem.eql(u8, ext, ".png");
-    const is_jpg = std.mem.eql(u8, ext, ".jpg") or std.mem.eql(u8, ext, ".jpeg");
+    const is_png = std.ascii.eqlIgnoreCase(ext, ".png");
+    const is_jpg = std.ascii.eqlIgnoreCase(ext, ".jpg") or std.ascii.eqlIgnoreCase(ext, ".jpeg");
     if (!is_png and !is_jpg) {
         dvui.log.err("Export: File must be .png, .jpg, or .jpeg, got {s}", .{ext});
         return error.InvalidExtension;
@@ -944,7 +944,7 @@ pub fn exportAllToPath(path: []const u8) anyerror!void {
 
 pub fn createAnimationGif(path: []const u8) anyerror!void {
     const ext = std.fs.path.extension(path);
-    const is_gif = std.mem.eql(u8, ext, ".gif");
+    const is_gif = std.ascii.eqlIgnoreCase(ext, ".gif");
 
     if (!is_gif) {
         dvui.log.err("Export: File must end with .gif extension, got {s}", .{ext});

@@ -19,7 +19,7 @@ pub fn getDVUIColor(self: *Palette, id: usize) dvui.Color {
 pub fn loadFromFile(allocator: std.mem.Allocator, file: []const u8) !Palette {
     const ext = std.fs.path.extension(file);
 
-    if (std.mem.eql(u8, ext, ".hex")) {
+    if (std.ascii.eqlIgnoreCase(ext, ".hex")) {
         if (pixi.fs.read(runtime.allocator(), dvui.io, file) catch null) |read| {
             defer runtime.allocator().free(read);
 

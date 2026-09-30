@@ -55,9 +55,9 @@ pub fn save(atlas: Atlas, path: []const u8, selector: Selector) !void {
                 const ext = std.fs.path.extension(path);
                 var out = std.Io.Writer.Allocating.init(allocator);
                 errdefer out.deinit();
-                if (std.mem.eql(u8, ext, ".png")) {
+                if (std.ascii.eqlIgnoreCase(ext, ".png")) {
                     try pixi.image.writePngToWriter(atlas.source, &out.writer, 72);
-                } else if (std.mem.eql(u8, ext, ".jpg") or std.mem.eql(u8, ext, ".jpeg")) {
+                } else if (std.ascii.eqlIgnoreCase(ext, ".jpg") or std.ascii.eqlIgnoreCase(ext, ".jpeg")) {
                     try pixi.image.writeJpgPpiToWriter(atlas.source, &out.writer, 72);
                 } else {
                     std.log.debug("File name must end with .png, .jpg, or .jpeg extension!", .{});
@@ -86,9 +86,9 @@ pub fn save(atlas: Atlas, path: []const u8, selector: Selector) !void {
             const ext = std.fs.path.extension(path);
             const write_path = std.fmt.allocPrintSentinel(runtime.state().host.arena(), "{s}", .{path}, 0) catch unreachable;
 
-            if (std.mem.eql(u8, ext, ".png")) {
+            if (std.ascii.eqlIgnoreCase(ext, ".png")) {
                 try pixi.image.writeToPng(atlas.source, write_path);
-            } else if (std.mem.eql(u8, ext, ".jpg") or std.mem.eql(u8, ext, ".jpeg")) {
+            } else if (std.ascii.eqlIgnoreCase(ext, ".jpg") or std.ascii.eqlIgnoreCase(ext, ".jpeg")) {
                 try pixi.image.writeToJpg(atlas.source, write_path);
             } else {
                 std.log.debug("File name must end with .png, .jpg, or .jpeg extension!", .{});

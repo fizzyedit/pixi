@@ -166,11 +166,11 @@ fn paint(_: ?*anyopaque, subject: sdk.Host.Painter.Subject) bool {
     };
     const ext = file.ext;
     const color = file.color;
-    if (std.mem.eql(u8, ext, ".fiz")) {
+    if (std.ascii.eqlIgnoreCase(ext, ".fiz")) {
         _ = ui_atlas.sprites[internal.atlas.sprites.fiz_default].draw(@src(), ui_atlas.source, file_icon_sprite_scale, host_slot_fit);
         return true;
     }
-    if (std.mem.eql(u8, ext, ".pixi")) {
+    if (std.ascii.eqlIgnoreCase(ext, ".pixi")) {
         _ = ui_atlas.sprites[internal.atlas.sprites.pixi_default].draw(@src(), ui_atlas.source, file_icon_sprite_scale, host_slot_fit);
         return true;
     }
