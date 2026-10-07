@@ -1308,9 +1308,9 @@ pub fn drawPalettes() !void {
 
             flex_box.deinit();
 
-            const clip = dvui.clip(dvui.currentWindow().rect_pixels);
-            defer dvui.clipSet(clip);
-
+            // In the pane's own clip. Intersected with the main window's rect, as they were, the
+            // chips kept that clip in the main window and lost everything in a float popped out of
+            // it, whose part of the frame lies far past the main window (`core.screens`).
             dvui.renderTriangles(triangles.build(), null) catch {
                 dvui.log.err("Failed to render triangles", .{});
             };
