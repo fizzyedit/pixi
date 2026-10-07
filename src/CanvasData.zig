@@ -781,6 +781,9 @@ pub fn drawTransformDialog(_: *CanvasData, file: *File, container: *dvui.WidgetD
             },
         });
         defer fw.deinit();
+        // Onto the screen it is on — the main window, or the window of a float out of it — rather than
+        // dvui's clip to the main window, which a canvas in a popped-out float lies far past (`core.screens`).
+        dvui.clipSet(pixi.core.screens.pixelsFor(.cast(fw.data().rect)));
 
         var anim = dvui.animate(@src(), .{ .kind = .vertical, .duration = 450_000, .easing = dvui.easing.outBack }, .{});
         defer anim.deinit();
@@ -945,6 +948,9 @@ pub fn drawEditPill(self: *CanvasData, container: *dvui.WidgetData, pane_file: *
         .corners = .round(pill_radius),
     });
     defer fw.deinit();
+    // Onto the screen it is on — the main window, or the window of a float out of it — rather than
+    // dvui's clip to the main window, which a canvas in a popped-out float lies far past (`core.screens`).
+    dvui.clipSet(pixi.core.screens.pixelsFor(.cast(fw.data().rect)));
 
     // The pill is one pane of liquid glass over the canvas (`pixi.glass_button`): shut, exactly
     // the hamburger's disc; opening, it grows out of that disc into the whole pill, and the
@@ -1160,6 +1166,9 @@ pub fn drawSampleButton(self: *CanvasData, container: *dvui.WidgetData, pane_fil
         .background = false,
     });
     defer fw.deinit();
+    // Onto the screen it is on — the main window, or the window of a float out of it — rather than
+    // dvui's clip to the main window, which a canvas in a popped-out float lies far past (`core.screens`).
+    dvui.clipSet(pixi.core.screens.pixelsFor(.cast(fw.data().rect)));
 
     var btn: dvui.ButtonWidget = undefined;
     // `touch_drag = true` keeps `ButtonWidget`'s own capture alive while the touch is

@@ -1300,6 +1300,9 @@ fn drawRoundButton(
         .background = false,
     });
     defer fw.deinit();
+    // Onto the screen it is on — the main window, or the window of a float out of it — rather than
+    // dvui's clip to the main window, which a canvas in a popped-out float lies far past (`core.screens`).
+    dvui.clipSet(pixi.core.screens.pixelsFor(.cast(fw.data().rect)));
 
     const fill = if (active)
         dvui.themeGet().color(.highlight, .fill)

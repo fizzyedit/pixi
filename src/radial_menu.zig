@@ -62,11 +62,18 @@ pub fn processHoldOpenInput() void {
 }
 
 pub fn draw() !void {
+    // Over the screen the menu opens on — the main window, or the window of a float out of it, whose
+    // canvas lies far past the main window (`core.screens`) — rather than the main window alone, where
+    // a menu opened in a popped-out float was clipped away.
+    const at = runtime.state().tools.radial_menu.center;
+    const scale = dvui.windowNaturalScale();
+    const screen = pixi.core.screens.screenFor(.{ .x = at.x / scale, .y = at.y / scale });
     var fw: dvui.FloatingWidget = undefined;
     fw.init(@src(), .{}, .{
-        .rect = .cast(dvui.windowRect()),
+        .rect = .cast(screen),
     });
     defer fw.deinit();
+    dvui.clipSet(pixi.core.screens.pixelsFor(screen));
 
     const center = fw.data().rectScale().pointFromPhysical(runtime.state().tools.radial_menu.center);
     const tool_count: usize = std.meta.fields(Tools.Tool).len;
