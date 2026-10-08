@@ -1,12 +1,17 @@
 //! The colour dropper's magnifier: an orb of liquid glass by the pointer while the dropper reads
-//! the canvas (a right-click held, the sample key or button, a touch held). The orb is the drop
-//! zones' own glass — frosted over the canvas behind it, bending it at the rim, tinted and lit as
-//! the app's glass is on the window opacity slider (`core.dialogs.carriedField`) — and in it, as a
-//! drop zone carries its icon, a pixel-exact zoom of the art round the pixel being read: that
-//! pixel at its centre, framed by a crosshair, the zoom's edge fading into the ring of glass round
-//! it. It is the app's own glass program, so the same glass on the web as natively. Where there is
-//! none (the blur off and no program to draw clear glass), the orb is the dialogs' fill, as the
-//! drop zones are then.
+//! the canvas (a right-click held, the sample key or button, a touch held), and over it, as fizzy
+//! lays the carried view's picture over its drop, a pixel-exact zoom of the art round the pixel
+//! being read: that pixel at its centre, framed by a crosshair, the glass's rim round it.
+//!
+//! The glass is the drop zones' own:
+//! - **The OS's Liquid Glass** where fizzy offers it (`core.native_glass.offered`: macOS 26, floats
+//!   as windows, native glass on): the orb is declared for fizzy's overlay of the OS's glass, and
+//!   the zoom is a layer of its own the overlay takes over the glass (`core.screens.markCarried`).
+//!   The app draws none of it.
+//! - **The app's glass** everywhere else (`core.dialogs.carriedField`, the web too): frosted over
+//!   the canvas behind it, bending it at the rim, tinted and lit on the window opacity slider. Where
+//!   there is none (the blur off and no glass program), the orb is the dialogs' fill, as the drop
+//!   zones are then.
 //!
 //! It grows out of the pointer when the dropper starts and follows it on a spring (`core.Spring`),
 //! resting up and to the right of it on the screen the canvas is on — a popped-out float's window
@@ -20,6 +25,10 @@ const geometry = @import("magnifier_geometry.zig");
 const core = pixi.core;
 const CanvasWidget = core.widgets.CanvasWidget;
 const LiquidField = core.LiquidField;
+
+/// Whether this build's `core` lets a plugin's glass be the OS's outside a view drag
+/// (`native_glass.offered`, sdk 0.2.18). Before it, the app's glass everywhere.
+const has_native = @hasDecl(core, "native_glass") and @hasDecl(core.native_glass, "offered");
 
 /// What the magnifier shows.
 pub const Art = union(enum) {
@@ -87,6 +96,25 @@ pub fn draw(canvas: *CanvasWidget, art: Art, data_point: dvui.Point) void {
     const target: ?dvui.Texture.Target = if (inner >= 1) buildPicture(art, .{ .x = view.data.x, .y = view.data.y, .w = view.data.w, .h = view.data.h }, picture, s) else null;
     defer if (target) |made| made.destroyLater();
 
+    const disc: dvui.Rect.Physical = .{ .x = c.x - radius, .y = c.y - radius, .w = 2 * radius, .h = 2 * radius };
+    if (comptime has_native) {
+        if (core.native_glass.offered()) {
+            // The OS's glass, in fizzy's overlay, and the zoom in a layer of its own the overlay
+            // takes over it.
+            core.native_glass.add(.{ .rect = disc, .radius = radius });
+            const tg = target orelse return;
+            const tex = dvui.Texture.fromTargetTemp(tg) catch return;
+            var fw: dvui.FloatingWidget = undefined;
+            fw.init(@src(), .{ .mouse_events = false }, .{ .rect = dvui.Rect.cast(disc.toNatural()), .expand = .none, .background = false });
+            defer fw.deinit();
+            core.screens.markCarried(fw.data().id);
+            dvui.clipSet(screen);
+            drawZoom(tex, picture, c, inner, feather);
+            drawCrosshair(physical(view.cell), inner, s);
+            return;
+        }
+    }
+
     // Clipped to its screen, not to the canvas it is over, and in front of everything there.
     const prev_clip = dvui.clipGet();
     defer dvui.clipSet(prev_clip);
@@ -100,7 +128,6 @@ pub fn draw(canvas: *CanvasWidget, art: Art, data_point: dvui.Point) void {
     var field: LiquidField = .{ .scale = s };
     field.add(LiquidField.Shape.circle(c, radius));
     if (!core.dialogs.carriedField(canvas.id.update("pixi.magnifier"), field, s)) {
-        const disc: dvui.Rect.Physical = .{ .x = c.x - radius, .y = c.y - radius, .w = 2 * radius, .h = 2 * radius };
         disc.fill(.round(radius), .{ .color = .{ .color = core.dialogs.dialogFill() }, .fade = 1 });
     }
     const tg = target orelse return;
@@ -114,7 +141,7 @@ fn physical(r: geometry.Rect) dvui.Rect.Physical {
 }
 
 /// The zoom over the glass, a disc of `radius` at `c` (physical) cut from `picture`, its edge
-/// fading into the glass over `feather` pixels so it lies in the glass rather than on it.
+/// fading into the glass's rim over `feather` pixels.
 fn drawZoom(tex: dvui.Texture, picture: dvui.Rect.Physical, c: dvui.Point.Physical, radius: f32, feather: f32) void {
     const arena = dvui.currentWindow().arena();
     var path: dvui.Path.Builder = .init(arena);
