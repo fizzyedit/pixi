@@ -1,0 +1,34 @@
+# Moves this plugin onto a new fizzy SDK, and opens a PR for it when the plugin needs a new
+# release (its fingerprint moved, or it no longer builds). Never tags: merge the PR, then tag
+# the version it names, and release.yml takes it from there.
+#
+# fizzy's sdk-tag.yml sends `fizzy-sdk-release` to fizzyedit's plugins when it publishes an SDK;
+# any plugin can also run this by hand (Actions → SDK repin → Run workflow).
+#
+# Needs this repo's Settings → Actions → General → "Allow GitHub Actions to create and approve
+# pull requests".
+name: SDK repin
+on:
+  repository_dispatch:
+    types: [fizzy-sdk-release]
+  workflow_dispatch:
+    inputs:
+      sdk-version:
+        description: "fizzy SDK version, X.Y.Z (default: the newest sdk-v* release)"
+        required: false
+        default: ""
+      force:
+        description: "Open the PR even when the fingerprint did not move"
+        type: boolean
+        default: false
+
+jobs:
+  repin:
+    uses: fizzyedit/plugin-build-action/.github/workflows/repin.yml@v6
+    permissions:
+      contents: write
+      pull-requests: write
+    with:
+      sdk-version: ${{ github.event.client_payload.version || inputs.sdk-version || '' }}
+      force: ${{ inputs.force == true }}
+      zig-version: "0.16.0"
