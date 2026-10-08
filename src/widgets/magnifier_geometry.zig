@@ -13,13 +13,10 @@ const std = @import("std");
 
 /// Points: the orb's diameter.
 pub const diameter: f32 = 150;
-/// Points of the glass's rim left round the zoom: its bent, lit edge, as the carried view's picture
-/// leaves its drop's (fizzy's overlay keeps 4). Sixteen read as a thick grey border (the user).
-pub const ring: f32 = 4;
-/// Points the zoom's edge fades into the glass over.
-pub const feather: f32 = 1.5;
-/// Points: the zoom's diameter, inside the ring.
-pub const zoom_diameter: f32 = diameter - 2 * ring;
+/// Points the zoom's edge is smoothed over, under the glass's own edge.
+pub const feather: f32 = 1;
+/// Points: the zoom's diameter, the whole orb's: the glass is over it and bends it at its rim.
+pub const zoom_diameter: f32 = diameter;
 /// Pixels of the art across the zoom at most (zoomed out)…
 pub const max_across: f32 = 21;
 /// …and at least (zoomed in).
