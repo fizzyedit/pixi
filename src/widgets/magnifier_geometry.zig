@@ -13,7 +13,14 @@ const std = @import("std");
 
 /// Points: the orb's diameter.
 pub const diameter: f32 = 150;
-/// Pixels of the art across the orb at most (zoomed out)…
+/// Points: the ring of glass round the zoom: the drop zones' own glass, frosted over what is
+/// behind the orb and bending it at the rim.
+pub const ring: f32 = 16;
+/// Points the zoom's edge fades into the glass over.
+pub const feather: f32 = 3;
+/// Points: the zoom's diameter, inside the ring.
+pub const zoom_diameter: f32 = diameter - 2 * ring;
+/// Pixels of the art across the zoom at most (zoomed out)…
 pub const max_across: f32 = 21;
 /// …and at least (zoomed in).
 pub const min_across: f32 = 7;
@@ -34,13 +41,16 @@ pub const Rect = struct {
     }
 };
 
-/// Physical pixels a pixel of the art spans in the orb, the canvas showing `zoom` points to a
+/// Physical pixels a pixel of the art spans in the zoom, the canvas showing `zoom` points to a
 /// pixel of the art at `scale` physical pixels to a point: `gain` times the canvas's own, held
-/// between `diameter / max_across` and `diameter / min_across`, and whole, so every pixel of the
-/// art is the same size in the orb and its edges lie on the screen's.
+/// between `zoom_diameter / max_across` and `zoom_diameter / min_across`, and whole, so every
+/// pixel of the art is the same size in the zoom and its edges lie on the screen's.
 pub fn cellPx(zoom: f32, scale: f32) f32 {
-    const pts = std.math.clamp(zoom * gain, diameter / max_across, diameter / min_across);
-    return @max(1, @round(pts * scale));
+    // Rounded within the bounds, not after them: a few pixels a cell, rounding alone moved it a
+    // couple of pixels of the art past either.
+    const least = @max(1, @ceil(zoom_diameter / max_across * scale));
+    const most = @max(least, @floor(zoom_diameter / min_across * scale));
+    return std.math.clamp(@round(zoom * gain * scale), least, most);
 }
 
 /// Where the orb rests, `radius` physical pixels, for a pointer at `p`: up and to the right of it,
@@ -59,9 +69,9 @@ fn keepWithin(v: f32, half: f32, lo: f32, len: f32) f32 {
     return std.math.clamp(v, lo + half, lo + len - half);
 }
 
-/// What the orb shows.
+/// What the zoom shows.
 pub const View = struct {
-    /// The window's pixels its picture covers: the orb and a margin round it, on whole pixels.
+    /// The window's pixels its picture covers: the zoom and a margin round it, on whole pixels.
     picture: Rect,
     /// The pixel of the art the dropper reads, as it lies in the picture: at the orb's centre.
     cell: Rect,
@@ -70,7 +80,7 @@ pub const View = struct {
     data: Rect,
 };
 
-/// The orb at `c` (physical), `radius` across and `margin` more for its picture, showing the art
+/// The zoom at `c` (physical), `radius` across and `margin` more for its picture, showing the art
 /// round the pixel at `px` (whole pixels of the art: the one the dropper reads) at `cell_px`
 /// (`cellPx`).
 pub fn view(c: Point, radius: f32, margin: f32, cell_px: f32, px: Point) View {
@@ -99,13 +109,13 @@ const scales = [_]f32{ 1, 1.25, 1.5, 2, 3 };
 
 test "every zoom shows single pixels, and never only one or two" {
     for (scales) |s| for (zooms) |z| {
-        const across = diameter * s / cellPx(z, s);
-        try std.testing.expect(across >= min_across - 0.5);
-        try std.testing.expect(across <= max_across + 0.5);
+        const across = zoom_diameter * s / cellPx(z, s);
+        try std.testing.expect(across >= min_across - 1e-3);
+        try std.testing.expect(across <= max_across + 1e-3);
     };
 }
 
-test "a pixel in the orb grows with the zoom, and is never smaller than on the canvas until the orb is full" {
+test "a pixel in the zoom grows with the canvas's zoom, and is never smaller than on the canvas until the zoom is full" {
     for (scales) |s| {
         var prev: f32 = 0;
         for (zooms) |z| {
@@ -113,12 +123,12 @@ test "a pixel in the orb grows with the zoom, and is never smaller than on the c
             try std.testing.expect(c >= prev);
             prev = c;
             // Magnified wherever a pixel of the art fits `min_across` times across the orb.
-            if (z * min_across <= diameter) try std.testing.expect(c >= @floor(z * s));
+            if (z * min_across <= zoom_diameter) try std.testing.expect(c >= @floor(z * s));
         }
     }
 }
 
-test "a pixel in the orb is whole pixels" {
+test "a pixel in the zoom is whole pixels" {
     for (scales) |s| for (zooms) |z| {
         const c = cellPx(z, s);
         try std.testing.expectEqual(@round(c), c);
@@ -150,7 +160,7 @@ test "the orb rests up and to the right of the pointer, and stays on its screen"
 test "the read pixel is at the orb's centre, and every pixel of the art lands on whole pixels" {
     for (scales) |s| for (zooms) |z| {
         const cell_px = cellPx(z, s);
-        const radius = diameter / 2 * s;
+        const radius = zoom_diameter / 2 * s;
         const v = view(.{ .x = 333.4, .y = 271.6 }, radius, 23, cell_px, .{ .x = 17, .y = 4 });
         // On whole pixels, and round the orb and its margin.
         try std.testing.expectEqual(@round(v.picture.x), v.picture.x);
