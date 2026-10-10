@@ -26,8 +26,8 @@
             // The published SDK, not a path into a checkout: a release has to build from a
             // clean clone, and the release asset (never the tag's git archive) is the SDK
             // package alone — the monorepo root zon carries the app's own dependencies.
-            .url = "https://github.com/fizzyedit/fizzy/releases/download/sdk-v0.2.19/fizzy-sdk-v0.2.19.tar.gz",
-            .hash = "fizzy-0.2.19-SGBwY8MiIQDGX5QO1AMQHemD99HG9DNnjTLQ4Pu1bpf5",
+            .url = "https://github.com/fizzyedit/fizzy/releases/download/sdk-v0.2.22/fizzy-sdk-v0.2.22.tar.gz",
+            .hash = "fizzy-0.2.22-SGBwYx2gIQBOM6ZCnQHEj_9x7ytH5lrxbilM_k0Idcpt",
         },
     },
 }
