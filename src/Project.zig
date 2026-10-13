@@ -27,9 +27,10 @@ packed_atlas_output: ?[]const u8 = null,
 /// If true, the entire project will be repacked and exported on any project file save
 pack_on_save: bool = false,
 
-pub fn load(allocator: std.mem.Allocator) !?Project {
+/// The project file in `folder`, if it has one.
+pub fn load(allocator: std.mem.Allocator, folder: []const u8) !?Project {
     if (comptime builtin.target.cpu.arch == .wasm32) return null;
-    if (runtime.state().host.folder()) |folder| {
+    {
         filename = ".pixiproject";
         var file = try std.fs.path.join(runtime.state().host.arena(), &.{ folder, filename });
         var maybe_r = pixi.fs.read(allocator, dvui.io, file) catch null;
@@ -78,9 +79,11 @@ pub fn load(allocator: std.mem.Allocator) !?Project {
     return null;
 }
 
-pub fn save(project: *Project) !void {
+/// Write the project file into `folder`: the folder it belongs to, which by the time a folder's
+/// close is heard is no longer `host.folder()`.
+pub fn save(project: *Project, folder: []const u8) !void {
     if (comptime builtin.target.cpu.arch == .wasm32) return;
-    if (runtime.state().host.folder()) |folder| {
+    {
         const file = try std.fs.path.join(runtime.allocator(), &.{ folder, filename });
         defer runtime.allocator().free(file);
         const options = std.json.Stringify.Options{};
@@ -93,11 +96,7 @@ pub fn save(project: *Project) !void {
         }, options);
 
         try std.Io.Dir.cwd().writeFile(dvui.io, .{ .sub_path = file, .data = str });
-
-        return;
     }
-
-    return error.FailedToSaveProject;
 }
 
 /// Project output assets will be exported to a join of parent_folder and the individual output paths for each asset

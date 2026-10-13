@@ -83,7 +83,6 @@ const vtable: sdk.Plugin.VTable = .{
     .bindDocumentToPane = bindDocumentToPane,
     .documentGrouping = documentGrouping,
     .setDocumentGrouping = setDocumentGrouping,
-    .removeCanvasPane = removeCanvasPane,
     .documentPath = documentPath,
     .setDocumentPath = setDocumentPath,
     .documentHasNativeExtension = documentHasNativeExtension,
@@ -102,8 +101,6 @@ const vtable: sdk.Plugin.VTable = .{
     .needsContinuousRepaint = isAnyDocumentActivelyDrawing,
     // folder lifecycle + save protocol
     .saveQuestion = saveQuestion,
-    .onFolderClose = pluginPersistProjectFolder,
-    .onFolderOpen = pluginReloadProjectFolder,
 };
 
 /// A `DocHandle` for one of this plugin's open `*Internal.File`s. Resolved by `doc.id`
@@ -396,6 +393,11 @@ pub fn register(host: *sdk.Host) !void {
     runtime.adoptState(&plugin_state);
     plugin.state = @ptrCast(&plugin_state);
     try host.registerPlugin(&plugin);
+    try host.subscribe(.{ .event = "fizzy.folder.closed", .owner = &plugin, .handler = folderClosed });
+    try host.subscribe(.{ .event = "fizzy.folder.opened", .owner = &plugin, .handler = folderOpened });
+    try host.subscribe(.{ .event = "workbench.pane.closed", .owner = &plugin, .handler = paneClosed });
+    // A folder already open when pixi loads (a hot reload, an install) was opened before it listened.
+    if (host.folder()) |folder| plugin_state.reloadProjectForFolder(sdk.allocator(), folder);
     try host.registerFileRowFillColor(.{ .owner = &plugin, .color = &fileRowFillColor });
     try host.registerPainter(.{ .owner = &plugin, .draw = paint });
     try host.registerSurface(.{
@@ -654,9 +656,11 @@ fn setDocumentGrouping(state: *anyopaque, doc: DocHandle, grouping: u64) void {
     st.setDocumentGrouping(doc, grouping);
 }
 
-fn removeCanvasPane(state: *anyopaque, grouping: u64, allocator: std.mem.Allocator) void {
+/// `workbench.pane.closed`: the pane's canvas view goes with it.
+fn paneClosed(state: *anyopaque, e: sdk.events.Event) void {
     const st: *State = @ptrCast(@alignCast(state));
-    State.removeCanvasPane(st, allocator, grouping);
+    const pane = sdk.events.parse(struct { grouping: u64 }, st.host.arena(), e) catch return;
+    State.removeCanvasPane(st, sdk.allocator(), pane.grouping);
 }
 
 fn documentPath(state: *anyopaque, doc: DocHandle) []const u8 {
@@ -682,7 +686,7 @@ fn documentHasRecognizedSaveExtension(state: *anyopaque, doc: DocHandle) bool {
 fn pluginDeinit(state: *anyopaque) void {
     const st: *State = @ptrCast(@alignCast(state));
     const gpa = sdk.allocator();
-    State.persistProject(st); // save the open project before teardown (covers the quit path)
+    if (st.host.folder()) |folder| st.persistProject(folder); // the quit path
     if (st.packer) |p| p.deinit();
     st.deinit(gpa);
 }
@@ -810,14 +814,20 @@ fn pluginDeleteSelection(state: *anyopaque) anyerror!void {
     st.deleteSelection();
 }
 
-fn pluginPersistProjectFolder(state: *anyopaque) void {
+/// `fizzy.folder.closed`: save the project into the folder it came from (by now `host.folder()`
+/// is the next one, or none).
+fn folderClosed(state: *anyopaque, e: sdk.events.Event) void {
     const st: *State = @ptrCast(@alignCast(state));
-    st.persistProject();
+    const folder = sdk.events.parse(sdk.events.Path, st.host.arena(), e) catch return;
+    st.persistProject(folder.path);
+    st.project = null;
 }
 
-fn pluginReloadProjectFolder(state: *anyopaque, allocator: std.mem.Allocator) void {
+/// `fizzy.folder.opened`: the new folder's project file.
+fn folderOpened(state: *anyopaque, e: sdk.events.Event) void {
     const st: *State = @ptrCast(@alignCast(state));
-    st.reloadProjectForFolder(allocator);
+    const folder = sdk.events.parse(sdk.events.Path, st.host.arena(), e) catch return;
+    st.reloadProjectForFolder(sdk.allocator(), folder.path);
 }
 
 fn pluginPaste(state: *anyopaque) anyerror!void {
