@@ -2702,6 +2702,21 @@ pub fn getLayer(self: *File, id: u64) ?Layer {
     return null;
 }
 
+/// Show or hide a layer, or set whether packing folds it into the one below. Both are saved with
+/// the sprite, so each change is an undo step and marks the sprite unsaved.
+pub fn setLayerSettings(self: *File, index: usize, visible: bool, collapse: bool) !void {
+    const was_visible = self.layers.items(.visible)[index];
+    const was_collapse = self.layers.items(.collapse)[index];
+    if (was_visible == visible and was_collapse == collapse) return;
+    try self.history.append(.{ .layer_settings = .{ .index = index, .visible = was_visible, .collapse = was_collapse } });
+    self.layers.items(.visible)[index] = visible;
+    self.layers.items(.collapse)[index] = collapse;
+    if (was_visible != visible) {
+        self.editor.layer_composite_dirty = true;
+        self.editor.split_composite_dirty = true;
+    }
+}
+
 pub fn deleteLayer(self: *File, index: usize) !void {
     try self.deleted_layers.append(runtime.allocator(), self.layers.slice().get(index));
     self.layers.orderedRemove(index);

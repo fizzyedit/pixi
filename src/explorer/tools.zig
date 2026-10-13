@@ -820,7 +820,7 @@ pub fn drawLayers(tools: *Tools) !?dvui.Rect.Physical {
                         .margin = dvui.Rect.all(1),
                     },
                 )) {
-                    file.layers.items(.collapse)[layer_index] = !file.layers.items(.collapse)[layer_index];
+                    try file.setLayerSettings(layer_index, file.layers.items(.visible)[layer_index], !file.layers.items(.collapse)[layer_index]);
                 }
 
                 if (dvui.buttonIcon(
@@ -837,9 +837,7 @@ pub fn drawLayers(tools: *Tools) !?dvui.Rect.Physical {
                         .margin = dvui.Rect.all(1),
                     },
                 )) {
-                    file.layers.items(.visible)[layer_index] = !file.layers.items(.visible)[layer_index];
-                    file.editor.layer_composite_dirty = true;
-                    file.editor.split_composite_dirty = true;
+                    try file.setLayerSettings(layer_index, !file.layers.items(.visible)[layer_index], file.layers.items(.collapse)[layer_index]);
                 }
 
                 if (layer_hits_len < layer_hits_buf.len) {
@@ -880,7 +878,7 @@ pub fn drawLayers(tools: *Tools) !?dvui.Rect.Physical {
                         .margin = dvui.Rect.all(1),
                     },
                 )) {
-                    file.layers.items(.collapse)[layer_index] = !file.layers.items(.collapse)[layer_index];
+                    try file.setLayerSettings(layer_index, file.layers.items(.visible)[layer_index], !file.layers.items(.collapse)[layer_index]);
                 }
 
                 if (dvui.buttonIcon(
@@ -897,9 +895,7 @@ pub fn drawLayers(tools: *Tools) !?dvui.Rect.Physical {
                         .margin = dvui.Rect.all(1),
                     },
                 )) {
-                    file.layers.items(.visible)[layer_index] = !file.layers.items(.visible)[layer_index];
-                    file.editor.layer_composite_dirty = true;
-                    file.editor.split_composite_dirty = true;
+                    try file.setLayerSettings(layer_index, !file.layers.items(.visible)[layer_index], file.layers.items(.collapse)[layer_index]);
                 }
             }
         }
