@@ -72,10 +72,6 @@ const vtable: sdk.Plugin.VTable = .{
     .documentWritten = documentWritten,
     .reloadDocument = reloadDocument,
     .closeDocument = closeDocument,
-    .undo = undo,
-    .redo = redo,
-    .canUndo = canUndo,
-    .canRedo = canRedo,
     .registerOpenDocument = registerOpenDocument,
     .documentPtr = documentPtr,
     .documentByPath = documentByPath,
@@ -88,7 +84,6 @@ const vtable: sdk.Plugin.VTable = .{
     .documentHasNativeExtension = documentHasNativeExtension,
     .documentHasRecognizedSaveExtension = documentHasRecognizedSaveExtension,
     .documentDefaultSaveAsFilename = documentDefaultSaveAsFilename,
-    .requestNewDocumentDialog = requestNewDocumentDialog,
     .drawDocument = drawDocument,
     .infobarEntries = infobarEntries,
     // universal per-frame phases (pixel-art does its raster/canvas work inside them)
@@ -360,24 +355,31 @@ fn infobarEntries(state: *anyopaque, active_doc: ?DocHandle) []const sdk.infobar
     return infobar_status.infobarEntries(st, active_doc);
 }
 
-fn undo(_: *anyopaque, doc: DocHandle) anyerror!void {
-    const file = docFile(doc);
+/// The active document, when it is one of ours: what fizzy's Undo and Redo act on.
+fn activeOurs(state: *anyopaque) ?DocHandle {
+    const st: *State = @ptrCast(@alignCast(state));
+    const doc = st.host.activeDoc() orelse return null;
+    return if (doc.owner == &plugin) doc else null;
+}
+
+fn undoEnabled(state: *anyopaque) bool {
+    const st: *State = @ptrCast(@alignCast(state));
+    return st.canUndo(activeOurs(state) orelse return false);
+}
+
+fn pluginUndo(state: *anyopaque) anyerror!void {
+    const file = docFile(activeOurs(state) orelse return);
     try file.history.undoRedo(file, .undo);
 }
 
-fn redo(_: *anyopaque, doc: DocHandle) anyerror!void {
-    const file = docFile(doc);
+fn redoEnabled(state: *anyopaque) bool {
+    const st: *State = @ptrCast(@alignCast(state));
+    return st.canRedo(activeOurs(state) orelse return false);
+}
+
+fn pluginRedo(state: *anyopaque) anyerror!void {
+    const file = docFile(activeOurs(state) orelse return);
     try file.history.undoRedo(file, .redo);
-}
-
-fn canUndo(state: *anyopaque, doc: DocHandle) bool {
-    const st: *State = @ptrCast(@alignCast(state));
-    return st.canUndo(doc);
-}
-
-fn canRedo(state: *anyopaque, doc: DocHandle) bool {
-    const st: *State = @ptrCast(@alignCast(state));
-    return st.canRedo(doc);
 }
 
 /// Pixi owns its own runtime state + atlas packer (like any third-party plugin) instead of the
@@ -482,6 +484,18 @@ pub fn register(host: *sdk.Host) !void {
     try host.registerCommand(.{ .id = "pixi.acceptEdit", .owner = &plugin, .title = "Accept Edit", .run = pluginAcceptEdit });
     try host.registerCommand(.{ .id = "pixi.cancelEdit", .owner = &plugin, .title = "Cancel Edit", .run = pluginCancelEdit });
     try host.registerCommand(.{ .id = "pixi.deleteSelection", .owner = &plugin, .title = "Delete Selection", .run = pluginDeleteSelection });
+    try host.registerCommand(.{ .id = "pixi.undo", .owner = &plugin, .title = "Undo", .run = pluginUndo, .isEnabled = undoEnabled, .icon = icons.tvg.lucide.undo });
+    try host.registerCommand(.{ .id = "pixi.redo", .owner = &plugin, .title = "Redo", .run = pluginRedo, .isEnabled = redoEnabled, .icon = icons.tvg.lucide.redo });
+    // New File's entry for a sprite. Internal: fizzy's New File… is the person's way in.
+    try host.registerCommand(.{
+        .id = "pixi.new",
+        .owner = &plugin,
+        .title = "Sprite",
+        .visibility = .internal,
+        .params = NewSprite.params,
+        .runWith = NewSprite.bind(cmdNewSprite),
+        .icon = icons.tvg.lucide.@"image-plus",
+    });
 
     // Transform / Grid Layout are pixel-art-only concepts — the shell's Edit menu has no
     // knowledge of them. Inject both directly into the shell's existing "Edit" menu (in-app +
@@ -726,8 +740,12 @@ fn documentDefaultSaveAsFilename(state: *anyopaque, doc: DocHandle, allocator: s
     return st.documentDefaultSaveAsFilename(doc, allocator);
 }
 
-fn requestNewDocumentDialog(_: *anyopaque, _: ?[]const u8, parent_path: ?[]const u8, id_extra: usize) void {
-    NewFile.request(parent_path, id_extra);
+const NewSprite = sdk.Command.Params(struct {
+    parent_path: sdk.Command.Arg([]const u8, .{ .description = "The folder to create it in. Empty: an untitled document." }) = .init(""),
+});
+/// `pixi.new`, fizzy's New File entry for a sprite: pixi's own dialog asks for its size.
+fn cmdNewSprite(_: *anyopaque, args: NewSprite.Args, _: *sdk.Command.Call) anyerror!void {
+    NewFile.request(if (args.parent_path.len > 0) args.parent_path else null, 0);
 }
 
 /// Command body for `pixi.gridLayout` — opens the grid-layout dialog for the active doc.
