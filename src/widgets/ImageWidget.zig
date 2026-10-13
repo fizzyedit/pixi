@@ -1,6 +1,7 @@
 pub const ImageWidget = @This();
 const CanvasWidget = pixi.core.widgets.CanvasWidget;
 const CanvasBridge = @import("CanvasBridge.zig");
+const magnifier = @import("magnifier.zig");
 
 init_options: InitOptions,
 options: Options,
@@ -206,116 +207,10 @@ pub fn drawSample(self: *ImageWidget) void {
     }
 }
 
+/// The colour dropper's magnifier over the image (`magnifier`): an orb of liquid glass by the
+/// pointer, a pixel-exact zoom of the image round `data_point` in it.
 pub fn drawSampleMagnifier(canvas: *CanvasWidget, source: dvui.ImageSource, data_point: dvui.Point) void {
-    if (pixi.core.dialogs.canvasPointerInputSuppressed()) return;
-    if (!canvas.samplePointerInViewport(dvui.currentWindow().mouse_pt)) return;
-
-    _ = dvui.cursorSet(.hidden);
-
-    const enlarged_scale: f32 = canvas.scale * 2.0;
-    const sample_box_size: f32 = 200.0 * 1 / canvas.scale;
-    const sample_region_size: f32 = sample_box_size / enlarged_scale;
-
-    // Home placement: bottom-left corner of the magnifier sits exactly at the sample point.
-    const default_magnifier_phys = canvas.screenFromDataRect(.{
-        .x = data_point.x,
-        .y = data_point.y - sample_box_size,
-        .w = sample_box_size,
-        .h = sample_box_size,
-    });
-
-    // Slide the magnifier inside the OS window without flipping. Only right and top can clip.
-    const window_rect = dvui.windowRectPixels();
-    const push_x_phys = @max(0, (default_magnifier_phys.x + default_magnifier_phys.w) - (window_rect.x + window_rect.w));
-    const push_y_phys = @max(0, window_rect.y - default_magnifier_phys.y);
-
-    const magnifier_phys = dvui.Rect.Physical{
-        .x = default_magnifier_phys.x - push_x_phys,
-        .y = default_magnifier_phys.y + push_y_phys,
-        .w = default_magnifier_phys.w,
-        .h = default_magnifier_phys.h,
-    };
-    const magnifier_nat = magnifier_phys.toNatural();
-
-    // Corners map {tl, tr, br, bl}. BL is sharp (0) at home so it points at
-    // the sample; as the magnifier is pushed away from home, grow BL so the rectangle's edge slides
-    // tangent to the sample point — fully circular at `cr_max`.
-    const cr_max = magnifier_nat.w / 2;
-    const win_scale = dvui.windowRectScale().s;
-    const push_dist_phys = @sqrt(push_x_phys * push_x_phys + push_y_phys * push_y_phys);
-    const push_dist_nat = if (win_scale > 0) push_dist_phys / win_scale else push_dist_phys;
-    const bl_radius = @min(cr_max, push_dist_nat);
-    const corners = dvui.CornerRect{ .tl = .round(cr_max), .tr = .round(cr_max), .br = .round(cr_max), .bl = .round(bl_radius) };
-
-    const ns = dvui.currentWindow().natural_scale;
-    const border_nat = 2.0 / ns;
-
-    var fw: dvui.FloatingWidget = undefined;
-    fw.init(@src(), .{ .mouse_events = false }, .{
-        .rect = dvui.Rect.cast(magnifier_nat),
-        .expand = .none,
-        .background = true,
-        .color_fill = .{ .color = dvui.themeGet().color(.window, .fill) },
-        .border = dvui.Rect.all(border_nat),
-        .color_border = .{ .color = dvui.themeGet().color(.control, .text) },
-        .corners = corners,
-        .box_shadow = .{
-            .fade = 15.0 / ns,
-            .corners = corners,
-            .alpha = 0.2,
-            .offset = .{ .x = 2.0 / ns, .y = 2.0 / ns },
-        },
-    });
-    defer fw.deinit();
-
-    const size = pixi.image.size(source);
-    const uv_rect = dvui.Rect{
-        .x = (data_point.x - sample_region_size / 2) / size.w,
-        .y = (data_point.y - sample_region_size / 2) / size.h,
-        .w = sample_region_size / size.w,
-        .h = sample_region_size / size.h,
-    };
-
-    var rs = fw.data().borderRectScale();
-    rs.r = rs.r.inset(dvui.Rect.Physical.all(2.0 * rs.s));
-
-    const corners_scaled = dvui.CornerRect{
-        .tl = .round(corners.tl.rx * rs.s),
-        .tr = .round(corners.tr.rx * rs.s),
-        .br = .round(corners.br.rx * rs.s),
-        .bl = .round(corners.bl.rx * rs.s),
-    };
-
-    dvui.renderImage(source, rs, .{
-        .uv = uv_rect,
-        .corners = corners_scaled,
-    }) catch {
-        std.log.err("Failed to render image", .{});
-    };
-
-    const center_x = rs.r.x + rs.r.w / 2;
-    const center_y = rs.r.y + rs.r.h / 2;
-    const cross_size = @min(rs.r.w, rs.r.h) * 0.2;
-
-    dvui.Path.stroke(.{ .points = &.{
-        .{ .x = center_x - cross_size / 2, .y = center_y },
-        .{ .x = center_x + cross_size / 2, .y = center_y },
-    } }, .{ .thickness = 4, .color = .white });
-
-    dvui.Path.stroke(.{ .points = &.{
-        .{ .x = center_x, .y = center_y - cross_size / 2 },
-        .{ .x = center_x, .y = center_y + cross_size / 2 },
-    } }, .{ .thickness = 4, .color = .white });
-
-    dvui.Path.stroke(.{ .points = &.{
-        .{ .x = center_x - cross_size / 2 + 4, .y = center_y },
-        .{ .x = center_x + cross_size / 2 - 4, .y = center_y },
-    } }, .{ .thickness = 2, .color = .black });
-
-    dvui.Path.stroke(.{ .points = &.{
-        .{ .x = center_x, .y = center_y - cross_size / 2 + 4 },
-        .{ .x = center_x, .y = center_y + cross_size / 2 - 4 },
-    } }, .{ .thickness = 2, .color = .black });
+    magnifier.draw(canvas, .{ .image = source }, data_point);
 }
 
 fn packedAtlasCheckerboardTexture() ?dvui.Texture {
