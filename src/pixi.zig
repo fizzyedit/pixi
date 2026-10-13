@@ -64,7 +64,6 @@ pub const dialogs = struct {
     pub const NewFile = @import("dialogs/NewFile.zig");
     pub const Export = @import("dialogs/Export.zig");
     pub const GridLayout = @import("dialogs/GridLayout.zig");
-    pub const FlatRasterSaveWarning = @import("dialogs/FlatRasterSaveWarning.zig");
     pub const DimensionsLabel = @import("dialogs/dimensions_label.zig");
 };
 

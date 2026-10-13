@@ -221,14 +221,11 @@ pub fn callAfter(id: dvui.Id, response: dvui.enums.DialogResponse) anyerror!void
                 });
                 const file = runtime.state().docs.fileFrom(doc);
 
-                // Save synchronously so the tree's directory scan sees the new file on the next draw
-                // (saveAsync only submits to the background queue and returns immediately — the
-                // file wouldn't exist on disk yet, so the fly-to / rename row below would never
-                // match and the dialog would never close).
-                file.saveZip(dvui.currentWindow()) catch {
-                    dvui.log.err("Failed to save file: {s}", .{new_path});
-                    return error.FailedToSaveFile;
-                };
+                // Written now, not through fizzy's save: the tree's directory scan has to see the
+                // new file on the next draw, or the fly-to / rename row below would never match and
+                // the dialog would never close. Where there is no disk to write it to (the web, a
+                // mounted folder) it stays open unsaved, saved like any other document.
+                file.writeNow() catch |err| dvui.log.info("New file {s} opens unsaved: {t}", .{ new_path, err });
 
                 try runtime.state().host.setExplorerNewFilePath(file.path);
                 dvui.refresh(null, @src(), dvui.currentWindow().data().id);

@@ -275,31 +275,6 @@ pub fn canRedo(st: *State, doc: DocHandle) bool {
     return file.history.redo_stack.items.len > 0;
 }
 
-pub fn showsSaveStatusIndicator(st: *State, doc: DocHandle) bool {
-    const file = docFile(st, doc) orelse return false;
-    return file.showsSaveStatusIndicator();
-}
-
-pub fn isDocumentSaving(st: *State, doc: DocHandle) bool {
-    const file = docFile(st, doc) orelse return false;
-    return file.isSaving();
-}
-
-pub fn shouldConfirmFlatRasterSave(st: *State, doc: DocHandle) bool {
-    const file = docFile(st, doc) orelse return false;
-    return file.shouldConfirmFlatRasterSave();
-}
-
-pub fn saveDocumentAsync(st: *State, doc: DocHandle) !void {
-    const file = docFile(st, doc) orelse return error.DocumentNotFound;
-    try file.saveAsync();
-}
-
-pub fn timeSinceSaveCompleteNs(st: *State, doc: DocHandle) ?i128 {
-    const file = docFile(st, doc) orelse return null;
-    return file.timeSinceSaveComplete();
-}
-
 // ---- document buffer contract + shell frame hooks (was doc_lifecycle.zig) -----------------
 
 pub fn sizeOfDocument(_: *State) usize {
@@ -338,34 +313,6 @@ pub fn createDocument(_: *State, path: []const u8, grid: NewDocGrid, out_doc: *a
 pub fn documentDefaultSaveAsFilename(st: *State, doc: DocHandle, allocator: std.mem.Allocator) ![]const u8 {
     const file = docFile(st, doc) orelse return error.DocumentNotFound;
     return Internal.File.defaultSaveAsFilename(allocator, file.path);
-}
-
-pub fn saveDocumentAs(st: *State, doc: DocHandle, path: []const u8, window: *dvui.Window) !void {
-    const file = docFile(st, doc) orelse return error.DocumentNotFound;
-    const ext = std.fs.path.extension(path);
-    if (Internal.File.isFizzyExtension(ext)) {
-        try file.saveAsFizzy(path, window);
-    } else if (std.ascii.eqlIgnoreCase(ext, ".png") or std.ascii.eqlIgnoreCase(ext, ".jpg") or std.ascii.eqlIgnoreCase(ext, ".jpeg")) {
-        try file.saveAsFlattened(path, window);
-    } else {
-        return error.UnsupportedSaveExtension;
-    }
-}
-
-pub fn resetDocumentSaveUIState(st: *State, doc: DocHandle) void {
-    const file = docFile(st, doc) orelse return;
-    file.resetSaveUIState();
-}
-
-pub fn tickOpenDocuments(st: *State) bool {
-    Internal.File.drainCompletedSaves(&st.docs);
-
-    var needs_save_status_anim_tick = false;
-    for (st.docs.files.values()) |*file| {
-        file.tickSaveDoneFlash();
-        if (file.showsSaveStatusIndicator()) needs_save_status_anim_tick = true;
-    }
-    return needs_save_status_anim_tick;
 }
 
 pub fn resetDocumentPeekLayers(st: *State) void {
@@ -430,15 +377,6 @@ pub fn cancelEdit(st: *State) void {
 pub fn deleteSelection(st: *State) void {
     const file = activeFile(st) orelse return;
     file.deleteSelectedContents();
-}
-
-pub fn initPlugin(_: *State) !void {
-    try Internal.File.initSaveQueue();
-}
-
-pub fn deinitPlugin(_: *State) void {
-    Internal.File.waitForSaveQueueDrain();
-    Internal.File.deinitSaveQueue();
 }
 
 pub fn deinit(st: *State, allocator: std.mem.Allocator) void {

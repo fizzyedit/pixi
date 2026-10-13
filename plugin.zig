@@ -20,7 +20,6 @@ const pack_project = @import("src/pack_project.zig");
 const transform_op = @import("src/transform_op.zig");
 const infobar_status = @import("src/infobar_status.zig");
 const GridLayout = @import("src/dialogs/GridLayout.zig");
-const FlatRasterSaveWarning = @import("src/dialogs/FlatRasterSaveWarning.zig");
 const NewFile = @import("src/dialogs/NewFile.zig");
 const Export = @import("src/dialogs/Export.zig");
 
@@ -56,7 +55,6 @@ var plugin: sdk.Plugin = .{
 
 const vtable: sdk.Plugin.VTable = .{
     .deinit = pluginDeinit,
-    .initPlugin = pluginInit,
     .fileTypes = fileTypes,
     .contributeKeybinds = contributeKeybinds,
     .loadDocument = loadDocument,
@@ -68,8 +66,9 @@ const vtable: sdk.Plugin.VTable = .{
     .setDocumentGroupingOnBuffer = setDocumentGroupingOnBuffer,
     .createDocument = createDocument,
     .isDirty = isDirty,
-    .saveDocument = saveDocument,
-    .documentBytes = documentBytes,
+    .documentSnapshot = documentSnapshot,
+    .encodeSnapshot = encodeSnapshot,
+    .releaseSnapshot = releaseSnapshot,
     .documentWritten = documentWritten,
     .reloadDocument = reloadDocument,
     .closeDocument = closeDocument,
@@ -89,13 +88,7 @@ const vtable: sdk.Plugin.VTable = .{
     .setDocumentPath = setDocumentPath,
     .documentHasNativeExtension = documentHasNativeExtension,
     .documentHasRecognizedSaveExtension = documentHasRecognizedSaveExtension,
-    .showsSaveStatusIndicator = showsSaveStatusIndicator,
-    .isDocumentSaving = isDocumentSaving,
-    .saveDocumentAsync = saveDocumentAsync,
-    .timeSinceSaveCompleteNs = timeSinceSaveCompleteNs,
     .documentDefaultSaveAsFilename = documentDefaultSaveAsFilename,
-    .saveDocumentAs = saveDocumentAs,
-    .resetDocumentSaveUIState = resetDocumentSaveUIState,
     .requestNewDocumentDialog = requestNewDocumentDialog,
     .drawDocument = drawDocument,
     .infobarEntries = infobarEntries,
@@ -103,16 +96,14 @@ const vtable: sdk.Plugin.VTable = .{
     .beginFrame = beginFrame,
     .prepareFrame = warmupActiveDocumentComposites,
     .tickKeybinds = tickKeybinds,
-    .tickOpenDocuments = tickOpenDocuments,
     .tickActiveDocument = tickActiveDocumentPlayback,
     .drawOverlay = drawOverlay,
     .endFrame = resetDocumentPeekLayers,
     .needsContinuousRepaint = isAnyDocumentActivelyDrawing,
     // folder lifecycle + save protocol
+    .saveQuestion = saveQuestion,
     .onFolderClose = pluginPersistProjectFolder,
     .onFolderOpen = pluginReloadProjectFolder,
-    .saveNeedsConfirmation = shouldConfirmFlatRasterSave,
-    .requestSaveConfirmation = requestSaveConfirmation,
 };
 
 /// A `DocHandle` for one of this plugin's open `*Internal.File`s. Resolved by `doc.id`
@@ -201,16 +192,21 @@ fn isDirty(_: *anyopaque, doc: DocHandle) bool {
     return docFile(doc).dirty();
 }
 
-/// Persist the document. The shell handles the Save-As / flat-raster / web-download
-/// policy before routing here; this just runs the pixel-art async save.
-fn saveDocument(_: *anyopaque, doc: DocHandle) anyerror!void {
-    try docFile(doc).saveAsync();
+/// A save is a snapshot on the UI thread and an encode on fizzy's worker; fizzy writes the bytes
+/// wherever the document lives (the disk, a mounted drive, the browser's download) and reports back
+/// through `documentWritten`. `path` picks the format, so Save As to a `.png` writes a PNG.
+fn documentSnapshot(_: *anyopaque, doc: DocHandle, path: []const u8, allocator: std.mem.Allocator) anyerror!*anyopaque {
+    return @ptrCast(try docFile(doc).saveSnapshot(path, allocator));
 }
-
-/// The storage-agnostic half of saving: the host writes these wherever the document lives
-/// (a mounted drive, a browser download) and reports back through `documentWritten`.
-fn documentBytes(_: *anyopaque, doc: DocHandle, allocator: std.mem.Allocator) anyerror![]u8 {
-    return docFile(doc).savedBytes(allocator, dvui.currentWindow());
+fn encodeSnapshot(_: *anyopaque, snapshot: *anyopaque, _: []const u8, allocator: std.mem.Allocator) anyerror![]u8 {
+    return Internal.File.encode(@ptrCast(@alignCast(snapshot)), allocator);
+}
+fn releaseSnapshot(_: *anyopaque, snapshot: *anyopaque) void {
+    const snap: *Internal.File.Snapshot = @ptrCast(@alignCast(snapshot));
+    snap.destroy();
+}
+fn saveQuestion(_: *anyopaque, doc: DocHandle, path: []const u8, allocator: std.mem.Allocator) ?sdk.Plugin.SaveQuestion {
+    return docFile(doc).saveQuestion(path, allocator);
 }
 fn documentWritten(_: *anyopaque, doc: DocHandle, path: []const u8) anyerror!void {
     try docFile(doc).written(path);
@@ -683,43 +679,12 @@ fn documentHasRecognizedSaveExtension(state: *anyopaque, doc: DocHandle) bool {
     return st.documentHasRecognizedSaveExtension(doc);
 }
 
-fn showsSaveStatusIndicator(state: *anyopaque, doc: DocHandle) bool {
-    const st: *State = @ptrCast(@alignCast(state));
-    return st.showsSaveStatusIndicator(doc);
-}
-
-fn isDocumentSaving(state: *anyopaque, doc: DocHandle) bool {
-    const st: *State = @ptrCast(@alignCast(state));
-    return st.isDocumentSaving(doc);
-}
-
-fn shouldConfirmFlatRasterSave(state: *anyopaque, doc: DocHandle) bool {
-    const st: *State = @ptrCast(@alignCast(state));
-    return st.shouldConfirmFlatRasterSave(doc);
-}
-
-fn saveDocumentAsync(state: *anyopaque, doc: DocHandle) anyerror!void {
-    const st: *State = @ptrCast(@alignCast(state));
-    return st.saveDocumentAsync(doc);
-}
-
-fn timeSinceSaveCompleteNs(state: *anyopaque, doc: DocHandle) ?i128 {
-    const st: *State = @ptrCast(@alignCast(state));
-    return st.timeSinceSaveCompleteNs(doc);
-}
-
 fn pluginDeinit(state: *anyopaque) void {
     const st: *State = @ptrCast(@alignCast(state));
     const gpa = sdk.allocator();
     State.persistProject(st); // save the open project before teardown (covers the quit path)
-    st.deinitPlugin();
     if (st.packer) |p| p.deinit();
     st.deinit(gpa);
-}
-
-fn pluginInit(state: *anyopaque) anyerror!void {
-    const st: *State = @ptrCast(@alignCast(state));
-    return st.initPlugin();
 }
 
 fn documentStackSize(state: *anyopaque) usize {
@@ -757,16 +722,6 @@ fn documentDefaultSaveAsFilename(state: *anyopaque, doc: DocHandle, allocator: s
     return st.documentDefaultSaveAsFilename(doc, allocator);
 }
 
-fn saveDocumentAs(state: *anyopaque, doc: DocHandle, path: []const u8, window: *dvui.Window) anyerror!void {
-    const st: *State = @ptrCast(@alignCast(state));
-    return st.saveDocumentAs(doc, path, window);
-}
-
-fn resetDocumentSaveUIState(state: *anyopaque, doc: DocHandle) void {
-    const st: *State = @ptrCast(@alignCast(state));
-    st.resetDocumentSaveUIState(doc);
-}
-
 fn requestNewDocumentDialog(_: *anyopaque, _: ?[]const u8, parent_path: ?[]const u8, id_extra: usize) void {
     NewFile.request(parent_path, id_extra);
 }
@@ -797,10 +752,6 @@ fn exportCommand(_: *anyopaque) anyerror!void {
     mutex.mutex.unlock(dvui.io);
 }
 
-fn requestSaveConfirmation(_: *anyopaque, doc: DocHandle, mode: sdk.Plugin.SaveConfirmMode, from_save_all_quit: bool) void {
-    FlatRasterSaveWarning.request(doc.id, mode, from_save_all_quit);
-}
-
 fn beginFrame(state: *anyopaque) void {
     const st: *State = @ptrCast(@alignCast(state));
     // Advance the per-frame render clock used as a composite-cache invalidation key.
@@ -821,11 +772,6 @@ fn packProjectCommand(state: *anyopaque) anyerror!void {
 fn packProjectEnabled(state: *anyopaque) bool {
     const st: *State = @ptrCast(@alignCast(state));
     return !pack_project.isActive(st);
-}
-
-fn tickOpenDocuments(state: *anyopaque) bool {
-    const st: *State = @ptrCast(@alignCast(state));
-    return st.tickOpenDocuments();
 }
 
 fn tickActiveDocumentPlayback(state: *anyopaque, timer_host_id: dvui.Id) void {
