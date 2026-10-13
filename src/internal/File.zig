@@ -74,7 +74,8 @@ pub const EditorData = struct {
     transform: ?Transform = null,
 
     playing: bool = false,
-    saving: bool = false,
+    /// `history.bookmark` when the save in flight was snapshotted (`saveSnapshot`, `written`).
+    saving_bookmark: i32 = 0,
     grouping: u64 = 0,
 
     // Internal layers for editor
@@ -187,14 +188,6 @@ pub const EditorData = struct {
     selected_frame_indices_for_animation_id: u64 = 0,
     frame_selection_anchor: ?usize = null,
 
-    /// Last frame's `isSaving()` — used on the GUI thread to detect save-finished transitions.
-    was_saving: bool = false,
-    /// Set from any thread in `setSaving(false)`; main-thread `tickSaveDoneFlash` arms the flash.
-    save_complete: std.atomic.Value(bool) = .init(false),
-    /// Monotonic deadline (`pixi.perf.nanoTimestamp`): save-complete affordance in tab / tree.
-    save_complete_show_duration: ?i128 = null,
-    /// Set with `save_complete_show_duration` when the flash arms (`isSaving` → false).
-    save_complete_show_start: ?i128 = null,
 };
 
 pub const History = @import("History.zig");
@@ -405,88 +398,6 @@ pub fn width(file: *const File) u32 {
 
 pub fn height(file: *const File) u32 {
     return file.rows * file.row_height;
-}
-
-/// Set the save-in-progress flag with an atomic store. `saveZip` runs on a background worker
-/// thread and writes through this helper; the main thread reads via `isSaving()` for the tab
-/// strip spinner. `monotonic` is sufficient — we don't synchronize any other data through this
-/// flag, just publish the boolean.
-pub fn setSaving(file: *File, v: bool) void {
-    const was = file.isSaving();
-    if (was == v) return;
-    @atomicStore(bool, &file.editor.saving, v, .monotonic);
-    if (v) {
-        file.editor.save_complete.store(false, .monotonic);
-        file.editor.save_complete_show_duration = null;
-        file.editor.save_complete_show_start = null;
-    } else {
-        // Arm the finish animation immediately so synchronous wasm saves (and any save
-        // that completes between frames) don't leave `save_complete` stuck true.
-        const now = pixi.perf.nanoTimestamp();
-        file.editor.save_complete_show_start = now;
-        file.editor.save_complete_show_duration = now + save_done_flash_duration_ns;
-        file.editor.save_complete.store(false, .monotonic);
-    }
-}
-
-/// Atomic-load counterpart to `setSaving`. Safe to call from any thread.
-pub fn isSaving(file: *const File) bool {
-    return @atomicLoad(bool, &file.editor.saving, .monotonic);
-}
-
-/// Clears in-flight save UI state (tab spinner, blocked close). Call when a save dialog is cancelled.
-pub fn resetSaveUIState(file: *File) void {
-    file.setSaving(false);
-    file.editor.save_complete.store(false, .monotonic);
-    file.editor.save_complete_show_duration = null;
-    file.editor.save_complete_show_start = null;
-    file.editor.was_saving = false;
-}
-
-const save_done_flash_duration_ns: i128 = 2 * std.time.ns_per_s;
-
-/// Call once per frame from the main thread. Arms save-complete feedback when
-/// `isSaving()` falls from true to false.
-pub fn tickSaveDoneFlash(file: *File) void {
-    const now = pixi.perf.nanoTimestamp();
-    const saving = file.isSaving();
-    const pending = file.editor.save_complete.swap(false, .monotonic);
-    if (!saving and (pending or file.editor.was_saving) and file.editor.save_complete_show_duration == null) {
-        file.editor.save_complete_show_start = now;
-        file.editor.save_complete_show_duration = now + save_done_flash_duration_ns;
-    }
-    if (saving) {
-        file.editor.save_complete_show_duration = null;
-        file.editor.save_complete_show_start = null;
-        file.editor.save_complete.store(false, .monotonic);
-    }
-    file.editor.was_saving = saving;
-    if (file.editor.save_complete_show_duration) |until| {
-        if (now >= until) {
-            file.editor.save_complete_show_duration = null;
-            file.editor.save_complete_show_start = null;
-        }
-    }
-}
-
-/// Tab / tree slot should show the bubble spinner (saving or finish animation).
-pub fn showsSaveStatusIndicator(file: *const File) bool {
-    if (file.isSaving()) return true;
-    return timeSinceSaveComplete(file) != null;
-}
-
-pub fn showSaveDoneFlash(file: *const File) bool {
-    return timeSinceSaveComplete(file) != null;
-}
-
-/// Nanoseconds since save finished (`null` when inactive). Drives [`pixi.core.dialogs.bubbleSpinner`]'s
-/// finish animation (sync → pop → check).
-pub fn timeSinceSaveComplete(file: *const File) ?i128 {
-    const until = file.editor.save_complete_show_duration orelse return null;
-    const st = file.editor.save_complete_show_start orelse return null;
-    const now = pixi.perf.nanoTimestamp();
-    if (now >= until) return null;
-    return @max(@as(i128, 0), now - st);
 }
 
 /// Width × height of the artwork in pixels, taken from the first layer. This matches the in-memory
@@ -898,7 +809,7 @@ pub fn isFlatImageExtension(ext: []const u8) bool {
         std.ascii.eqlIgnoreCase(ext, ".jpeg");
 }
 
-/// Extensions that `saveAsync` can write without a Save As dialog.
+/// Extensions pixi can save to without a Save As dialog.
 pub fn hasRecognizedSaveExtension(path: []const u8) bool {
     const ext = std.fs.path.extension(path);
     return isFizzyExtension(ext) or isFlatImageExtension(ext);
@@ -916,10 +827,33 @@ pub fn requiresFizzyCompatibleSave(self: File) bool {
     return false;
 }
 
-pub fn shouldConfirmFlatRasterSave(self: File) bool {
-    const ext = std.fs.path.extension(self.path);
-    if (!isFlatImageExtension(ext)) return false;
-    return requiresFizzyCompatibleSave(self);
+/// The question before saving to `path` (`Plugin.saveQuestion`): a PNG or JPEG holds one flat
+/// image, so a document with more than that is asked whether to flatten it into the file (the
+/// open document keeps everything) or save a `.pixi` instead. Null when nothing would be lost.
+pub fn saveQuestion(self: File, path: []const u8, allocator: std.mem.Allocator) ?sdk.Plugin.SaveQuestion {
+    const ext = std.fs.path.extension(path);
+    if (!isFlatImageExtension(ext) or !self.requiresFizzyCompatibleSave()) return null;
+    var lost: std.ArrayList([]const u8) = .empty;
+    if (self.layers.len != 1) lost.append(allocator, "layers") catch return null;
+    if (self.columns != 1 or self.rows != 1) lost.append(allocator, "grid") catch return null;
+    if (self.animations.len != 0) lost.append(allocator, "animations") catch return null;
+    for (self.sprites.items(.origin)) |o| if (o[0] != 0.0 or o[1] != 0.0) {
+        lost.append(allocator, "sprite origins") catch return null;
+        break;
+    };
+    var list: std.Io.Writer.Allocating = .init(allocator);
+    for (lost.items, 0..) |item, i| {
+        const sep: []const u8 = if (i == 0) "" else if (i + 1 == lost.items.len) " and " else ", ";
+        list.writer.print("{s}{s}", .{ sep, item }) catch return null;
+    }
+    const kind: []const u8 = if (std.ascii.eqlIgnoreCase(ext, ".png")) "PNG" else "JPEG";
+    return .{
+        .title = std.fmt.allocPrint(allocator, "Save as a flat {s}?", .{kind}) catch return null,
+        .message = std.fmt.allocPrint(allocator, "A {s} holds one flat image, so {s}'s {s} are flattened into it. The open document keeps them. Save a .pixi instead to keep them in the file.", .{ kind, std.fs.path.basename(path), list.written() }) catch return null,
+        .proceed = std.fmt.allocPrint(allocator, "Save {s}", .{kind}) catch return null,
+        .instead = "Save .pixi",
+        .instead_extension = ".pixi",
+    };
 }
 
 pub fn fromBytesFlatImage(path: []const u8, file_bytes: []const u8) !?pixi.internal.File {
@@ -1494,7 +1428,7 @@ pub fn dirty(self: File) bool {
 /// Preserves shell identity (`id`) and workbench pane binding (`grouping` + canvas handle).
 pub fn reloadFromDisk(self: *File) !void {
     if (comptime builtin.target.cpu.arch == .wasm32) return error.Unsupported;
-    if (self.isSaving()) return error.Busy;
+    if (runtime.state().host.saveState(self.id).saving) return error.Busy;
 
     const keep_id = self.id;
     const keep_grouping = self.editor.grouping;
@@ -2952,419 +2886,112 @@ pub fn redo(self: *File) !void {
     return self.history.undoRedo(self, .redo);
 }
 
-pub fn saveTar(self: *File, window: *dvui.Window) !void {
-    if (self.saving) return;
-    self.saving = true;
-    var ext = try self.external(runtime.allocator());
-    defer ext.deinit(runtime.allocator());
+/// What a save of this document takes on the UI thread (`Plugin.documentSnapshot`), for fizzy's
+/// worker to encode (`encode`): a `.pixi`'s layers and metadata, or a flat image's composite read
+/// back from the GPU. The worker reads only this, never the live `*File`, so the person keeps
+/// drawing while it saves.
+pub const Snapshot = struct {
+    allocator: std.mem.Allocator,
+    content: union(enum) {
+        pixi: Layers,
+        image: Flat,
+    },
 
-    const output_path = try runtime.state().host.arena().dupeZ(u8, self.path);
+    /// Every layer's pixels and the document's metadata, for a `.pixi` zip.
+    pub const Layers = struct {
+        ext: pixi.File,
+        layer_bytes: [][]u8 = &.{},
+        layer_entry_names: [][:0]const u8 = &.{},
 
-    var handle = try std.fs.cwd().createFile(output_path, .{});
-    defer handle.close();
-    var wrt = std.tar.writer(handle.writer());
-
-    var json = std.array_list.Managed(u8).init(runtime.allocator());
-    const out_stream = json.writer();
-    const options = std.json.StringifyOptions{};
-
-    try std.json.stringify(ext, options, out_stream);
-
-    const json_output = try json.toOwnedSlice();
-
-    try wrt.writeFileBytes("fizzydata.json", json_output, .{});
-
-    if (self.layers.len > 0) {
-        const slice = self.layers.slice();
-        var index: usize = 0;
-        while (index < self.layers.len) : (index += 1) {
-            const layer = slice.get(index);
-
-            const data: []u8 = switch (layer.source) {
-                .pixels => |p| @as([*]u8, @ptrCast(@constCast(p.rgba.ptr)))[0..(p.width * p.height * 4)],
-                .pixelsPMA => |p| @as([*]u8, @ptrCast(@constCast(p.rgba.ptr)))[0..(p.width * p.height * 4)],
-                else => return error.InvalidImageSource,
-            };
-
-            try wrt.writeFileBytes(try std.fmt.allocPrintZ(runtime.state().host.arena(), "{s}.layer", .{layer.name}), data, .{});
+        fn deinit(self: *Layers, gpa: std.mem.Allocator) void {
+            self.ext.deinit(gpa);
+            for (self.layer_bytes) |b| if (b.len != 0) gpa.free(b);
+            gpa.free(self.layer_bytes);
+            for (self.layer_entry_names) |n| if (n.len != 0) gpa.free(n);
+            gpa.free(self.layer_entry_names);
         }
-    }
+    };
 
-    try wrt.finish();
+    /// The visible layers composited as on the canvas (premultiplied, as read back), for a PNG or
+    /// JPEG. `density` is pixels per metre for a PNG, per inch for a JPEG, from the display's scale.
+    pub const Flat = struct {
+        pixels: []dvui.Color.PMA,
+        w: u32,
+        h: u32,
+        kind: enum { png, jpg },
+        density: u32,
+    };
 
-    {
-        const id_mutex = dvui.toastAdd(window, @src(), 0, pixi.core.dialogs.save_toast_subwindow_id, pixi.core.dialogs.saveCompleteToastDisplay, 2_500_000);
-        const id = id_mutex.id;
-        const message = std.fmt.allocPrint(window.arena(), "Saved {s}", .{std.fs.path.basename(self.path)}) catch "Saved file";
-        dvui.dataSetSlice(window, id, "_message", message);
-        id_mutex.mutex.unlock(dvui.io);
-    }
-
-    self.saving = false;
-    self.history.bookmark = 0;
-}
-
-/// All visible layers composited with src-over (same as on-canvas), then encoded to PNG or JPEG.
-fn writeFlattenedLayersToPath(self: *File, out_path: []const u8, window: *dvui.Window, comptime kind: enum { png, jpg }) !void {
-    const w = self.width();
-    const h = self.height();
-    if (w == 0 or h == 0) return error.InvalidImageSize;
-
-    try pixi.render.syncLayerComposite(self);
-    const target = self.editor.layer_composite_target orelse return error.NoLayerComposite;
-
-    const pma_read: []dvui.Color.PMA = try dvui.Texture.readTarget(runtime.allocator(), target);
-    defer {
-        const byte_len = pma_read.len * @sizeOf(dvui.Color.PMA);
-        runtime.allocator().free(@as([*]u8, @ptrCast(pma_read.ptr))[0..byte_len]);
-    }
-
-    var tmp_layer: Layer = try .fromPixelsPMA(self.newLayerID(), "_flat_save", pma_read, w, h, .ptr);
-    defer tmp_layer.deinit();
-
-    switch (kind) {
-        .png => {
-            const r: u32 = @intFromFloat(@round(window.natural_scale * 72.0 / 0.0254));
-            try pixi.image.writeToPngResolution(tmp_layer.source, out_path, r);
-        },
-        .jpg => {
-            const ppi: u16 = @intFromFloat(@round(window.natural_scale * 72.0));
-            try pixi.image.writeToJpgPpi(tmp_layer.source, out_path, ppi);
-        },
-    }
-}
-
-pub fn savePng(self: *File, window: *dvui.Window) !void {
-    if (self.isSaving()) return;
-    self.setSaving(true);
-    errdefer self.setSaving(false);
-
-    try self.writeFlattenedLayersToPath(self.path, window, .png);
-
-    {
-        // `id_extra` is `usize` (u32 on wasm32). File IDs are session-local monotonic
-        // u64s; in practice they fit, so an `@intCast` is safe and panics if not.
-        const id_mutex = dvui.toastAdd(window, @src(), @as(usize, @intCast(self.id)), pixi.core.dialogs.save_toast_subwindow_id, pixi.core.dialogs.saveCompleteToastDisplay, 2_500_000);
-        const id = id_mutex.id;
-        const message = std.fmt.allocPrint(window.arena(), "Saved {s} to disk", .{std.fs.path.basename(self.path)}) catch "Saved file";
-        dvui.dataSetSlice(window, id, "_message", message);
-        id_mutex.mutex.unlock(dvui.io);
-    }
-
-    self.setSaving(false);
-    self.history.bookmark = 0;
-}
-
-pub fn saveJpg(self: *File, window: *dvui.Window) !void {
-    if (self.isSaving()) return;
-    self.setSaving(true);
-    errdefer self.setSaving(false);
-
-    try self.writeFlattenedLayersToPath(self.path, window, .jpg);
-
-    {
-        // `id_extra` is `usize` (u32 on wasm32). File IDs are session-local monotonic
-        // u64s; in practice they fit, so an `@intCast` is safe and panics if not.
-        const id_mutex = dvui.toastAdd(window, @src(), @as(usize, @intCast(self.id)), pixi.core.dialogs.save_toast_subwindow_id, pixi.core.dialogs.saveCompleteToastDisplay, 2_500_000);
-        const id = id_mutex.id;
-        const message = std.fmt.allocPrint(window.arena(), "Saved {s} to disk", .{std.fs.path.basename(self.path)}) catch "Saved file";
-        dvui.dataSetSlice(window, id, "_message", message);
-        id_mutex.mutex.unlock(dvui.io);
-    }
-
-    self.setSaving(false);
-    self.history.bookmark = 0;
-}
-
-pub fn saveZip(self: *File, window: *dvui.Window) !void {
-    if (self.isSaving()) return;
-    self.setSaving(true);
-    defer self.setSaving(false);
-    // Synchronous callers (e.g. `saveAsFizzy`) run on the GUI thread, which is
-    // already the only writer of `self.layers` — so a snapshot would be pointless
-    // copying. Build the snapshot inline and immediately consume it. We still
-    // use the same code path so there's a single zip-writing function.
-    var snap = try SaveSnapshot.fromFileOnGuiThread(self, runtime.allocator());
-    defer snap.deinit(runtime.allocator());
-    try writeSnapshotToZip(window, &snap);
-    self.history.bookmark = 0;
-}
-
-/// Layer pixel bytes + metadata copied from `*File` on the GUI thread before a
-/// worker save kicks off. The worker reads only this struct, never the live
-/// `*File`, so user edits during the save can't tear `self.layers` mid-iteration
-/// (manifested as MultiArrayList slice OOB / corrupt layer.name).
-pub const SaveSnapshot = struct {
-    ext: pixi.File,
-    layer_bytes: [][]u8,
-    layer_entry_names: [][:0]const u8,
-    null_terminated_path: [:0]u8,
-
-    /// Allocate + populate from `*File`. MUST be called from the GUI thread
-    /// (the only writer of `file.layers`).
-    pub fn fromFileOnGuiThread(file: *File, allocator: std.mem.Allocator) !SaveSnapshot {
-        var snap: SaveSnapshot = .{
-            .ext = try file.external(allocator),
-            .layer_bytes = try allocator.alloc([]u8, file.layers.len),
-            .layer_entry_names = try allocator.alloc([:0]const u8, file.layers.len),
-            .null_terminated_path = try allocator.dupeZ(u8, file.path),
-        };
-        // Initialize slots so partial-init cleanup is safe.
-        @memset(snap.layer_bytes, &[_]u8{});
-        for (snap.layer_entry_names) |*n| n.* = "";
-        errdefer snap.deinit(allocator);
-
-        const slice = file.layers.slice();
-        var i: usize = 0;
-        while (i < file.layers.len) : (i += 1) {
-            const layer = slice.get(i);
-            snap.layer_bytes[i] = try allocator.dupe(u8, layer.bytes());
-            snap.layer_entry_names[i] = try std.fmt.allocPrintSentinel(allocator, "{s}.layer", .{layer.name}, 0);
+    pub fn destroy(self: *Snapshot) void {
+        const gpa = self.allocator;
+        switch (self.content) {
+            .pixi => |*l| l.deinit(gpa),
+            .image => |f| gpa.free(f.pixels),
         }
-        return snap;
-    }
-
-    pub fn deinit(self: *SaveSnapshot, allocator: std.mem.Allocator) void {
-        self.ext.deinit(allocator);
-        for (self.layer_bytes) |b| if (b.len != 0) allocator.free(b);
-        allocator.free(self.layer_bytes);
-        for (self.layer_entry_names) |n| if (n.len != 0) allocator.free(n);
-        allocator.free(self.layer_entry_names);
-        allocator.free(self.null_terminated_path);
+        gpa.destroy(self);
     }
 };
 
-/// Single dedicated worker that serializes all `.fiz` async saves through one
-/// thread. Pushed-into by `saveAsync` (via `save_queue.submit`), drained by the
-/// long-lived `saveQueueWorker` thread spawned by `initSaveQueue`.
-///
-/// IMPORTANT: jobs reference the target file by `id`, not by `*File`. The editor's
-/// `open_files` is an `AutoArrayHashMap` with inline values, and `rawCloseFileID`
-/// does an `orderedRemove` that shifts later entries down to fill the gap. Any
-/// `*File` pointer captured at submit time would be silently invalidated the
-/// moment an earlier file in the queue completes and gets closed — manifesting
-/// as the worker dequeuing the "right" Job slot but its `file` pointer reading
-/// the SHIFTED-INTO-PLACE file's data.
-pub const SaveQueue = struct {
-    pub const Job = struct {
-        file_id: u64,
-        window: *dvui.Window,
-        snap: *SaveSnapshot,
-    };
-
-    /// Outcome of a finished job, handed off to the GUI thread instead of the
-    /// worker touching `docs.files` itself (see `saveQueueWorker` for why).
-    pub const Completion = struct {
-        file_id: u64,
-        saved: bool,
-    };
-
-    mutex: std.Io.Mutex = .init,
-    cond: std.Io.Condition = .init,
-    queue: std.ArrayListUnmanaged(Job) = .empty,
-    completed: std.ArrayListUnmanaged(Completion) = .empty,
-    shutdown: bool = false,
-    worker: ?std.Thread = null,
-
-    pub fn submit(self: *SaveQueue, job: Job) !void {
-        self.mutex.lockUncancelable(dvui.io);
-        defer self.mutex.unlock(dvui.io);
-        try self.queue.append(runtime.allocator(), job);
-        self.cond.signal(dvui.io);
-    }
-};
-
-var save_queue: SaveQueue = .{};
-
-/// Spawn the long-lived save-queue worker. Safe to call multiple times; second+
-/// calls are no-ops. Call from the GUI thread before any `saveAsync` runs.
-/// Wasm: no-op. Single-threaded freestanding wasm can't spawn threads; the
-/// browser save path needs a different strategy (inline + `wasm_download_data`).
-pub fn initSaveQueue() !void {
-    if (comptime @import("builtin").target.cpu.arch == .wasm32) return;
-    if (save_queue.worker != null and !save_queue.shutdown) return;
-    // Prior `deinitSaveQueue` zeroed the module state; re-arm for a fresh load cycle.
-    save_queue.shutdown = false;
-    save_queue.queue = .empty;
-    save_queue.worker = try std.Thread.spawn(.{}, saveQueueWorker, .{});
-}
-
-/// Block until every queued `.fiz` save has been dequeued by the worker. Does not wait for
-/// the in-flight write after dequeue — pair with `deinitSaveQueue`, which joins the worker.
-pub fn waitForSaveQueueDrain() void {
-    if (comptime @import("builtin").target.cpu.arch == .wasm32) return;
-    if (save_queue.worker == null) return;
-    while (true) {
-        save_queue.mutex.lockUncancelable(dvui.io);
-        const pending = save_queue.queue.items.len;
-        save_queue.mutex.unlock(dvui.io);
-        if (pending == 0) return;
-        std.Thread.yield() catch {};
-    }
-}
-
-/// Signal the save-queue worker to drain remaining jobs and exit, then join.
-/// Call from the GUI thread during editor shutdown.
-/// Wasm: no-op (no worker was ever spawned).
-pub fn deinitSaveQueue() void {
-    if (comptime @import("builtin").target.cpu.arch == .wasm32) return;
-    save_queue.mutex.lockUncancelable(dvui.io);
-    save_queue.shutdown = true;
-    save_queue.cond.broadcast(dvui.io);
-    save_queue.mutex.unlock(dvui.io);
-    if (save_queue.worker) |w| {
-        w.join();
-        save_queue.worker = null;
-    }
-    save_queue.mutex.lockUncancelable(dvui.io);
-    while (save_queue.queue.pop()) |job| {
-        save_queue.mutex.unlock(dvui.io);
-        job.snap.deinit(runtime.allocator());
-        runtime.allocator().destroy(job.snap);
-        save_queue.mutex.lockUncancelable(dvui.io);
-    }
-    save_queue.queue.deinit(runtime.allocator());
-    save_queue.mutex.unlock(dvui.io);
-    save_queue = .{};
-}
-
-fn saveQueueWorker() void {
-    while (true) {
-        save_queue.mutex.lockUncancelable(dvui.io);
-        while (save_queue.queue.items.len == 0 and !save_queue.shutdown) {
-            save_queue.cond.waitUncancelable(dvui.io, &save_queue.mutex);
-        }
-        if (save_queue.shutdown and save_queue.queue.items.len == 0) {
-            save_queue.mutex.unlock(dvui.io);
-            return;
-        }
-        const job = save_queue.queue.orderedRemove(0);
-        save_queue.mutex.unlock(dvui.io);
-
-        // `docs.files` is an unsynchronized `AutoArrayHashMapUnmanaged` that the
-        // GUI thread mutates on every doc open/close (`registerOpenDocument`'s
-        // `put`, `unregisterDocument`'s `swapRemove`). Touching it from this
-        // worker thread — even just to look up `*File` by id — races those
-        // mutations. Report the outcome by id instead and let the GUI thread
-        // (which already owns every `docs.files` mutation) apply it.
-        var saved = true;
-        writeSnapshotToZip(job.window, job.snap) catch |err| {
-            dvui.log.err("Async save failed: {s}", .{@errorName(err)});
-            saved = false;
-        };
-        job.snap.deinit(runtime.allocator());
-        runtime.allocator().destroy(job.snap);
-
-        save_queue.mutex.lockUncancelable(dvui.io);
-        save_queue.completed.append(runtime.allocator(), .{ .file_id = job.file_id, .saved = saved }) catch |err| {
-            dvui.log.err("Failed to record save completion: {s}", .{@errorName(err)});
-        };
-        save_queue.mutex.unlock(dvui.io);
-        dvui.refresh(job.window, @src(), null);
-    }
-}
-
-/// GUI-thread-only: apply outcomes `saveQueueWorker` recorded for finished
-/// jobs. Must run on the same thread that owns `docs.files` mutations
-/// (`registerOpenDocument`/`unregisterDocument`) since this is the only place
-/// the save queue's completions touch that map.
-pub fn drainCompletedSaves(docs: *pixi.DocumentRegistry) void {
-    if (comptime @import("builtin").target.cpu.arch == .wasm32) return;
-    save_queue.mutex.lockUncancelable(dvui.io);
-    var completed = save_queue.completed;
-    save_queue.completed = .empty;
-    save_queue.mutex.unlock(dvui.io);
-    defer completed.deinit(runtime.allocator());
-
-    for (completed.items) |c| {
-        const f = docs.fileById(c.file_id) orelse continue;
-        f.setSaving(false);
-        if (c.saved) f.history.bookmark = 0;
-    }
-}
-
-/// Shared zip-writing logic. Reads ONLY from `snap`, never `self.*` or
-/// `docs.files` — this runs on the save-queue worker thread when invoked via
-/// `saveAsync`, which must not touch `docs.files` (see `saveQueueWorker`).
-/// Callers apply any post-save `*File` state themselves: `saveZip` (GUI
-/// thread, holds `self` already) sets `history.bookmark` directly;
-/// `saveQueueWorker` routes it through `drainCompletedSaves` instead.
-///
-/// Anything that mutates dvui state (toasts, window arena allocations, etc.) MUST
-/// stay off this path — concurrent workers calling into `dvui.toastAdd` race on
-/// the toast subsystem's mutex against the GUI thread's per-frame toast iteration,
-/// and the contention can wedge one of them indefinitely (observed in multi-doc
-/// save-all-quit). The save-complete toast is duplicate feedback — the dialog
-/// closing + tab disappearing already signals completion — so we skip it.
-fn writeSnapshotToZip(window: *dvui.Window, snap: *const SaveSnapshot) !void {
-    _ = window;
-    const zip_file = zip.zip_open(snap.null_terminated_path.ptr, zip.ZIP_DEFAULT_COMPRESSION_LEVEL, 'w');
-
-    if (zip_file) |z| {
-        try writeSnapshotEntriesToZip(z, snap);
-        zip.zip_close(z);
-    }
-}
-
-fn zipEntryOk(rc: c_int) !void {
-    if (rc < 0) return error.ZipEntryFailed;
-}
-
-fn writeSnapshotEntriesToZip(z: *zip.struct_zip_t, snap: *const SaveSnapshot) !void {
-    const options = std.json.Stringify.Options{};
-    const output = try std.json.Stringify.valueAlloc(runtime.allocator(), snap.ext, options);
-    defer runtime.allocator().free(output);
-
-    try zipEntryOk(zip.zip_entry_open(z, "fizzydata.json"));
-    try zipEntryOk(zip.zip_entry_write(z, output.ptr, output.len));
-    try zipEntryOk(zip.zip_entry_close(z));
-
-    for (snap.layer_entry_names, snap.layer_bytes) |entry_name, bytes| {
-        try zipEntryOk(zip.zip_entry_open(z, @as([*c]const u8, @ptrCast(entry_name))));
-        try zipEntryOk(zip.zip_entry_write(z, @ptrCast(bytes.ptr), bytes.len));
-        try zipEntryOk(zip.zip_entry_close(z));
-    }
-}
-
-fn writeSnapshotToZipBytes(snap: *const SaveSnapshot, allocator: std.mem.Allocator) ![]u8 {
-    // Stored (level 0) on wasm: DEFLATE in miniz is less tested on freestanding and some
-    // readers reject malformed compressed entries from in-memory writers.
-    const level: c_int = if (comptime @import("builtin").target.cpu.arch == .wasm32) 0 else zip.ZIP_DEFAULT_COMPRESSION_LEVEL;
-    const z = zip.zip_stream_open(null, 0, level, 'w') orelse return error.ZipOpenFailed;
-    defer zip.zip_stream_close(z);
-    try writeSnapshotEntriesToZip(z, snap);
-    var buf: ?*anyopaque = null;
-    var bufsize: usize = 0;
-    const n = zip.zip_stream_copy(z, &buf, &bufsize);
-    if (n < 0 or buf == null) return error.ZipCopyFailed;
-    const slice = @as([*]const u8, @ptrCast(buf))[0..bufsize];
-    const owned = try allocator.dupe(u8, slice);
-    zip.fizzy_zip_free(buf);
-    if (owned.len < 4 or !std.mem.eql(u8, owned[0..4], "PK\x03\x04")) return error.InvalidZip;
-    return owned;
-}
-
-/// The saved form of this document as bytes, for a host that does the writing itself — a
-/// mounted drive, the browser's download. Same encoders `saveZip`/`saveToDownload` use;
-/// caller owns the bytes (allocated with `allocator`).
-pub fn savedBytes(self: *File, allocator: std.mem.Allocator, window: *dvui.Window) ![]u8 {
-    const ext = std.fs.path.extension(self.path);
+/// Take what a save to `path` needs (its extension picks the format), on the UI thread, and
+/// remember the edit it stands for so `written` cleans up to there and not past it.
+pub fn saveSnapshot(self: *File, path: []const u8, allocator: std.mem.Allocator) !*Snapshot {
+    const ext = std.fs.path.extension(path);
+    const snap = try allocator.create(Snapshot);
+    errdefer allocator.destroy(snap);
+    snap.allocator = allocator;
     if (isFizzyExtension(ext)) {
-        var snap = try SaveSnapshot.fromFileOnGuiThread(self, runtime.allocator());
-        defer snap.deinit(runtime.allocator());
-        return try writeSnapshotToZipBytes(&snap, allocator);
-    }
-    const raw = if (std.ascii.eqlIgnoreCase(ext, ".png"))
-        try flattenedImageBytes(self, window, .png)
-    else if (std.ascii.eqlIgnoreCase(ext, ".jpg") or std.ascii.eqlIgnoreCase(ext, ".jpeg"))
-        try flattenedImageBytes(self, window, .jpg)
-    else
-        return error.UnsupportedSaveExtension;
-    defer runtime.allocator().free(raw);
-    return try allocator.dupe(u8, raw);
+        var layers: Snapshot.Layers = .{ .ext = try self.external(allocator) };
+        errdefer layers.deinit(allocator);
+        layers.layer_bytes = try allocator.alloc([]u8, self.layers.len);
+        @memset(layers.layer_bytes, &[_]u8{});
+        layers.layer_entry_names = try allocator.alloc([:0]const u8, self.layers.len);
+        for (layers.layer_entry_names) |*n| n.* = "";
+        const slice = self.layers.slice();
+        for (0..self.layers.len) |i| {
+            const layer = slice.get(i);
+            layers.layer_bytes[i] = try allocator.dupe(u8, layer.bytes());
+            layers.layer_entry_names[i] = try std.fmt.allocPrintSentinel(allocator, "{s}.layer", .{layer.name}, 0);
+        }
+        snap.content = .{ .pixi = layers };
+    } else if (isFlatImageExtension(ext)) {
+        const w = self.width();
+        const h = self.height();
+        if (w == 0 or h == 0) return error.InvalidImageSize;
+        try pixi.render.syncLayerComposite(self);
+        const target = self.editor.layer_composite_target orelse return error.NoLayerComposite;
+        const png = std.ascii.eqlIgnoreCase(ext, ".png");
+        const scale = dvui.currentWindow().natural_scale;
+        snap.content = .{ .image = .{
+            .pixels = try dvui.Texture.readTarget(allocator, target),
+            .w = w,
+            .h = h,
+            .kind = if (png) .png else .jpg,
+            .density = if (png) @intFromFloat(@round(scale * 72.0 / 0.0254)) else @intFromFloat(@round(scale * 72.0)),
+        } };
+    } else return error.UnsupportedSaveExtension;
+    self.editor.saving_bookmark = self.history.bookmark;
+    return snap;
 }
 
-/// The host wrote `savedBytes` to `path`: the same bookkeeping a save of our own does.
+/// `snap` encoded, on fizzy's worker: nothing here touches dvui's window, the GPU or the document.
+pub fn encode(snap: *const Snapshot, allocator: std.mem.Allocator) ![]u8 {
+    switch (snap.content) {
+        .pixi => |*l| return writeSnapshotToZipBytes(l, allocator),
+        .image => |f| {
+            const source: dvui.ImageSource = .{ .pixelsPMA = .{ .rgba = f.pixels, .width = f.w, .height = f.h, .interpolation = .nearest } };
+            var out = std.Io.Writer.Allocating.init(allocator);
+            errdefer out.deinit();
+            switch (f.kind) {
+                .png => try pixi.image.writePngToWriter(source, &out.writer, f.density),
+                .jpg => try pixi.image.writeJpgPpiToWriter(source, &out.writer, @intCast(f.density)),
+            }
+            return out.toOwnedSlice();
+        },
+    }
+}
+
+/// fizzy wrote a snapshot of this document to `path`: clean up to the edit the snapshot stood
+/// for, so edits made while it saved stay unsaved, and adopt `path` when it is a Save As.
 pub fn written(self: *File, path: []const u8) !void {
     if (!std.mem.eql(u8, path, self.path)) {
         const gpa = runtime.allocator();
@@ -3372,99 +2999,60 @@ pub fn written(self: *File, path: []const u8) !void {
         gpa.free(self.path);
         self.path = copy;
     }
-    self.history.bookmark = 0;
+    self.history.bookmark -= self.editor.saving_bookmark;
+    self.editor.saving_bookmark = 0;
 }
 
-/// Browser save: encode in memory and trigger a download (no on-disk project folder).
-pub fn saveToDownload(self: *File, window: *dvui.Window) !void {
-    if (comptime @import("builtin").target.cpu.arch != .wasm32) return;
-    if (self.isSaving()) return;
-    self.setSaving(true);
-    defer self.setSaving(false);
-
-    const basename = std.fs.path.basename(self.path);
-    const ext = std.fs.path.extension(self.path);
-
-    if (isFizzyExtension(ext)) {
-        var snap = try SaveSnapshot.fromFileOnGuiThread(self, runtime.allocator());
-        defer snap.deinit(runtime.allocator());
-        const bytes = try writeSnapshotToZipBytes(&snap, runtime.allocator());
-        defer runtime.allocator().free(bytes);
-        try @import("../web_file_io.zig").downloadBytesWithExtension(basename, ".pixi", bytes);
-    } else if (std.ascii.eqlIgnoreCase(ext, ".png")) {
-        const bytes = try flattenedImageBytes(self, window, .png);
-        defer runtime.allocator().free(bytes);
-        try @import("../web_file_io.zig").downloadBytesWithExtension(basename, ".png", bytes);
-    } else if (std.ascii.eqlIgnoreCase(ext, ".jpg") or std.ascii.eqlIgnoreCase(ext, ".jpeg")) {
-        const bytes = try flattenedImageBytes(self, window, .jpg);
-        defer runtime.allocator().free(bytes);
-        try @import("../web_file_io.zig").downloadBytesWithExtension(basename, ".jpg", bytes);
-    } else {
-        return;
-    }
-
-    self.history.bookmark = 0;
-    const id_mutex = dvui.toastAdd(window, @src(), 0, pixi.core.dialogs.save_toast_subwindow_id, pixi.core.dialogs.saveCompleteToastDisplay, 2_500_000);
-    const id = id_mutex.id;
-    const message = std.fmt.allocPrint(window.arena(), "Downloaded {s}", .{basename}) catch "Downloaded file";
-    dvui.dataSetSlice(window, id, "_message", message);
-    id_mutex.mutex.unlock(dvui.io);
+/// Write this document to its own path on the disk now, on the UI thread: a new file has to exist
+/// before the explorer's next scan finds it. Not on the web, which has no disk.
+pub fn writeNow(self: *File) !void {
+    if (comptime builtin.target.cpu.arch == .wasm32) return error.Unsupported;
+    const gpa = runtime.allocator();
+    const snap = try self.saveSnapshot(self.path, gpa);
+    defer snap.destroy();
+    const bytes = try encode(snap, gpa);
+    defer gpa.free(bytes);
+    try std.Io.Dir.cwd().writeFile(dvui.io, .{ .sub_path = self.path, .data = bytes });
+    try self.written(self.path);
 }
 
-fn flattenedImageBytes(self: *File, window: *dvui.Window, comptime kind: enum { png, jpg }) ![]u8 {
-    const w = self.width();
-    const h = self.height();
-    if (w == 0 or h == 0) return error.InvalidImageSize;
-
-    try pixi.render.syncLayerComposite(self);
-    const target = self.editor.layer_composite_target orelse return error.NoLayerComposite;
-
-    const pma_read: []dvui.Color.PMA = try dvui.Texture.readTarget(runtime.allocator(), target);
-    defer {
-        const byte_len = pma_read.len * @sizeOf(dvui.Color.PMA);
-        runtime.allocator().free(@as([*]u8, @ptrCast(pma_read.ptr))[0..byte_len]);
-    }
-
-    var tmp_layer: Layer = try .fromPixelsPMA(self.newLayerID(), "_flat_save", pma_read, w, h, .ptr);
-    defer tmp_layer.deinit();
-
-    var out = std.Io.Writer.Allocating.init(runtime.allocator());
-    errdefer out.deinit();
-    switch (kind) {
-        .png => {
-            const r: u32 = @intFromFloat(@round(window.natural_scale * 72.0 / 0.0254));
-            try pixi.image.writePngToWriter(tmp_layer.source, &out.writer, r);
-        },
-        .jpg => {
-            const ppi: u16 = @intFromFloat(@round(window.natural_scale * 72.0));
-            try pixi.image.writeJpgPpiToWriter(tmp_layer.source, &out.writer, ppi);
-        },
-    }
-    return out.toOwnedSlice();
+fn zipEntryOk(rc: c_int) !void {
+    if (rc < 0) return error.ZipEntryFailed;
 }
 
-/// Point `path` at `new_path`, then `saveZip` (same on-disk work as a normal .pixi save). Restores the previous `path` if saving fails.
-pub fn saveAsFizzy(self: *File, new_path: []const u8, window: *dvui.Window) !void {
-    if (self.isSaving()) return;
-    if (std.mem.eql(u8, self.path, new_path)) {
-        if (comptime @import("builtin").target.cpu.arch == .wasm32) {
-            return saveToDownload(self, window);
-        }
-        return saveZip(self, window);
+fn writeSnapshotEntriesToZip(z: *zip.struct_zip_t, layers: *const Snapshot.Layers, allocator: std.mem.Allocator) !void {
+    const options = std.json.Stringify.Options{};
+    const output = try std.json.Stringify.valueAlloc(allocator, layers.ext, options);
+    defer allocator.free(output);
+
+    try zipEntryOk(zip.zip_entry_open(z, "fizzydata.json"));
+    try zipEntryOk(zip.zip_entry_write(z, output.ptr, output.len));
+    try zipEntryOk(zip.zip_entry_close(z));
+
+    for (layers.layer_entry_names, layers.layer_bytes) |entry_name, bytes| {
+        try zipEntryOk(zip.zip_entry_open(z, @as([*c]const u8, @ptrCast(entry_name))));
+        try zipEntryOk(zip.zip_entry_write(z, @ptrCast(bytes.ptr), bytes.len));
+        try zipEntryOk(zip.zip_entry_close(z));
     }
-    const old_path = self.path;
-    const new_owned = try runtime.allocator().dupe(u8, new_path);
-    self.path = new_owned;
-    errdefer {
-        runtime.allocator().free(self.path[0..self.path.len]);
-        self.path = old_path;
-    }
-    if (comptime @import("builtin").target.cpu.arch == .wasm32) {
-        try saveToDownload(self, window);
-    } else {
-        try saveZip(self, window);
-    }
-    runtime.allocator().free(old_path[0..old_path.len]);
+}
+
+fn writeSnapshotToZipBytes(layers: *const Snapshot.Layers, allocator: std.mem.Allocator) ![]u8 {
+    // Stored (level 0) on wasm: DEFLATE in miniz is less tested on freestanding and some
+    // readers reject malformed compressed entries from in-memory writers.
+    const level: c_int = if (comptime @import("builtin").target.cpu.arch == .wasm32) 0 else zip.ZIP_DEFAULT_COMPRESSION_LEVEL;
+    const z = zip.zip_stream_open(null, 0, level, 'w') orelse return error.ZipOpenFailed;
+    defer zip.zip_stream_close(z);
+    try writeSnapshotEntriesToZip(z, layers, allocator);
+    var buf: ?*anyopaque = null;
+    var bufsize: usize = 0;
+    const n = zip.zip_stream_copy(z, &buf, &bufsize);
+    if (n < 0 or buf == null) return error.ZipCopyFailed;
+    const slice = @as([*]const u8, @ptrCast(buf))[0..bufsize];
+    const owned = try allocator.dupe(u8, slice);
+    // The buffer is the C library's: libc's `calloc` natively, fizzy's C shim on the web.
+    if (comptime builtin.target.cpu.arch == .wasm32) zip.fizzy_zip_free(buf) else std.c.free(buf);
+    if (owned.len < 4 or !std.mem.eql(u8, owned[0..4], "PK\x03\x04")) return error.InvalidZip;
+    return owned;
 }
 
 /// Default filename (with `.pixi`) for a Save As dialog, derived from the current path.
@@ -3475,164 +3063,6 @@ pub fn defaultSaveAsFilename(allocator: std.mem.Allocator, current_path: []const
         return try std.fmt.allocPrint(allocator, "{s}", .{"untitled.pixi"});
     }
     return try std.fmt.allocPrint(allocator, "{s}.pixi", .{stem});
-}
-
-fn deinitAllUserLayers(self: *File) void {
-    while (self.layers.len > 0) {
-        const i = self.layers.len - 1;
-        var layer = self.layers.get(i);
-        layer.deinit();
-        self.layers.orderedRemove(i);
-    }
-}
-
-fn clearAnimationsForSaveAs(self: *File) void {
-    for (self.animations.items(.name)) |n| {
-        runtime.allocator().free(n);
-    }
-    for (self.animations.items(.frames)) |frames| {
-        runtime.allocator().free(frames);
-    }
-    self.animations.clearRetainingCapacity();
-    self.deleted_animations.clearRetainingCapacity();
-    self.selected_animation_index = null;
-    self.selected_animation_frame_index = 0;
-    self.editor.selected_animation_indices.clearRetainingCapacity();
-    self.editor.selected_frame_indices.clearRetainingCapacity();
-}
-
-fn reinitEditorSurfaceForFlatDocument(self: *File) !void {
-    self.editor.temporary_layer.deinit();
-    self.editor.selection_layer.deinit();
-    self.editor.transform_layer.deinit();
-    self.editor.checkerboard.deinit();
-    if (self.editor.checkerboard_tile) |t| {
-        dvui.textureDestroyLater(t);
-        self.editor.checkerboard_tile = null;
-    }
-    self.editor.selected_sprites.deinit();
-
-    self.editor.temporary_layer = try .init(self.newLayerID(), "Temporary", self.width(), self.height(), .{ .r = 0, .g = 0, .b = 0, .a = 0 }, .ptr);
-    self.editor.selection_layer = try .init(self.newLayerID(), "Selection", self.width(), self.height(), .{ .r = 0, .g = 0, .b = 0, .a = 0 }, .ptr);
-    self.editor.transform_layer = try .init(self.newLayerID(), "Transform", self.width(), self.height(), .{ .r = 0, .g = 0, .b = 0, .a = 0 }, .ptr);
-    self.editor.selected_sprites = try std.DynamicBitSet.initEmpty(runtime.allocator(), self.spriteCount());
-
-    self.editor.checkerboard = try std.DynamicBitSet.initEmpty(runtime.allocator(), self.width() * self.height());
-    for (0..self.width() * self.height()) |i| {
-        const value = pixi.math.checker(.{ .w = @floatFromInt(self.width()), .h = @floatFromInt(self.height()) }, i);
-        self.editor.checkerboard.setValue(i, value);
-    }
-    self.editor.selected_layer_indices.clearRetainingCapacity();
-    try self.editor.selected_layer_indices.append(runtime.allocator(), 0);
-}
-
-/// Flattens visible layers (via GPU composite), writes PNG or JPEG to `output_path`, and replaces
-/// the document with a single layer matching the flattened result.
-pub fn saveAsFlattened(self: *File, output_path: []const u8, window: *dvui.Window) !void {
-    if (self.isSaving()) return;
-    self.setSaving(true);
-    errdefer self.setSaving(false);
-
-    strokeUndoFreeSnapshot(self);
-    const w = self.width();
-    const h = self.height();
-    if (w == 0 or h == 0) {
-        self.setSaving(false);
-        return error.InvalidImageSize;
-    }
-
-    try pixi.render.syncLayerComposite(self);
-    const target = self.editor.layer_composite_target orelse {
-        self.setSaving(false);
-        return error.NoLayerComposite;
-    };
-
-    const pma_read: []dvui.Color.PMA = try dvui.Texture.readTarget(runtime.allocator(), target);
-    defer {
-        const byte_len = pma_read.len * @sizeOf(dvui.Color.PMA);
-        runtime.allocator().free(@as([*]u8, @ptrCast(pma_read.ptr))[0..byte_len]);
-    }
-
-    const ext = std.fs.path.extension(output_path);
-    const is_png = std.ascii.eqlIgnoreCase(ext, ".png");
-    const is_jpg = std.ascii.eqlIgnoreCase(ext, ".jpg") or std.ascii.eqlIgnoreCase(ext, ".jpeg");
-    if (!is_png and !is_jpg) {
-        self.setSaving(false);
-        return error.InvalidExtension;
-    }
-
-    var single_layer: Layer = try .fromPixelsPMA(self.newLayerID(), "Layer", pma_read, w, h, .ptr);
-    errdefer single_layer.deinit();
-
-    if (comptime @import("builtin").target.cpu.arch == .wasm32) {
-        const bytes = if (is_png) blk: {
-            const r: u32 = @intFromFloat(@round(window.natural_scale * 72.0 / 0.0254));
-            var out = std.Io.Writer.Allocating.init(runtime.allocator());
-            errdefer out.deinit();
-            try pixi.image.writePngToWriter(single_layer.source, &out.writer, r);
-            break :blk try out.toOwnedSlice();
-        } else blk: {
-            const ppi: u16 = @intFromFloat(@round(window.natural_scale * 72.0));
-            var out = std.Io.Writer.Allocating.init(runtime.allocator());
-            errdefer out.deinit();
-            try pixi.image.writeJpgPpiToWriter(single_layer.source, &out.writer, ppi);
-            break :blk try out.toOwnedSlice();
-        };
-        defer runtime.allocator().free(bytes);
-        const dl_ext = if (is_png) ".png" else ".jpg";
-        try @import("../web_file_io.zig").downloadBytesWithExtension(std.fs.path.basename(output_path), dl_ext, bytes);
-    } else if (is_png) {
-        const r: u32 = @intFromFloat(@round(window.natural_scale * 72.0 / 0.0254));
-        try pixi.image.writeToPngResolution(single_layer.source, output_path, r);
-    } else {
-        const ppi: u16 = @intFromFloat(@round(window.natural_scale * 72.0));
-        try pixi.image.writeToJpgPpi(single_layer.source, output_path, ppi);
-    }
-
-    pixi.render.destroyLayerCompositeResources(self);
-    pixi.render.destroySplitCompositeResources(self);
-
-    deinitAllUserLayers(self);
-    clearAnimationsForSaveAs(self);
-    self.sprites.clearRetainingCapacity();
-    for (0..self.spriteCount()) |_| {
-        self.sprites.append(runtime.allocator(), .{ .origin = .{ 0, 0 } }) catch {
-            single_layer.deinit();
-            return error.FileLoadError;
-        };
-    }
-
-    const new_path = try runtime.allocator().dupe(u8, output_path);
-    runtime.allocator().free(self.path[0..self.path.len]);
-    self.path = new_path;
-    self.columns = 1;
-    self.rows = 1;
-    self.column_width = w;
-    self.row_height = h;
-    self.selected_layer_index = 0;
-    self.peek_layer_index = null;
-    self.layers.append(runtime.allocator(), single_layer) catch {
-        single_layer.deinit();
-        return error.LayerCreateError;
-    };
-
-    self.history.deinit();
-    self.history = .init(runtime.allocator());
-
-    try reinitEditorSurfaceForFlatDocument(self);
-    self.editor.layer_composite_dirty = true;
-    self.editor.split_composite_dirty = true;
-    self.setSaving(false);
-    {
-        // `id_extra` is `usize` (u32 on wasm32). File IDs are session-local monotonic
-        // u64s; in practice they fit, so an `@intCast` is safe and panics if not.
-        const id_mutex = dvui.toastAdd(window, @src(), @as(usize, @intCast(self.id)), pixi.core.dialogs.save_toast_subwindow_id, pixi.core.dialogs.saveCompleteToastDisplay, 2_500_000);
-        const id = id_mutex.id;
-        const message = std.fmt.allocPrint(window.arena(), "Saved {s} to disk", .{std.fs.path.basename(self.path)}) catch "Saved file";
-        dvui.dataSetSlice(window, id, "_message", message);
-        id_mutex.mutex.unlock(dvui.io);
-    }
-    runtime.state().host.requestPrepareFrame();
 }
 
 pub const GridLayoutOptions = struct {
@@ -4001,66 +3431,6 @@ pub fn applyGridLayout(file: *File, options: GridLayoutOptions) !void {
     if (snapshot_opt) |snap| {
         snapshot_opt = null;
         try file.history.append(.{ .grid_layout = snap });
-    }
-}
-
-pub fn saveAsync(self: *File) !void {
-    if (comptime @import("builtin").target.cpu.arch == .wasm32) {
-        try self.saveToDownload(dvui.currentWindow());
-        return;
-    }
-
-    //if (!self.dirty()) return;
-
-    if (!hasRecognizedSaveExtension(self.path)) return;
-
-    const ext = std.fs.path.extension(self.path);
-
-    if (isFizzyExtension(ext)) {
-        // Flip the in-flight flag here on the GUI thread, before submitting to
-        // the save queue. Otherwise `Editor.tickPendingSaveCloses` can run on the
-        // next GUI frame, observe `isSaving() == false` (worker hasn't dequeued
-        // yet), and close the file before the worker reads it.
-        if (self.isSaving()) return;
-        self.setSaving(true);
-
-        // Snapshot all save-relevant data on the GUI thread NOW, before the worker
-        // could observe a torn `self.layers` (the user can still draw / add layers
-        // while the async save runs). Worker reads only the snapshot.
-        const snap_ptr = runtime.allocator().create(SaveSnapshot) catch |err| {
-            self.setSaving(false);
-            return err;
-        };
-        snap_ptr.* = SaveSnapshot.fromFileOnGuiThread(self, runtime.allocator()) catch |err| {
-            runtime.allocator().destroy(snap_ptr);
-            self.setSaving(false);
-            return err;
-        };
-
-        // Hand off to the single dedicated save-queue worker. Serializing all
-        // .fiz writes through one thread (instead of spawning a per-save thread)
-        // avoids worker-vs-worker contention on allocator / zip lib / dvui state
-        // that previously wedged one of N concurrent saves indefinitely.
-        //
-        // We submit by file id rather than by `*File` pointer: the editor's
-        // `open_files` AutoArrayHashMap shifts inline values on `orderedRemove`,
-        // so a stored pointer would silently start aliasing a different file the
-        // moment any earlier file in the queue completes and gets closed.
-        save_queue.submit(.{
-            .file_id = self.id,
-            .window = dvui.currentWindow(),
-            .snap = snap_ptr,
-        }) catch |err| {
-            snap_ptr.deinit(runtime.allocator());
-            runtime.allocator().destroy(snap_ptr);
-            self.setSaving(false);
-            return err;
-        };
-    } else if (std.ascii.eqlIgnoreCase(ext, ".png")) {
-        // `writeFlattenedLayersToPath` uses `syncLayerComposite` + `readTarget` (GPU); must run on the GUI thread.
-        try savePng(self, dvui.currentWindow());
-    } else if (std.ascii.eqlIgnoreCase(ext, ".jpg") or std.ascii.eqlIgnoreCase(ext, ".jpeg")) {
-        try saveJpg(self, dvui.currentWindow());
     }
 }
 
