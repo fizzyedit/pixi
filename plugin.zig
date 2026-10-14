@@ -22,6 +22,7 @@ const infobar_status = @import("src/infobar_status.zig");
 const GridLayout = @import("src/dialogs/GridLayout.zig");
 const NewFile = @import("src/dialogs/NewFile.zig");
 const Export = @import("src/dialogs/Export.zig");
+const commands = @import("src/commands.zig");
 
 const DocHandle = sdk.DocHandle;
 const Internal = internal.internal;
@@ -496,6 +497,9 @@ pub fn register(host: *sdk.Host) !void {
         .runWith = NewSprite.bind(cmdNewSprite),
         .icon = icons.tvg.lucide.@"image-plus",
     });
+
+    // Everything a person does in pixi, as commands with arguments (`src/commands.zig`).
+    try commands.register(host, &plugin);
 
     // Transform / Grid Layout are pixel-art-only concepts — the shell's Edit menu has no
     // knowledge of them. Inject both directly into the shell's existing "Edit" menu (in-app +
