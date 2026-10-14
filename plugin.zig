@@ -72,10 +72,6 @@ const vtable: sdk.Plugin.VTable = .{
     .documentWritten = documentWritten,
     .reloadDocument = reloadDocument,
     .closeDocument = closeDocument,
-    .undo = undo,
-    .redo = redo,
-    .canUndo = canUndo,
-    .canRedo = canRedo,
     .registerOpenDocument = registerOpenDocument,
     .documentPtr = documentPtr,
     .documentByPath = documentByPath,
@@ -83,13 +79,11 @@ const vtable: sdk.Plugin.VTable = .{
     .bindDocumentToPane = bindDocumentToPane,
     .documentGrouping = documentGrouping,
     .setDocumentGrouping = setDocumentGrouping,
-    .removeCanvasPane = removeCanvasPane,
     .documentPath = documentPath,
     .setDocumentPath = setDocumentPath,
     .documentHasNativeExtension = documentHasNativeExtension,
     .documentHasRecognizedSaveExtension = documentHasRecognizedSaveExtension,
     .documentDefaultSaveAsFilename = documentDefaultSaveAsFilename,
-    .requestNewDocumentDialog = requestNewDocumentDialog,
     .drawDocument = drawDocument,
     .infobarEntries = infobarEntries,
     // universal per-frame phases (pixel-art does its raster/canvas work inside them)
@@ -102,8 +96,6 @@ const vtable: sdk.Plugin.VTable = .{
     .needsContinuousRepaint = isAnyDocumentActivelyDrawing,
     // folder lifecycle + save protocol
     .saveQuestion = saveQuestion,
-    .onFolderClose = pluginPersistProjectFolder,
-    .onFolderOpen = pluginReloadProjectFolder,
 };
 
 /// A `DocHandle` for one of this plugin's open `*Internal.File`s. Resolved by `doc.id`
@@ -363,24 +355,31 @@ fn infobarEntries(state: *anyopaque, active_doc: ?DocHandle) []const sdk.infobar
     return infobar_status.infobarEntries(st, active_doc);
 }
 
-fn undo(_: *anyopaque, doc: DocHandle) anyerror!void {
-    const file = docFile(doc);
+/// The active document, when it is one of ours: what fizzy's Undo and Redo act on.
+fn activeOurs(state: *anyopaque) ?DocHandle {
+    const st: *State = @ptrCast(@alignCast(state));
+    const doc = st.host.activeDoc() orelse return null;
+    return if (doc.owner == &plugin) doc else null;
+}
+
+fn undoEnabled(state: *anyopaque) bool {
+    const st: *State = @ptrCast(@alignCast(state));
+    return st.canUndo(activeOurs(state) orelse return false);
+}
+
+fn pluginUndo(state: *anyopaque) anyerror!void {
+    const file = docFile(activeOurs(state) orelse return);
     try file.history.undoRedo(file, .undo);
 }
 
-fn redo(_: *anyopaque, doc: DocHandle) anyerror!void {
-    const file = docFile(doc);
+fn redoEnabled(state: *anyopaque) bool {
+    const st: *State = @ptrCast(@alignCast(state));
+    return st.canRedo(activeOurs(state) orelse return false);
+}
+
+fn pluginRedo(state: *anyopaque) anyerror!void {
+    const file = docFile(activeOurs(state) orelse return);
     try file.history.undoRedo(file, .redo);
-}
-
-fn canUndo(state: *anyopaque, doc: DocHandle) bool {
-    const st: *State = @ptrCast(@alignCast(state));
-    return st.canUndo(doc);
-}
-
-fn canRedo(state: *anyopaque, doc: DocHandle) bool {
-    const st: *State = @ptrCast(@alignCast(state));
-    return st.canRedo(doc);
 }
 
 /// Pixi owns its own runtime state + atlas packer (like any third-party plugin) instead of the
@@ -396,6 +395,11 @@ pub fn register(host: *sdk.Host) !void {
     runtime.adoptState(&plugin_state);
     plugin.state = @ptrCast(&plugin_state);
     try host.registerPlugin(&plugin);
+    try host.subscribe(.{ .event = "fizzy.folder.closed", .owner = &plugin, .handler = folderClosed });
+    try host.subscribe(.{ .event = "fizzy.folder.opened", .owner = &plugin, .handler = folderOpened });
+    try host.subscribe(.{ .event = "workbench.pane.closed", .owner = &plugin, .handler = paneClosed });
+    // A folder already open when pixi loads (a hot reload, an install) was opened before it listened.
+    if (host.folder()) |folder| plugin_state.reloadProjectForFolder(sdk.allocator(), folder);
     try host.registerFileRowFillColor(.{ .owner = &plugin, .color = &fileRowFillColor });
     try host.registerPainter(.{ .owner = &plugin, .draw = paint });
     try host.registerSurface(.{
@@ -480,6 +484,18 @@ pub fn register(host: *sdk.Host) !void {
     try host.registerCommand(.{ .id = "pixi.acceptEdit", .owner = &plugin, .title = "Accept Edit", .run = pluginAcceptEdit });
     try host.registerCommand(.{ .id = "pixi.cancelEdit", .owner = &plugin, .title = "Cancel Edit", .run = pluginCancelEdit });
     try host.registerCommand(.{ .id = "pixi.deleteSelection", .owner = &plugin, .title = "Delete Selection", .run = pluginDeleteSelection });
+    try host.registerCommand(.{ .id = "pixi.undo", .owner = &plugin, .title = "Undo", .run = pluginUndo, .isEnabled = undoEnabled, .icon = icons.tvg.lucide.undo });
+    try host.registerCommand(.{ .id = "pixi.redo", .owner = &plugin, .title = "Redo", .run = pluginRedo, .isEnabled = redoEnabled, .icon = icons.tvg.lucide.redo });
+    // New File's entry for a sprite. Internal: fizzy's New File… is the person's way in.
+    try host.registerCommand(.{
+        .id = "pixi.new",
+        .owner = &plugin,
+        .title = "Sprite",
+        .visibility = .internal,
+        .params = NewSprite.params,
+        .runWith = NewSprite.bind(cmdNewSprite),
+        .icon = icons.tvg.lucide.@"image-plus",
+    });
 
     // Transform / Grid Layout are pixel-art-only concepts — the shell's Edit menu has no
     // knowledge of them. Inject both directly into the shell's existing "Edit" menu (in-app +
@@ -654,9 +670,11 @@ fn setDocumentGrouping(state: *anyopaque, doc: DocHandle, grouping: u64) void {
     st.setDocumentGrouping(doc, grouping);
 }
 
-fn removeCanvasPane(state: *anyopaque, grouping: u64, allocator: std.mem.Allocator) void {
+/// `workbench.pane.closed`: the pane's canvas view goes with it.
+fn paneClosed(state: *anyopaque, e: sdk.events.Event) void {
     const st: *State = @ptrCast(@alignCast(state));
-    State.removeCanvasPane(st, allocator, grouping);
+    const pane = sdk.events.parse(struct { grouping: u64 }, st.host.arena(), e) catch return;
+    State.removeCanvasPane(st, sdk.allocator(), pane.grouping);
 }
 
 fn documentPath(state: *anyopaque, doc: DocHandle) []const u8 {
@@ -682,7 +700,7 @@ fn documentHasRecognizedSaveExtension(state: *anyopaque, doc: DocHandle) bool {
 fn pluginDeinit(state: *anyopaque) void {
     const st: *State = @ptrCast(@alignCast(state));
     const gpa = sdk.allocator();
-    State.persistProject(st); // save the open project before teardown (covers the quit path)
+    if (st.host.folder()) |folder| st.persistProject(folder); // the quit path
     if (st.packer) |p| p.deinit();
     st.deinit(gpa);
 }
@@ -722,8 +740,12 @@ fn documentDefaultSaveAsFilename(state: *anyopaque, doc: DocHandle, allocator: s
     return st.documentDefaultSaveAsFilename(doc, allocator);
 }
 
-fn requestNewDocumentDialog(_: *anyopaque, _: ?[]const u8, parent_path: ?[]const u8, id_extra: usize) void {
-    NewFile.request(parent_path, id_extra);
+const NewSprite = sdk.Command.Params(struct {
+    parent_path: sdk.Command.Arg([]const u8, .{ .description = "The folder to create it in. Empty: an untitled document." }) = .init(""),
+});
+/// `pixi.new`, fizzy's New File entry for a sprite: pixi's own dialog asks for its size.
+fn cmdNewSprite(_: *anyopaque, args: NewSprite.Args, _: *sdk.Command.Call) anyerror!void {
+    NewFile.request(if (args.parent_path.len > 0) args.parent_path else null, 0);
 }
 
 /// Command body for `pixi.gridLayout` — opens the grid-layout dialog for the active doc.
@@ -810,14 +832,20 @@ fn pluginDeleteSelection(state: *anyopaque) anyerror!void {
     st.deleteSelection();
 }
 
-fn pluginPersistProjectFolder(state: *anyopaque) void {
+/// `fizzy.folder.closed`: save the project into the folder it came from (by now `host.folder()`
+/// is the next one, or none).
+fn folderClosed(state: *anyopaque, e: sdk.events.Event) void {
     const st: *State = @ptrCast(@alignCast(state));
-    st.persistProject();
+    const folder = sdk.events.parse(sdk.events.Path, st.host.arena(), e) catch return;
+    st.persistProject(folder.path);
+    st.project = null;
 }
 
-fn pluginReloadProjectFolder(state: *anyopaque, allocator: std.mem.Allocator) void {
+/// `fizzy.folder.opened`: the new folder's project file.
+fn folderOpened(state: *anyopaque, e: sdk.events.Event) void {
     const st: *State = @ptrCast(@alignCast(state));
-    st.reloadProjectForFolder(allocator);
+    const folder = sdk.events.parse(sdk.events.Path, st.host.arena(), e) catch return;
+    st.reloadProjectForFolder(sdk.allocator(), folder.path);
 }
 
 fn pluginPaste(state: *anyopaque) anyerror!void {

@@ -139,22 +139,20 @@ pub fn init(allocator: std.mem.Allocator, host: *sdk.Host) !State {
     return st;
 }
 
-/// Write the project file (`.pixiproject`, or `.fizproject` if that's what was loaded) while
-/// the shell `host` and project folder are still live. Called from `AppDeinit` before
-/// `editor.deinit`.
-pub fn persistProject(st: *State) void {
+/// Write the project file (`.pixiproject`, or `.fizproject` if that's what was loaded) into
+/// `folder`, the folder it was loaded from: when the folder closes, and at quit.
+pub fn persistProject(st: *State, folder: []const u8) void {
     if (comptime builtin.target.cpu.arch == .wasm32) return;
     if (st.project) |*project| {
-        project.save() catch {
+        project.save(folder) catch {
             dvui.log.err("Failed to save project file", .{});
         };
     }
 }
 
-/// Load the project file (`.pixiproject`, falling back to legacy `.fizproject`) for the
-/// shell's currently-open project folder.
-pub fn reloadProjectForFolder(st: *State, allocator: std.mem.Allocator) void {
-    st.project = Project.load(allocator) catch null;
+/// Load the project file (`.pixiproject`, falling back to legacy `.fizproject`) in `folder`.
+pub fn reloadProjectForFolder(st: *State, allocator: std.mem.Allocator, folder: []const u8) void {
+    st.project = Project.load(allocator, folder) catch null;
 }
 
 /// Load `settings` from the host's per-plugin store, or leave defaults if absent/unparsable.
