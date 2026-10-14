@@ -140,6 +140,11 @@ pub const Change = union(ChangeType) {
         selected_animation_index: ?usize,
         selected_animation_frame_index: usize,
         selected_layer_index: usize,
+
+        /// Each animation's frames, matched to live animations by id: a change that moves cells
+        /// moves the frames that show them, and undo puts both back.
+        animation_ids: []u64 = &.{},
+        animation_frames: [][]pixi.Animation.Frame = &.{},
     };
 
     pixels: Pixels,
@@ -221,6 +226,9 @@ pub const Change = union(ChangeType) {
                 runtime.allocator().free(gl.layer_pixels);
                 runtime.allocator().free(gl.layer_ids);
                 runtime.allocator().free(gl.sprite_origins);
+                for (gl.animation_frames) |frames| runtime.allocator().free(frames);
+                runtime.allocator().free(gl.animation_frames);
+                runtime.allocator().free(gl.animation_ids);
             },
             else => {},
         }

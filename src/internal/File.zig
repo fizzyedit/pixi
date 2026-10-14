@@ -3138,6 +3138,19 @@ pub fn captureGridLayoutSnapshot(file: *File) !History.Change.GridLayout {
     errdefer runtime.allocator().free(sprite_origins);
     for (0..sprite_count) |i| sprite_origins[i] = file.sprites.items(.origin)[i];
 
+    const animation_ids = try runtime.allocator().dupe(u64, file.animations.items(.id));
+    errdefer runtime.allocator().free(animation_ids);
+    const animation_frames = try runtime.allocator().alloc([]Animation.Frame, file.animations.len);
+    var frames_allocated: usize = 0;
+    errdefer {
+        for (animation_frames[0..frames_allocated]) |f| runtime.allocator().free(f);
+        runtime.allocator().free(animation_frames);
+    }
+    for (animation_frames, file.animations.items(.frames)) |*dst, src| {
+        dst.* = try runtime.allocator().dupe(Animation.Frame, src);
+        frames_allocated += 1;
+    }
+
     return .{
         .column_width = file.column_width,
         .row_height = file.row_height,
@@ -3149,6 +3162,8 @@ pub fn captureGridLayoutSnapshot(file: *File) !History.Change.GridLayout {
         .selected_animation_index = file.selected_animation_index,
         .selected_animation_frame_index = file.selected_animation_frame_index,
         .selected_layer_index = file.selected_layer_index,
+        .animation_ids = animation_ids,
+        .animation_frames = animation_frames,
     };
 }
 
@@ -3212,6 +3227,14 @@ pub fn applyGridLayoutSnapshot(file: *File, snap: History.Change.GridLayout) !vo
     for (0..total) |idx| {
         const value = pixi.math.checker(.{ .w = @floatFromInt(new_w), .h = @floatFromInt(new_h) }, idx);
         file.editor.checkerboard.setValue(idx, value);
+    }
+
+    // Frames come back by animation id; an animation the snapshot does not know keeps its own.
+    for (file.animations.items(.id), file.animations.items(.frames)) |id, *frames| {
+        const j = std.mem.indexOfScalar(u64, snap.animation_ids, id) orelse continue;
+        const restored = runtime.allocator().dupe(Animation.Frame, snap.animation_frames[j]) catch return error.MemoryAllocationFailed;
+        runtime.allocator().free(frames.*);
+        frames.* = restored;
     }
 
     file.editor.transform = null;
