@@ -209,6 +209,9 @@ pub const Change = union(ChangeType) {
             .layers_order => |*layers_order| {
                 runtime.allocator().free(layers_order.order);
             },
+            .animation_order => |*animation_order| {
+                runtime.allocator().free(animation_order.order);
+            },
             .layer_merge => |*layer_merge| {
                 runtime.allocator().free(layer_merge.dest_pixels_before);
                 layer_merge.dest_mask_before.deinit();

@@ -19,6 +19,7 @@ pub const document = @import("commands/document.zig");
 pub const pixels = @import("commands/pixels.zig");
 pub const layers = @import("commands/layers.zig");
 pub const colors = @import("commands/colors.zig");
+pub const animations = @import("commands/animations.zig");
 pub const pixel_text = @import("commands/pixel_text.zig");
 
 pub fn register(host: *sdk.Host, plugin: *sdk.Plugin) !void {
@@ -26,6 +27,7 @@ pub fn register(host: *sdk.Host, plugin: *sdk.Plugin) !void {
     try pixels.register(host, plugin);
     try layers.register(host, plugin);
     try colors.register(host, plugin);
+    try animations.register(host, plugin);
 }
 
 /// The `path` parameter every document command takes.
@@ -61,6 +63,28 @@ fn layerNames(file: *File, arena: std.mem.Allocator) ![]const u8 {
         try out.print(arena, "\"{s}\"", .{n});
     }
     return out.items;
+}
+
+/// `wanted`, refused if one of `names` already is it; when empty, `base` or `base 2`, `base 3`, …,
+/// whichever is free, so whatever a command makes can be named back. In `call.arena`.
+pub fn uniqueName(names: []const []const u8, wanted: []const u8, base: []const u8, what: []const u8, call: *sdk.Command.Call) ![]const u8 {
+    if (wanted.len > 0) {
+        if (contains(names, wanted)) return call.fail("a {s} named \"{s}\" already exists", .{ what, wanted });
+        return wanted;
+    }
+    if (!contains(names, base)) return base;
+    var n: usize = 2;
+    while (true) : (n += 1) {
+        const name = try std.fmt.allocPrint(call.arena, "{s} {d}", .{ base, n });
+        if (!contains(names, name)) return name;
+    }
+}
+
+fn contains(names: []const []const u8, name: []const u8) bool {
+    for (names) |n| {
+        if (std.mem.eql(u8, n, name)) return true;
+    }
+    return false;
 }
 
 /// A command's color argument, or the reason it is not one.
