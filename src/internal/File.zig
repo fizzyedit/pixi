@@ -72,6 +72,9 @@ pub const EditorData = struct {
     animations_scroll_info: dvui.ScrollInfo = .{ .horizontal = .auto },
     animations_scroll_to_index: ?usize = null,
     transform: ?Transform = null,
+    /// A command's drawing being shown drawn (`Reveal`); finished before anything else touches
+    /// the pixels (`finishReveal`).
+    reveal: ?Reveal = null,
 
     playing: bool = false,
     /// `history.bookmark` when the save in flight was snapshotted (`saveSnapshot`, `written`).
@@ -191,6 +194,7 @@ pub const EditorData = struct {
 };
 
 pub const History = @import("History.zig");
+pub const Reveal = @import("Reveal.zig");
 pub const Buffers = @import("Buffers.zig");
 
 pub const InitOptions = struct {
@@ -1374,7 +1378,39 @@ pub fn reorderRows(file: *File, removed_row_index: usize, insert_before_row_inde
     }
 }
 
+/// Draw the rest of a drawing being shown drawn, at once: before anything else reads or writes
+/// the pixels.
+pub fn finishReveal(file: *File) void {
+    var reveal = file.editor.reveal orelse return;
+    file.editor.reveal = null;
+    defer reveal.deinit();
+    var layer = file.getLayer(reveal.layer_id) orelse return;
+    reveal.finish(layer.pixels());
+    file.showRevealed(&layer);
+}
+
+/// Draw what is due of a drawing being shown drawn. Once a frame.
+pub fn stepReveal(file: *File, now: i128) void {
+    const reveal = &(file.editor.reveal orelse return);
+    var layer = file.getLayer(reveal.layer_id) orelse return file.finishReveal();
+    const more = reveal.step(layer.pixels(), now);
+    file.showRevealed(&layer);
+    if (!more) {
+        reveal.deinit();
+        file.editor.reveal = null;
+    }
+}
+
+fn showRevealed(file: *File, layer: *Layer) void {
+    layer.invalidate();
+    file.editor.layer_composite_dirty = true;
+    file.editor.split_composite_dirty = true;
+    file.invalidateActiveLayerTransparencyMaskCache();
+    dvui.refresh(null, @src(), null);
+}
+
 pub fn deinit(file: *File) void {
+    if (file.editor.reveal) |*r| r.deinit();
     pixi.render.destroyLayerCompositeResources(file);
 
     strokeUndoFreeSnapshot(file);
@@ -2964,6 +3000,7 @@ pub const Snapshot = struct {
 /// Take what a save to `path` needs (its extension picks the format), on the UI thread, and
 /// remember the edit it stands for so `written` cleans up to there and not past it.
 pub fn saveSnapshot(self: *File, path: []const u8, allocator: std.mem.Allocator) !*Snapshot {
+    self.finishReveal();
     const ext = std.fs.path.extension(path);
     const snap = try allocator.create(Snapshot);
     errdefer allocator.destroy(snap);

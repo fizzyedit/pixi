@@ -265,6 +265,9 @@ pub fn init(allocator: std.mem.Allocator) History {
 }
 
 pub fn append(self: *History, change: Change) !void {
+    // A drawing still being shown drawn is finished before anything is recorded over it.
+    const file: *pixi.internal.File = @alignCast(@fieldParentPtr("history", self));
+    file.finishReveal();
     const track_pixels = pixi.perf.record and std.meta.activeTag(change) == .pixels;
     const pixel_slots: usize = if (track_pixels) switch (change) {
         .pixels => |p| p.indices.len,
@@ -449,6 +452,7 @@ fn layerMergeRedo(file: *pixi.internal.File, lm: *Change.LayerMerge) !void {
 // Handling cases in this function details how an undo/redo action works, and must be symmetrical.
 // This means that `change` needs to be modified to contain the active state prior to changing the active state
 pub fn undoRedo(self: *History, file: *pixi.internal.File, action: Action) !void {
+    file.finishReveal();
     var active_stack = switch (action) {
         .undo => &self.undo_stack,
         .redo => &self.redo_stack,
