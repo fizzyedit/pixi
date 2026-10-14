@@ -265,9 +265,11 @@ pub fn init(allocator: std.mem.Allocator) History {
 }
 
 pub fn append(self: *History, change: Change) !void {
-    // A drawing still being shown drawn is finished before anything is recorded over it.
+    // A drawing still being shown drawn is finished before anything is recorded over it, and
+    // fizzy hears of every edit, to show the command that made it.
     const file: *pixi.internal.File = @alignCast(@fieldParentPtr("history", self));
     file.finishReveal();
+    runtime.state().host.documentEdited(file.id);
     const track_pixels = pixi.perf.record and std.meta.activeTag(change) == .pixels;
     const pixel_slots: usize = if (track_pixels) switch (change) {
         .pixels => |p| p.indices.len,
@@ -464,6 +466,7 @@ pub fn undoRedo(self: *History, file: *pixi.internal.File, action: Action) !void
     };
 
     if (active_stack.items.len == 0) return;
+    defer runtime.state().host.documentEdited(file.id);
 
     var temporary: bool = false;
 
