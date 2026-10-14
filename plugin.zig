@@ -67,6 +67,8 @@ const vtable: sdk.Plugin.VTable = .{
     .setDocumentGroupingOnBuffer = setDocumentGroupingOnBuffer,
     .createDocument = createDocument,
     .isDirty = isDirty,
+    .captureDocumentState = captureDocumentState,
+    .restoreDocumentState = restoreDocumentState,
     .documentSnapshot = documentSnapshot,
     .encodeSnapshot = encodeSnapshot,
     .releaseSnapshot = releaseSnapshot,
@@ -179,6 +181,14 @@ fn loadDocument(_: *anyopaque, path: []const u8, out_doc: *anyopaque) anyerror!v
 fn loadDocumentFromBytes(_: *anyopaque, path: []const u8, bytes: []const u8, out_doc: *anyopaque) anyerror!void {
     const file = try Internal.File.fromBytes(path, bytes) orelse return error.InvalidFile;
     @as(*Internal.File, @ptrCast(@alignCast(out_doc))).* = file;
+}
+
+/// A tape's seek takes a sprite's pixels, and puts them back in place rather than reopening it.
+fn captureDocumentState(_: *anyopaque, doc: DocHandle, allocator: std.mem.Allocator) anyerror![]u8 {
+    return docFile(doc).captureState(allocator);
+}
+fn restoreDocumentState(_: *anyopaque, doc: DocHandle, bytes: []const u8) anyerror!void {
+    try docFile(doc).restoreState(bytes);
 }
 
 fn isDirty(_: *anyopaque, doc: DocHandle) bool {
