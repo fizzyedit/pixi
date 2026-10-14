@@ -785,6 +785,9 @@ fn beginFrame(state: *anyopaque) void {
     // Sweep any in-flight atlas-pack jobs. The shell no longer orchestrates packing — the
     // plugin drives its own background work from this universal per-frame phase.
     pack_project.tick(st);
+    // Drawings being shown drawn, a little more each frame.
+    const now = dvui.frameTimeNS();
+    for (st.docs.files.values()) |*file| file.stepReveal(now);
     if (comptime @import("builtin").target.cpu.arch == .wasm32) pack_project.runWasmWorkers(st);
 }
 

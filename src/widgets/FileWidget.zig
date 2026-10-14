@@ -5217,51 +5217,64 @@ pub fn drawCursor(self: *FileWidget) void {
         .bucket => runtime.uiAtlas().sprites[pixi.atlas.sprites.bucket_default],
         .selection => selection_sprite,
         else => null,
-    }) |sprite| {
-        const atlas_size = dvui.imageSize(runtime.uiAtlas().source) catch {
-            dvui.log.err("Failed to get atlas size", .{});
-            return;
-        };
+    }) |sprite| self.drawCursorSprite(sprite, data_point);
+}
 
-        const uv = dvui.Rect{
-            .x = (@as(f32, @floatFromInt(sprite.source[0])) / atlas_size.w),
-            .y = (@as(f32, @floatFromInt(sprite.source[1])) / atlas_size.h),
-            .w = (@as(f32, @floatFromInt(sprite.source[2])) / atlas_size.w),
-            .h = (@as(f32, @floatFromInt(sprite.source[3])) / atlas_size.h),
-        };
+/// The pencil on the pixel a drawing being shown drawn has reached (`File.Reveal`).
+pub fn drawRevealPencil(self: *FileWidget) void {
+    const file = self.init_options.file;
+    const reveal = file.editor.reveal orelse return;
+    const index = reveal.pencil() orelse return;
+    const w = file.width();
+    const at: dvui.Point = .{ .x = @as(f32, @floatFromInt(index % w)) + 0.5, .y = @as(f32, @floatFromInt(index / w)) + 0.5 };
+    self.drawCursorSprite(runtime.uiAtlas().sprites[pixi.atlas.sprites.pencil_default], at);
+}
 
-        const origin = dvui.Point{
-            .x = sprite.origin[0] * 1 / self.init_options.file.editor.canvas.scale,
-            .y = sprite.origin[1] * 1 / self.init_options.file.editor.canvas.scale,
-        };
+/// A cursor sprite from the UI atlas with its hot spot on `data_point`.
+fn drawCursorSprite(self: *FileWidget, sprite: pixi.core_sprite, data_point: dvui.Point) void {
+    const atlas_size = dvui.imageSize(runtime.uiAtlas().source) catch {
+        dvui.log.err("Failed to get atlas size", .{});
+        return;
+    };
 
-        const position = data_point.diff(origin);
+    const uv = dvui.Rect{
+        .x = (@as(f32, @floatFromInt(sprite.source[0])) / atlas_size.w),
+        .y = (@as(f32, @floatFromInt(sprite.source[1])) / atlas_size.h),
+        .w = (@as(f32, @floatFromInt(sprite.source[2])) / atlas_size.w),
+        .h = (@as(f32, @floatFromInt(sprite.source[3])) / atlas_size.h),
+    };
 
-        const box = dvui.box(@src(), .{ .dir = .horizontal }, .{
-            .expand = .none,
-            .rect = .{
-                .x = position.x,
-                .y = position.y,
-                .w = @as(f32, @floatFromInt(sprite.source[2])) * 1 / self.init_options.file.editor.canvas.scale,
-                .h = @as(f32, @floatFromInt(sprite.source[3])) * 1 / self.init_options.file.editor.canvas.scale,
-            },
-            .border = dvui.Rect.all(0),
-            .corners = .square,
-            .padding = .{ .x = 0, .y = 0 },
-            .margin = .{ .x = 0, .y = 0 },
-            .background = false,
-            .color_fill = .{ .color = dvui.themeGet().color(.err, .fill) },
-        });
-        defer box.deinit();
+    const origin = dvui.Point{
+        .x = sprite.origin[0] * 1 / self.init_options.file.editor.canvas.scale,
+        .y = sprite.origin[1] * 1 / self.init_options.file.editor.canvas.scale,
+    };
 
-        const rs = box.data().rectScale();
+    const position = data_point.diff(origin);
 
-        dvui.renderImage(runtime.uiAtlas().source, rs, .{
-            .uv = uv,
-        }) catch {
-            dvui.log.err("Failed to render cursor image", .{});
-        };
-    }
+    const box = dvui.box(@src(), .{ .dir = .horizontal }, .{
+        .expand = .none,
+        .rect = .{
+            .x = position.x,
+            .y = position.y,
+            .w = @as(f32, @floatFromInt(sprite.source[2])) * 1 / self.init_options.file.editor.canvas.scale,
+            .h = @as(f32, @floatFromInt(sprite.source[3])) * 1 / self.init_options.file.editor.canvas.scale,
+        },
+        .border = dvui.Rect.all(0),
+        .corners = .square,
+        .padding = .{ .x = 0, .y = 0 },
+        .margin = .{ .x = 0, .y = 0 },
+        .background = false,
+        .color_fill = .{ .color = dvui.themeGet().color(.err, .fill) },
+    });
+    defer box.deinit();
+
+    const rs = box.data().rectScale();
+
+    dvui.renderImage(runtime.uiAtlas().source, rs, .{
+        .uv = uv,
+    }) catch {
+        dvui.log.err("Failed to render cursor image", .{});
+    };
 }
 
 fn drawSamplePixelOutline(canvas: *CanvasWidget, data_point: dvui.Point) void {
@@ -6872,6 +6885,7 @@ pub fn processEvents(self: *FileWidget) void {
         self.drawSample();
         if (self.hovered())
             self.drawCursor();
+        self.drawRevealPencil();
     }
 
     // Then process the scroll and zoom events last

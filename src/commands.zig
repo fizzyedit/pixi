@@ -51,10 +51,15 @@ pub fn anyFile(_: *anyopaque) bool {
 }
 
 /// The open sprite `path` names, else the active one.
+/// A drawing still being shown drawn on it is finished first: a command sees the sprite whole.
 pub fn targetFile(path: []const u8, call: *sdk.Command.Call) !*File {
     const st = runtime.state();
-    if (path.len == 0) return st.docs.activeFile(st.host) orelse call.fail("no sprite is active: give its path", .{});
-    return st.docs.fileFromPath(path) orelse call.fail("{s} is not open in pixi", .{path});
+    const file = if (path.len == 0)
+        st.docs.activeFile(st.host) orelse return call.fail("no sprite is active: give its path", .{})
+    else
+        st.docs.fileFromPath(path) orelse return call.fail("{s} is not open in pixi", .{path});
+    file.finishReveal();
+    return file;
 }
 
 /// The index of the layer `name` names, else the selected one's.
@@ -147,12 +152,26 @@ pub const PixelEdit = struct {
         return e.before.pixels.count();
     }
 
-    /// Record what changed as one history entry and show it.
+    /// Record what changed as one history entry, and show it being drawn (`File.Reveal`).
     pub fn commit(e: *PixelEdit) !void {
         defer e.before.pixels.deinit();
-        if (e.changed() == 0) return;
+        const n = e.changed();
+        if (n == 0) return;
         var layer = e.file.layers.get(e.layer_index);
+        // What each pixel is now and was, before the history takes the record of it.
+        const gpa = runtime.allocator();
+        const drawn = try gpa.alloc(File.Reveal.Pixel, n);
+        errdefer gpa.free(drawn);
+        const was = try gpa.alloc([4]u8, n);
+        defer gpa.free(was);
+        var it = e.before.pixels.iterator();
+        var i: usize = 0;
+        while (it.next()) |entry| : (i += 1) {
+            drawn[i] = .{ .index = @intCast(entry.key_ptr.*), .color = e.px[entry.key_ptr.*] };
+            was[i] = entry.value_ptr.*;
+        }
         try e.file.history.append(try e.before.toChange(layer.id));
+        e.file.editor.reveal = .begin(e.px, e.w, layer.id, drawn, was, dvui.frameTimeNS());
         e.show(&layer);
     }
 
