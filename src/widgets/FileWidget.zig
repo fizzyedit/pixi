@@ -3032,9 +3032,8 @@ pub fn processSelection(self: *FileWidget) void {
     const widget_active = self.active();
     const active_layer = &file.layers.get(file.selected_layer_index);
 
-    const selection_alpha: u8 = 185;
-    const selection_color_primary: dvui.Color = .{ .r = 200, .g = 200, .b = 200, .a = selection_alpha };
-    const selection_color_secondary: dvui.Color = .{ .r = 50, .g = 50, .b = 50, .a = selection_alpha };
+    const selection_color_primary = selection_overlay_primary;
+    const selection_color_secondary = selection_overlay_secondary;
 
     const selection_alpha_stroke: u8 = 225;
     var selection_color_primary_stroke: dvui.Color = .{ .r = 255, .g = 255, .b = 255, .a = selection_alpha_stroke };
@@ -3318,16 +3317,36 @@ pub fn processSelection(self: *FileWidget) void {
 
             file.editor.temporary_layer.mask.setUnion(file.editor.selection_layer.mask);
             file.editor.temporary_layer.mask.setIntersection(active_layer.mask);
-
-            file.editor.temporary_layer.setColorFromMask(selection_color_primary);
-            file.editor.temporary_layer.mask.setIntersection(file.editor.checkerboard);
-            file.editor.temporary_layer.setColorFromMask(selection_color_secondary);
-            file.editor.temp_layer_generation +%= 1;
+            paintSelectionMask(&file.editor);
         }
     }
 
     file.editor.temp_layer_has_content = true;
 }
+
+/// Show the committed selection on the canvas, as the selection tool does when it is not
+/// dragging: for a selection made without the pointer (a command), which the tool, drawing only
+/// while the canvas is hovered, would not show until the pointer came back.
+pub fn showSelection(file: *pixi.internal.File) void {
+    @memset(file.editor.temporary_layer.pixels(), .{ 0, 0, 0, 0 });
+    file.editor.temporary_layer.clearMask();
+    file.editor.temporary_layer.mask.setUnion(file.editor.selection_layer.mask);
+    paintSelectionMask(&file.editor);
+    file.editor.temporary_layer.invalidate();
+    file.editor.temp_layer_has_content = true;
+}
+
+/// Colour the pixels in the temporary layer's mask as the selection overlay, in the alternating
+/// shades its checkerboard steps between.
+fn paintSelectionMask(editor: *pixi.internal.File.EditorData) void {
+    editor.temporary_layer.setColorFromMask(selection_overlay_primary);
+    editor.temporary_layer.mask.setIntersection(editor.checkerboard);
+    editor.temporary_layer.setColorFromMask(selection_overlay_secondary);
+    editor.temp_layer_generation +%= 1;
+}
+
+const selection_overlay_primary: dvui.Color = .{ .r = 200, .g = 200, .b = 200, .a = 185 };
+const selection_overlay_secondary: dvui.Color = .{ .r = 50, .g = 50, .b = 50, .a = 185 };
 
 fn processStrokeDragSegment(
     self: *FileWidget,
