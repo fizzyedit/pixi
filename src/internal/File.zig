@@ -1378,6 +1378,48 @@ pub fn reorderRows(file: *File, removed_row_index: usize, insert_before_row_inde
     }
 }
 
+/// The layers' pixels, by layer id, as a demo's snapshot holds them (`Plugin.captureDocumentState`):
+/// a drawing still being shown drawn is in them whole.
+pub fn captureState(file: *File, allocator: std.mem.Allocator) ![]u8 {
+    var out: std.Io.Writer.Allocating = .init(allocator);
+    errdefer out.deinit();
+    const w = &out.writer;
+    try w.writeByte(state_version);
+    try w.writeInt(u32, @intCast(file.layers.len), .little);
+    for (0..file.layers.len) |i| {
+        const layer = file.layers.get(i);
+        try w.writeInt(u64, layer.id, .little);
+        const start = out.written().len;
+        try w.writeAll(std.mem.sliceAsBytes(layer.pixels()));
+        if (file.editor.reveal) |*r| if (r.layer_id == layer.id) {
+            r.complete(@alignCast(std.mem.bytesAsSlice([4]u8, out.written()[start..])));
+        };
+    }
+    return out.toOwnedSlice();
+}
+
+/// Put back what `captureState` took, in place: refused when the layers are not the same ones,
+/// so the app reopens the sprite instead.
+pub fn restoreState(file: *File, bytes: []const u8) !void {
+    var r: std.Io.Reader = .fixed(bytes);
+    if (try r.takeByte() != state_version) return error.UnknownStateVersion;
+    if (try r.takeInt(u32, .little) != file.layers.len) return error.LayersChanged;
+    if (file.editor.reveal) |*rv| rv.deinit();
+    file.editor.reveal = null;
+    for (0..file.layers.len) |i| {
+        var layer = file.layers.get(i);
+        if (try r.takeInt(u64, .little) != layer.id) return error.LayersChanged;
+        const px = std.mem.sliceAsBytes(layer.pixels());
+        @memcpy(px, try r.take(px.len));
+        layer.invalidate();
+    }
+    file.editor.layer_composite_dirty = true;
+    file.editor.split_composite_dirty = true;
+    file.invalidateActiveLayerTransparencyMaskCache();
+}
+
+const state_version: u8 = 1;
+
 /// Draw the rest of a drawing being shown drawn, at once: before anything else reads or writes
 /// the pixels.
 pub fn finishReveal(file: *File) void {
