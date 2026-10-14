@@ -770,6 +770,9 @@ pub fn drawAnimations(self: *Sprites) !void {
                     }
                 }
 
+                const prev_order = try runtime.allocator().dupe(u64, file.animations.items(.id));
+                const prev_selected = file.selectedAnimationIdForHistory();
+
                 var moved = try runtime.allocator().alloc(pixi.internal.Animation, sources.len);
                 defer runtime.allocator().free(moved);
                 for (sources, 0..) |s, i| {
@@ -802,6 +805,12 @@ pub fn drawAnimations(self: *Sprites) !void {
                     };
                 }
                 file.editor.animation_selection_anchor = file.selected_animation_index;
+
+                if (!std.mem.eql(u64, file.animations.items(.id), prev_order)) {
+                    file.history.append(.{ .animation_order = .{ .order = prev_order, .selected = prev_selected } }) catch {
+                        dvui.log.err("Failed to append history", .{});
+                    };
+                } else runtime.allocator().free(prev_order);
 
                 self.animation_insert_before_index = null;
                 removed_animation_indices_len = 0;
@@ -1707,7 +1716,9 @@ pub fn drawFrames(self: *Sprites) !void {
                 };
 
                 const frame_font = dvui.Font.theme(.mono);
-                const result = dvui.textEntryNumber(@src(), u32, .{ .value = &frame.ms, .min = 0, .max = 9999999 }, .{
+                // Edited through a copy, so the frames before the edit can go to history.
+                var ms = frame.ms;
+                const result = dvui.textEntryNumber(@src(), u32, .{ .value = &ms, .min = 0, .max = 9999999 }, .{
                     .expand = .horizontal,
                     .background = false,
                     .padding = dvui.Rect.all(2),
@@ -1723,6 +1734,8 @@ pub fn drawFrames(self: *Sprites) !void {
 
                 if (result.changed) {
                     if (result.value == .Valid) {
+                        recordFrameTimingEdit(file, animation_index);
+                        frame.ms = result.value.Valid;
                         for (animation.frames) |*f| {
                             if (file.editor.selected_sprites.isSet(f.sprite_index) and file.editor.selected_sprites.isSet(frame.sprite_index)) {
                                 f.ms = result.value.Valid;
@@ -2506,4 +2519,24 @@ const FrameSort = struct {
 /// and joins drew darker than its lines.
 fn disabledIcon(color: dvui.Color, fill: dvui.Color, enabled: bool) dvui.Color {
     return if (enabled) color else color.lerp(fill, 0.65);
+}
+
+/// The focused entry the last frame-timing undo step was recorded for: typing "250" into one
+/// entry is one step, not three.
+var frame_timing_edit_focus: ?dvui.Id = null;
+
+/// Record an animation's frames before a duration edit changes them, once per edit.
+fn recordFrameTimingEdit(file: *pixi.internal.File, animation_index: usize) void {
+    const focus = dvui.focusedWidgetId();
+    const same_edit = if (file.history.undo_stack.getLastOrNull()) |last|
+        last == .animation_frames and last.animation_frames.index == animation_index and focus != null and std.meta.eql(focus, frame_timing_edit_focus)
+    else
+        false;
+    if (same_edit) return;
+    const before = runtime.allocator().dupe(pixi.Animation.Frame, file.animations.items(.frames)[animation_index]) catch return;
+    file.history.append(.{ .animation_frames = .{ .index = animation_index, .frames = before } }) catch {
+        runtime.allocator().free(before);
+        return;
+    };
+    frame_timing_edit_focus = focus;
 }

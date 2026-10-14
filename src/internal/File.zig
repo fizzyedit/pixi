@@ -2884,6 +2884,20 @@ pub fn duplicateAnimation(self: *File, index: usize) !usize {
     return index + 1;
 }
 
+/// Record the animations' order as an undo step, before moving them.
+pub fn recordAnimationOrder(self: *File) !void {
+    const order = try runtime.allocator().dupe(u64, self.animations.items(.id));
+    errdefer runtime.allocator().free(order);
+    try self.history.append(.{ .animation_order = .{ .order = order, .selected = self.selectedAnimationIdForHistory() } });
+}
+
+/// The selected animation's id as `History.Change.AnimationOrder.selected` holds it; none matches
+/// no animation.
+pub fn selectedAnimationIdForHistory(self: *File) usize {
+    const i = self.selected_animation_index orelse return std.math.maxInt(usize);
+    return @intCast(self.animations.items(.id)[i]);
+}
+
 pub fn deleteAnimation(self: *File, index: usize) !void {
     try self.deleted_animations.append(runtime.allocator(), self.animations.slice().get(index));
     self.animations.orderedRemove(index);

@@ -39,7 +39,7 @@ const Add = sdk.Command.Params(struct {
 /// A new, empty layer on top, selected, as the + button makes.
 fn add(_: *anyopaque, args: Add.Args, call: *sdk.Command.Call) anyerror!void {
     const file = try commands.targetFile(args.path, call);
-    const name = try newName(file, args.name, "Layer", call);
+    const name = try commands.uniqueName(file.layers.items(.name), args.name, "Layer", "layer", call);
     _ = try file.createLayer();
     setName(file, 0, name);
     selectOnly(file, 0);
@@ -56,7 +56,7 @@ fn duplicate(_: *anyopaque, args: Duplicate.Args, call: *sdk.Command.Call) anyer
     const file = try commands.targetFile(args.path, call);
     const index = try commands.targetLayer(file, args.layer, call);
     const copy_of = try std.fmt.allocPrint(call.arena, "{s} copy", .{file.layers.items(.name)[index]});
-    const name = try newName(file, args.name, copy_of, call);
+    const name = try commands.uniqueName(file.layers.items(.name), args.name, copy_of, "layer", call);
     _ = try file.duplicateLayer(index);
     setName(file, 0, name);
     selectOnly(file, 0);
@@ -89,7 +89,7 @@ fn rename(_: *anyopaque, args: Rename.Args, call: *sdk.Command.Call) anyerror!vo
     const index = try commands.targetLayer(file, args.layer, call);
     if (std.mem.eql(u8, file.layers.items(.name)[index], args.name)) return answer(file, call);
     if (args.name.len == 0) return call.fail("a layer's name cannot be empty", .{});
-    const name = try newName(file, args.name, "", call);
+    const name = try commands.uniqueName(file.layers.items(.name), args.name, "", "layer", call);
     try file.history.append(.{ .layer_name = .{
         .index = index,
         .name = try runtime.allocator().dupe(u8, file.layers.items(.name)[index]),
@@ -189,32 +189,10 @@ fn answer(file: *File, call: *sdk.Command.Call) !void {
     try call.returns(.{ .layers = layers, .selected = file.layers.items(.name)[file.selected_layer_index] });
 }
 
-/// `wanted`, refused if a layer already has it; when empty, `base` or `base 2`, `base 3`, … —
-/// whichever is free, so every layer a command makes can be named back. In `call.arena`.
-fn newName(file: *File, wanted: []const u8, base: []const u8, call: *sdk.Command.Call) ![]const u8 {
-    if (wanted.len > 0) {
-        if (indexByName(file, wanted) != null) return call.fail("a layer named \"{s}\" already exists", .{wanted});
-        return wanted;
-    }
-    if (indexByName(file, base) == null) return base;
-    var n: usize = 2;
-    while (true) : (n += 1) {
-        const name = try std.fmt.allocPrint(call.arena, "{s} {d}", .{ base, n });
-        if (indexByName(file, name) == null) return name;
-    }
-}
-
 fn setName(file: *File, index: usize, name: []const u8) void {
     const owned = runtime.allocator().dupe(u8, name) catch return;
     runtime.allocator().free(file.layers.items(.name)[index]);
     file.layers.items(.name)[index] = owned;
-}
-
-fn indexByName(file: *File, name: []const u8) ?usize {
-    for (file.layers.items(.name), 0..) |n, i| {
-        if (std.mem.eql(u8, n, name)) return i;
-    }
-    return null;
 }
 
 fn indexOf(file: *File, id: u64) ?usize {
