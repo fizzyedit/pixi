@@ -82,7 +82,7 @@ const Source = struct {
 };
 
 /// Every visible layer over the ones below it, as the canvas shows them.
-fn composite(file: *File, arena: std.mem.Allocator) ![][4]u8 {
+pub fn composite(file: *File, arena: std.mem.Allocator) ![][4]u8 {
     const out = try arena.alloc([4]u8, file.width() * file.height());
     @memset(out, pixel_text.transparent);
     var i = file.layers.len;
