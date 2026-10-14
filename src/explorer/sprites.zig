@@ -544,6 +544,7 @@ pub fn drawAnimationControls(self: *Sprites) !void {
                     .color_text = add_animation_button.data().options.color_text,
                     .margin = dvui.Rect.all(0),
                     .padding = dvui.Rect.all(0),
+                    .min_size_content = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).min_size_content,
                 },
             );
 
@@ -599,6 +600,7 @@ pub fn drawAnimationControls(self: *Sprites) !void {
                     .color_text = duplicate_animation_button.data().options.color_text,
                     .margin = dvui.Rect.all(0),
                     .padding = dvui.Rect.all(0),
+                    .min_size_content = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).min_size_content,
                 },
             );
 
@@ -657,6 +659,7 @@ pub fn drawAnimationControls(self: *Sprites) !void {
                     .expand = .ratio,
                     .margin = dvui.Rect.all(0),
                     .padding = dvui.Rect.all(0),
+                    .min_size_content = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).min_size_content,
                 },
             );
 
@@ -1102,6 +1105,7 @@ pub fn drawFrameControls(_: *Sprites) !void {
                     .color_text = sort_anim_asc_button.data().options.color_text,
                     .margin = dvui.Rect.all(0),
                     .padding = dvui.Rect.all(0),
+                    .min_size_content = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).min_size_content,
                 },
             );
 
@@ -1161,6 +1165,7 @@ pub fn drawFrameControls(_: *Sprites) !void {
                         .color_text = sort_anim_desc_button.data().options.color_text,
                         .margin = dvui.Rect.all(0),
                         .padding = dvui.Rect.all(0),
+                        .min_size_content = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).min_size_content,
                     },
                 );
 
@@ -1221,6 +1226,7 @@ pub fn drawFrameControls(_: *Sprites) !void {
                     .color_text = add_sprite_button.data().options.color_text,
                     .margin = dvui.Rect.all(0),
                     .padding = dvui.Rect.all(0),
+                    .min_size_content = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).min_size_content,
                 },
             );
 
@@ -1309,6 +1315,7 @@ pub fn drawFrameControls(_: *Sprites) !void {
                     .color_text = duplicate_animation_button.data().options.color_text,
                     .margin = dvui.Rect.all(0),
                     .padding = dvui.Rect.all(0),
+                    .min_size_content = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).min_size_content,
                 },
             );
 
@@ -1380,6 +1387,7 @@ pub fn drawFrameControls(_: *Sprites) !void {
                     .expand = .ratio,
                     .margin = dvui.Rect.all(0),
                     .padding = dvui.Rect.all(0),
+                    .min_size_content = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).min_size_content,
                 },
             );
 
