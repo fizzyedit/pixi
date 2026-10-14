@@ -952,7 +952,7 @@ pub fn drawEditPill(self: *CanvasData, container: *dvui.WidgetData, pane_file: *
     // dvui's clip to the main window, which a canvas in a popped-out float lies far past (`core.screens`).
     dvui.clipSet(pixi.core.screens.pixelsFor(.cast(fw.data().rect)));
 
-    // The pill is one pane of liquid glass over the canvas (`pixi.glass_button`): shut, exactly
+    // The pill is one bubble of liquid glass over the canvas (`pixi.glass_button`): shut, exactly
     // the hamburger's disc; opening, it grows out of that disc into the whole pill, and the
     // buttons in it are washes on it, as a menu's rows are.
     {
@@ -960,7 +960,7 @@ pub fn drawEditPill(self: *CanvasData, container: *dvui.WidgetData, pane_file: *
         const open = std.math.clamp(anim_value, 0, 1);
         const inset = pill_padding * (1 - open);
         const glass = rs.r.insetAll(inset * rs.s);
-        pixi.glass_button.pane(fw.data().id, glass, pill_w / 2 - inset, rs.s, pixi.glass_button.canvasWitness(pane_file, glass));
+        pixi.core.dialogs.glassBubbles(fw.data().id, &.{.{ .rect = glass }}, rs.s, .{ .witness = pixi.glass_button.canvasWitness(pane_file, glass) });
     }
 
     var vbox = dvui.box(@src(), .{ .dir = .vertical }, .{
