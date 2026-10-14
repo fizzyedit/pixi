@@ -825,14 +825,6 @@ pub fn exportAllCallback(paths: ?[][:0]const u8) void {
 }
 
 pub fn exportCurrentSprite(path: []const u8) anyerror!void {
-    const ext = std.fs.path.extension(path);
-    const is_png = std.ascii.eqlIgnoreCase(ext, ".png");
-    const is_jpg = std.ascii.eqlIgnoreCase(ext, ".jpg") or std.ascii.eqlIgnoreCase(ext, ".jpeg");
-    if (!is_png and !is_jpg) {
-        dvui.log.err("Export: File must be .png or .jpg, got {s}", .{ext});
-        return error.InvalidExtension;
-    }
-
     const file = runtime.state().docs.activeFile(runtime.state().host) orelse {
         dvui.log.err("Export: No active file", .{});
         return error.NoActiveFile;
@@ -841,18 +833,30 @@ pub fn exportCurrentSprite(path: []const u8) anyerror!void {
         dvui.log.err("Export: No tile selected", .{});
         return error.NoSelectedTile;
     };
+    try exportCell(file, sprite_index, scale, path);
+}
+
+/// One cell, every visible layer, at `export_scale`, to a .png or .jpg at `path`.
+pub fn exportCell(file: *pixi.internal.File, sprite_index: usize, export_scale: f32, path: []const u8) anyerror!void {
+    const ext = std.fs.path.extension(path);
+    const is_png = std.ascii.eqlIgnoreCase(ext, ".png");
+    const is_jpg = std.ascii.eqlIgnoreCase(ext, ".jpg") or std.ascii.eqlIgnoreCase(ext, ".jpeg");
+    if (!is_png and !is_jpg) {
+        dvui.log.err("Export: File must be .png or .jpg, got {s}", .{ext});
+        return error.InvalidExtension;
+    }
 
     var export_width: u32 = file.column_width;
     var export_height: u32 = file.row_height;
-    if (scale != 1.0) {
-        export_width = @intFromFloat(@as(f32, @floatFromInt(file.column_width)) * scale);
-        export_height = @intFromFloat(@as(f32, @floatFromInt(file.row_height)) * scale);
+    if (export_scale != 1.0) {
+        export_width = @intFromFloat(@as(f32, @floatFromInt(file.column_width)) * export_scale);
+        export_height = @intFromFloat(@as(f32, @floatFromInt(file.row_height)) * export_scale);
     }
 
     const pixels = try compositedSpritePixels(runtime.allocator(), file, sprite_index);
     defer runtime.allocator().free(pixels);
 
-    if (scale != 1.0) {
+    if (export_scale != 1.0) {
         const resized = runtime.allocator().alloc([4]u8, export_width * export_height) catch {
             return error.OutOfMemory;
         };
@@ -887,6 +891,15 @@ pub fn exportCurrentSprite(path: []const u8) anyerror!void {
 }
 
 pub fn exportLayerToPath(path: []const u8) anyerror!void {
+    const file = runtime.state().docs.activeFile(runtime.state().host) orelse {
+        dvui.log.err("Export: No active file", .{});
+        return error.NoActiveFile;
+    };
+    try exportLayer(file, file.selected_layer_index, path);
+}
+
+/// One layer, the whole canvas, to a .png or .jpg at `path`.
+pub fn exportLayer(file: *pixi.internal.File, layer_index: usize, path: []const u8) anyerror!void {
     const ext = std.fs.path.extension(path);
     const is_png = std.ascii.eqlIgnoreCase(ext, ".png");
     const is_jpg = std.ascii.eqlIgnoreCase(ext, ".jpg") or std.ascii.eqlIgnoreCase(ext, ".jpeg");
@@ -895,18 +908,22 @@ pub fn exportLayerToPath(path: []const u8) anyerror!void {
         return error.InvalidExtension;
     }
 
-    const file = runtime.state().docs.activeFile(runtime.state().host) orelse {
-        dvui.log.err("Export: No active file", .{});
-        return error.NoActiveFile;
-    };
-
-    const layer = file.layers.get(file.selected_layer_index);
+    const layer = file.layers.get(layer_index);
     const src = layer.source;
     const format: ExportImageFormat = if (is_png) .png else .jpg;
     try writeImageToPath(src, path, format);
 }
 
 pub fn exportAllToPath(path: []const u8) anyerror!void {
+    const file = runtime.state().docs.activeFile(runtime.state().host) orelse {
+        dvui.log.err("Export: No active file", .{});
+        return error.NoActiveFile;
+    };
+    try exportFlattened(file, path);
+}
+
+/// Every visible layer as the canvas shows them, to a .png or .jpg at `path`.
+pub fn exportFlattened(file: *pixi.internal.File, path: []const u8) anyerror!void {
     const ext = std.fs.path.extension(path);
     const is_png = std.ascii.eqlIgnoreCase(ext, ".png");
     const is_jpg = std.ascii.eqlIgnoreCase(ext, ".jpg") or std.ascii.eqlIgnoreCase(ext, ".jpeg");
@@ -914,11 +931,6 @@ pub fn exportAllToPath(path: []const u8) anyerror!void {
         dvui.log.err("Export: File must be .png, .jpg, or .jpeg, got {s}", .{ext});
         return error.InvalidExtension;
     }
-
-    const file = runtime.state().docs.activeFile(runtime.state().host) orelse {
-        dvui.log.err("Export: No active file", .{});
-        return error.NoActiveFile;
-    };
 
     const w = file.width();
     const h = file.height();
@@ -943,14 +955,6 @@ pub fn exportAllToPath(path: []const u8) anyerror!void {
 }
 
 pub fn createAnimationGif(path: []const u8) anyerror!void {
-    const ext = std.fs.path.extension(path);
-    const is_gif = std.ascii.eqlIgnoreCase(ext, ".gif");
-
-    if (!is_gif) {
-        dvui.log.err("Export: File must end with .gif extension, got {s}", .{ext});
-        return error.InvalidExtension;
-    }
-
     const file = runtime.state().docs.activeFile(runtime.state().host) orelse {
         dvui.log.err("Export: No active file", .{});
         return error.NoActiveFile;
@@ -962,15 +966,27 @@ pub fn createAnimationGif(path: []const u8) anyerror!void {
     }
 
     const animation_index = exportAnimationIndex(file) orelse return error.NoSelectedAnimation;
+    try exportAnimationGif(file, animation_index, scale, path);
+}
+
+/// One animation as a .gif at `path`, each frame for its own time, at `export_scale`.
+pub fn exportAnimationGif(file: *pixi.internal.File, animation_index: usize, export_scale: f32, path: []const u8) anyerror!void {
+    const ext = std.fs.path.extension(path);
+    const is_gif = std.ascii.eqlIgnoreCase(ext, ".gif");
+
+    if (!is_gif) {
+        dvui.log.err("Export: File must end with .gif extension, got {s}", .{ext});
+        return error.InvalidExtension;
+    }
     {
         const anim: pixi.internal.Animation = file.animations.get(animation_index);
 
         var export_width = file.column_width;
         var export_height = file.row_height;
 
-        if (scale != 1.0) {
-            export_width = @intFromFloat(@as(f32, @floatFromInt(file.column_width)) * scale);
-            export_height = @intFromFloat(@as(f32, @floatFromInt(file.row_height)) * scale);
+        if (export_scale != 1.0) {
+            export_width = @intFromFloat(@as(f32, @floatFromInt(file.column_width)) * export_scale);
+            export_height = @intFromFloat(@as(f32, @floatFromInt(file.row_height)) * export_scale);
         }
 
         var handle: msf_gif.MSFGifState = undefined;
@@ -1005,7 +1021,7 @@ pub fn createAnimationGif(path: []const u8) anyerror!void {
                 }
             }
 
-            if (scale != 1.0) {
+            if (export_scale != 1.0) {
                 const resized_pixels = runtime.allocator().alloc([4]u8, export_width * export_height) catch {
                     dvui.log.err("Failed to allocate resized pixels", .{});
                     continue;
