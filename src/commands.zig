@@ -18,12 +18,14 @@ const Buffers = pixi.internal.Buffers;
 pub const document = @import("commands/document.zig");
 pub const pixels = @import("commands/pixels.zig");
 pub const layers = @import("commands/layers.zig");
+pub const colors = @import("commands/colors.zig");
 pub const pixel_text = @import("commands/pixel_text.zig");
 
 pub fn register(host: *sdk.Host, plugin: *sdk.Plugin) !void {
     try document.register(host, plugin);
     try pixels.register(host, plugin);
     try layers.register(host, plugin);
+    try colors.register(host, plugin);
 }
 
 /// The `path` parameter every document command takes.
