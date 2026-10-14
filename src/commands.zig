@@ -21,6 +21,7 @@ pub const layers = @import("commands/layers.zig");
 pub const colors = @import("commands/colors.zig");
 pub const animations = @import("commands/animations.zig");
 pub const grid = @import("commands/grid.zig");
+pub const cells = @import("commands/cells.zig");
 pub const pixel_text = @import("commands/pixel_text.zig");
 
 pub fn register(host: *sdk.Host, plugin: *sdk.Plugin) !void {
@@ -30,6 +31,7 @@ pub fn register(host: *sdk.Host, plugin: *sdk.Plugin) !void {
     try colors.register(host, plugin);
     try animations.register(host, plugin);
     try grid.register(host, plugin);
+    try cells.register(host, plugin);
 }
 
 /// The `path` parameter every document command takes.
