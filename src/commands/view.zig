@@ -74,7 +74,12 @@ const FitView = sdk.Command.Params(struct {
 /// `fizzy.fitView` (Cmd-0): the sprite fitted to its pane and centred, and kept so until the
 /// person moves the view.
 fn fitView(_: *anyopaque, args: FitView.Args, call: *sdk.Command.Call) anyerror!void {
-    const file = try commands.targetFile(args.path, call);
+    fit(try commands.targetFile(args.path, call));
+}
+
+/// `file`'s sprite fitted to its pane and centred, and kept so until the person moves the view:
+/// the command, and the canvas's Fit to View bubble.
+pub fn fit(file: *pixi.internal.File) void {
     const canvas = &file.editor.canvas;
     if (@hasDecl(@TypeOf(canvas.*), "fitToView")) {
         canvas.fitToView();

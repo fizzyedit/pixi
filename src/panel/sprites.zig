@@ -1276,7 +1276,7 @@ fn glassWitness(self: *const Sprites, file: *pixi.internal.File) ?u64 {
 
 /// One round, floating action button in liquid glass, matching the workspace hamburger / sample
 /// buttons (`pixi.glass_button`). Returns true on click. `enabled` mutes the icon (the caller also
-/// gates the action on it); `active` tints the fill to show a toggled-on state.
+/// gates the action on it); `active` shows a toggled-on state in the icon's colour.
 /// Each call site supplies its own `@src()` for a stable, distinct id.
 fn drawRoundButton(
     src: std.builtin.SourceLocation,
@@ -1304,11 +1304,6 @@ fn drawRoundButton(
     // dvui's clip to the main window, which a canvas in a popped-out float lies far past (`core.screens`).
     dvui.clipSet(pixi.core.screens.pixelsFor(.cast(fw.data().rect)));
 
-    const fill = if (active)
-        dvui.themeGet().color(.highlight, .fill)
-    else
-        dvui.themeGet().color(.content, .fill);
-
     var btn: dvui.ButtonWidget = undefined;
     btn.init(src, .{}, pixi.glass_button.options(size, .{
         .expand = .both,
@@ -1322,15 +1317,10 @@ fn drawRoundButton(
     defer btn.deinit();
     btn.processEvents();
     // Liquid glass over the panel, like the canvas's floating buttons.
-    pixi.glass_button.background(&btn, active, if (witness) |w| w ^ std.hash.Wyhash.hash(0, std.mem.asBytes(&btn.data().borderRectScale().r)) else null);
+    pixi.glass_button.background(&btn, if (witness) |w| w ^ std.hash.Wyhash.hash(0, std.mem.asBytes(&btn.data().borderRectScale().r)) else null);
 
-    const text_color = if (active)
-        dvui.themeGet().color(.highlight, .text)
-    else
-        dvui.themeGet().color(.content, .text);
-    // Disabled: most of the way to the fill rather than see-through — at partial alpha a
-    // stroked icon's overlapping caps and joins drew darker than its lines.
-    const icon_color = if (enabled) text_color else text_color.lerp(fill, 0.65);
+    // Toggled on, the glass stays glass and the icon takes the highlight.
+    const icon_color = pixi.glass_button.iconColor(active, enabled);
 
     // IconWidget takes `min_size_content` as-is and derives the width from the
     // glyph (`iconWidth(h)`) only when `w` is 0 — any other `w` fixes the
