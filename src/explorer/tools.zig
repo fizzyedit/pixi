@@ -179,26 +179,14 @@ pub fn drawTools() !void {
             .bucket => runtime.uiAtlas().sprites[pixi.atlas.sprites.bucket_default],
             .selection => selection_sprite,
         };
-        // Rest fill is the hover colour at zero alpha, not `.transparent`: dvui fades `.fill` ->
-        // `.fill_hover` with a straight (non-premultiplied) RGBA lerp, so a transparent-*black*
-        // rest dips through a dark wash before reaching the tint. Same RGB ramps alpha only.
-        const hover_fill = dvui.themeGet().color(.content, .fill).lighten(if (dvui.themeGet().dark) 10.0 else -10.0);
 
         var button: dvui.ButtonWidget = undefined;
         button.init(@src(), .{}, .{
             .expand = .none,
             .min_size_content = .{ .w = 40, .h = 40 },
             .id_extra = id_extra,
-            .background = true,
             .corners = .round(1000),
-            .color_fill = .{ .color = if (selected) dvui.themeGet().color(.content, .fill) else hover_fill.opacity(0) },
-            .color_fill_hover = .{ .color = hover_fill },
-            .box_shadow = if (selected) .{
-                .color = .black,
-                .offset = .{ .x = -2.5, .y = 2.5 },
-                .fade = 4.0,
-                .alpha = 0.25,
-            } else null,
+            .background = false,
             .padding = .all(0),
             //.border = dvui.Rect.all(1.0),
             //.color_border = .{ .color = if (selected) color else dvui.themeGet().color(.control, .fill) },
@@ -221,7 +209,8 @@ pub fn drawTools() !void {
         };
 
         button.processEvents();
-        button.drawBackground();
+        // The selected one is a bubble of glass; the others wash under the pointer, as a menu's rows do.
+        if (selected) pixi.glass_button.background(&button, pixi.glass_button.panelWitness(button.data().borderRectScale().r)) else pixi.glass_button.wash(&button, false);
 
         var rs = button.data().contentRectScale();
 
@@ -282,11 +271,6 @@ fn drawToolSettingsPopover() void {
 /// button's fill. Not the whole button at partial alpha: a stroked icon is overlapping pieces,
 /// and see-through its caps and joins drew darker than its lines (and the button itself went
 /// see-through with it).
-fn disabledIconText(enabled: bool) dvui.Color {
-    const text = dvui.themeGet().color(.control, .text);
-    return if (enabled) text else text.lerp(dvui.themeGet().color(.control, .fill), 0.65);
-}
-
 pub fn drawLayerControls() !void {
     var box = dvui.box(@src(), .{ .dir = .vertical }, .{
         .expand = .horizontal,
@@ -307,22 +291,7 @@ pub fn drawLayerControls() !void {
         const merge_down_enabled = file.selected_layer_index + 1 < file.layers.len;
 
         {
-            if (dvui.buttonIcon(@src(), "MergeLayerUp", icons.tvg.lucide.@"arrow-up-to-line", .{}, .{}, .{
-                .expand = .none,
-                .padding = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).padding,
-                .min_size_content = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).min_size_content,
-                .gravity_y = 0.5,
-                .corners = .round(1000),
-                .box_shadow = .{
-                    .color = .black,
-                    .offset = .{ .x = -2.0, .y = 2.0 },
-                    .fade = 6.0,
-                    .alpha = 0.15,
-                    .corners = .round(1000),
-                },
-                .color_fill = .{ .color = dvui.themeGet().color(.control, .fill) },
-                .color_text = .{ .color = disabledIconText(merge_up_enabled) },
-            })) {
+            if (pixi.glass_button.icon(@src(), "MergeLayerUp", icons.tvg.lucide.@"arrow-up-to-line", .{ .tooltip = "Merge Layer Up", .enabled = merge_up_enabled }, .{})) {
                 if (merge_up_enabled) {
                     file.mergeSelectedLayerUp() catch {
                         dvui.log.err("Failed to merge layer up", .{});
@@ -332,22 +301,7 @@ pub fn drawLayerControls() !void {
         }
 
         {
-            if (dvui.buttonIcon(@src(), "MergeLayerDown", icons.tvg.lucide.@"arrow-down-to-line", .{}, .{}, .{
-                .expand = .none,
-                .padding = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).padding,
-                .min_size_content = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).min_size_content,
-                .gravity_y = 0.5,
-                .corners = .round(1000),
-                .box_shadow = .{
-                    .color = .black,
-                    .offset = .{ .x = -2.0, .y = 2.0 },
-                    .fade = 6.0,
-                    .alpha = 0.15,
-                    .corners = .round(1000),
-                },
-                .color_fill = .{ .color = dvui.themeGet().color(.control, .fill) },
-                .color_text = .{ .color = disabledIconText(merge_down_enabled) },
-            })) {
+            if (pixi.glass_button.icon(@src(), "MergeLayerDown", icons.tvg.lucide.@"arrow-down-to-line", .{ .tooltip = "Merge Layer Down", .enabled = merge_down_enabled }, .{})) {
                 if (merge_down_enabled) {
                     file.mergeSelectedLayerDown() catch {
                         dvui.log.err("Failed to merge layer down", .{});
@@ -356,87 +310,28 @@ pub fn drawLayerControls() !void {
             }
         }
 
-        if (dvui.buttonIcon(
-            @src(),
-            "TogglePeek",
-            if (file.editor.isolate_layer) icons.tvg.lucide.@"layers-2" else icons.tvg.lucide.layers,
-            .{},
-            .{},
-            .{
-                .expand = .none,
-                .padding = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).padding,
-                .min_size_content = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).min_size_content,
-                .gravity_y = 0.5,
-                .corners = .round(1000),
-                .box_shadow = .{
-                    .color = .black,
-                    .offset = .{ .x = -2.0, .y = 2.0 },
-                    .fade = 6.0,
-                    .alpha = 0.15,
-                    .corners = .round(1000),
-                },
-                .style = if (file.editor.isolate_layer) .highlight else .control,
-            },
-        )) {
+        if (pixi.glass_button.icon(@src(), "TogglePeek", if (file.editor.isolate_layer) icons.tvg.lucide.@"layers-2" else icons.tvg.lucide.layers, .{ .tooltip = "Isolate Layer", .active = file.editor.isolate_layer }, .{})) {
             file.editor.isolate_layer = !file.editor.isolate_layer;
         }
 
-        if (dvui.buttonIcon(@src(), "AddLayer", icons.tvg.lucide.plus, .{}, .{}, .{
-            .expand = .none,
-            .padding = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).padding,
-            .min_size_content = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).min_size_content,
-            .gravity_y = 0.5,
-            .corners = .round(1000),
-            .box_shadow = .{
-                .color = .black,
-                .offset = .{ .x = -2.0, .y = 2.0 },
-                .fade = 6.0,
-                .alpha = 0.15,
-                .corners = .round(1000),
-            },
-            .color_fill = .{ .color = dvui.themeGet().color(.control, .fill) },
-        })) {
+        if (pixi.glass_button.icon(@src(), "AddLayer", icons.tvg.lucide.plus, .{
+            .tooltip = "Add Layer",
+        }, .{})) {
             if (file.createLayer() catch null) |id| {
                 edit_layer_id = id;
             }
         }
 
-        if (dvui.buttonIcon(@src(), "DuplicateLayer", icons.tvg.lucide.@"copy-plus", .{}, .{}, .{
-            .expand = .none,
-            .padding = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).padding,
-            .min_size_content = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).min_size_content,
-            .gravity_y = 0.5,
-            .corners = .round(1000),
-            .box_shadow = .{
-                .color = .black,
-                .offset = .{ .x = -2.0, .y = 2.0 },
-                .fade = 6.0,
-                .alpha = 0.15,
-                .corners = .round(1000),
-            },
-            .color_fill = .{ .color = dvui.themeGet().color(.control, .fill) },
-        })) {
+        if (pixi.glass_button.icon(@src(), "DuplicateLayer", icons.tvg.lucide.@"copy-plus", .{
+            .tooltip = "Duplicate Layer",
+        }, .{})) {
             if (file.duplicateLayer(file.selected_layer_index) catch null) |id| {
                 edit_layer_id = id;
             }
         }
 
         if (file.layers.len > 1) {
-            if (dvui.buttonIcon(@src(), "DeleteLayer", icons.tvg.lucide.trash, .{}, .{ .stroke_color = .{ .color = dvui.themeGet().color(.window, .fill) } }, .{
-                .style = .err,
-                .expand = .none,
-                .padding = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).padding,
-                .min_size_content = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).min_size_content,
-                .gravity_y = 0.5,
-                .corners = .round(1000),
-                .box_shadow = .{
-                    .color = .black,
-                    .offset = .{ .x = -2.0, .y = 2.0 },
-                    .fade = 6.0,
-                    .alpha = 0.15,
-                    .corners = .round(1000),
-                },
-            })) {
+            if (pixi.glass_button.icon(@src(), "DeleteLayer", icons.tvg.lucide.trash, .{ .tooltip = "Delete Layer", .danger = true }, .{})) {
                 file.deleteLayer(file.selected_layer_index) catch {
                     dvui.log.err("Failed to delete layer", .{});
                 };
@@ -1101,23 +996,7 @@ pub fn drawPaletteControls() !void {
 
     dvui.labelNoFmt(@src(), "PALETTES", .{}, .{ .font = dvui.Font.theme(.heading) });
 
-    if (dvui.buttonIcon(@src(), "PinPalettes", dvui.entypo.pin, .{ .draw_focus = false }, .{}, .{
-        .expand = .none,
-        .padding = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).padding,
-        .min_size_content = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).min_size_content,
-        .gravity_y = 0.5,
-        .gravity_x = 1.0,
-        .corners = .round(1000),
-        .box_shadow = .{
-            .color = .black,
-            .offset = .{ .x = -2.0, .y = 2.0 },
-            .fade = 6.0,
-            .alpha = 0.15,
-            .corners = .round(1000),
-        },
-        .rotation = std.math.pi * 0.25,
-        .style = if (runtime.state().pinned_palettes) .highlight else .control,
-    })) {
+    if (pixi.glass_button.icon(@src(), "PinPalettes", dvui.entypo.pin, .{ .tooltip = "Pin Palettes", .active = runtime.state().pinned_palettes }, .{ .gravity_x = 1.0, .rotation = std.math.pi * 0.25 })) {
         runtime.state().pinned_palettes = !runtime.state().pinned_palettes;
     }
 }

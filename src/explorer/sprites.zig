@@ -504,51 +504,11 @@ pub fn drawAnimationControls(self: *Sprites) !void {
     });
     defer box.deinit();
 
-    const icon_color = dvui.themeGet().color(.control, .text);
-
     if (runtime.state().docs.activeFile(runtime.state().host)) |file| {
         {
-            var add_animation_button: dvui.ButtonWidget = undefined;
-            add_animation_button.init(@src(), .{}, .{
-                .expand = .none,
-                .gravity_y = 0.5,
-                .padding = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).padding,
-                .min_size_content = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).min_size_content,
-                .corners = .round(1000),
-                .box_shadow = .{
-                    .color = .black,
-                    .offset = .{ .x = -2.0, .y = 2.0 },
-                    .fade = 6.0,
-                    .alpha = 0.15,
-                    .corners = .round(1000),
-                },
-                .color_fill = .{ .color = dvui.themeGet().color(.control, .fill) },
-            });
-            defer add_animation_button.deinit();
-
-            add_animation_button.processEvents();
-            add_animation_button.drawBackground();
-
-            dvui.icon(
-                @src(),
-                "AddAnimationIcon",
-                icons.tvg.lucide.plus,
-                .{
-                    .fill_color = .{ .color = icon_color },
-                    .stroke_color = .{ .color = icon_color },
-                },
-                .{
-                    .gravity_x = 0.5,
-                    .gravity_y = 0.5,
-                    .expand = .ratio,
-                    .color_text = add_animation_button.data().options.color_text,
-                    .margin = dvui.Rect.all(0),
-                    .padding = dvui.Rect.all(0),
-                    .min_size_content = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).min_size_content,
-                },
-            );
-
-            if (add_animation_button.clicked()) {
+            if (pixi.glass_button.icon(@src(), "AddAnimationIcon", icons.tvg.lucide.plus, .{
+                .tooltip = "Add Animation",
+            }, .{})) {
                 const anim_index = try file.createAnimation();
                 file.selected_animation_index = anim_index;
                 file.editor.animations_scroll_to_index = anim_index;
@@ -566,45 +526,9 @@ pub fn drawAnimationControls(self: *Sprites) !void {
         }
 
         {
-            var duplicate_animation_button: dvui.ButtonWidget = undefined;
-            duplicate_animation_button.init(@src(), .{}, .{
-                .expand = .none,
-                .gravity_y = 0.5,
-                .padding = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).padding,
-                .min_size_content = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).min_size_content,
-                .corners = .round(1000),
-                .box_shadow = .{
-                    .color = .black,
-                    .offset = .{ .x = -2.0, .y = 2.0 },
-                    .fade = 6.0,
-                    .alpha = 0.15,
-                    .corners = .round(1000),
-                },
-                .color_fill = .{ .color = dvui.themeGet().color(.control, .fill) },
-            });
-
-            defer duplicate_animation_button.deinit();
-            duplicate_animation_button.processEvents();
             const enabled = file.selected_animation_index != null and file.animations.len > 0;
-            duplicate_animation_button.drawBackground();
 
-            dvui.icon(
-                @src(),
-                "DuplicateAnimationIcon",
-                icons.tvg.lucide.@"copy-plus",
-                .{ .fill_color = .{ .color = disabledIcon(icon_color, dvui.themeGet().color(.control, .fill), enabled) }, .stroke_color = .{ .color = disabledIcon(icon_color, dvui.themeGet().color(.control, .fill), enabled) } },
-                .{
-                    .gravity_x = 0.5,
-                    .gravity_y = 0.5,
-                    .expand = .ratio,
-                    .color_text = duplicate_animation_button.data().options.color_text,
-                    .margin = dvui.Rect.all(0),
-                    .padding = dvui.Rect.all(0),
-                    .min_size_content = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).min_size_content,
-                },
-            );
-
-            if (duplicate_animation_button.clicked()) {
+            if (pixi.glass_button.icon(@src(), "DuplicateAnimationIcon", icons.tvg.lucide.@"copy-plus", .{ .tooltip = "Duplicate Animation", .enabled = enabled }, .{})) {
                 if (file.animations.len > 0) {
                     if (file.selected_animation_index) |index| {
                         const anim_index = try file.duplicateAnimation(index);
@@ -626,44 +550,9 @@ pub fn drawAnimationControls(self: *Sprites) !void {
         }
 
         {
-            var delete_animation_button: dvui.ButtonWidget = undefined;
-            delete_animation_button.init(@src(), .{}, .{
-                .expand = .none,
-                .gravity_y = 0.5,
-                .padding = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).padding,
-                .min_size_content = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).min_size_content,
-                .corners = .round(1000),
-                .box_shadow = .{
-                    .color = .black,
-                    .offset = .{ .x = -2.0, .y = 2.0 },
-                    .fade = 6.0,
-                    .alpha = 0.15,
-                    .corners = .round(1000),
-                },
-                .color_fill = .{ .color = dvui.themeGet().color(.err, .fill) },
-            });
-            defer delete_animation_button.deinit();
-            delete_animation_button.processEvents();
-
             const enabled = file.selected_animation_index != null and file.animations.len > 0;
-            delete_animation_button.drawBackground();
 
-            dvui.icon(
-                @src(),
-                "DeleteAnimationIcon",
-                icons.tvg.lucide.trash,
-                .{ .fill_color = .{ .color = disabledIcon(dvui.themeGet().color(.window, .fill), dvui.themeGet().color(.err, .fill), enabled) }, .stroke_color = .{ .color = disabledIcon(dvui.themeGet().color(.window, .fill), dvui.themeGet().color(.err, .fill), enabled) } },
-                .{
-                    .gravity_x = 0.5,
-                    .gravity_y = 0.5,
-                    .expand = .ratio,
-                    .margin = dvui.Rect.all(0),
-                    .padding = dvui.Rect.all(0),
-                    .min_size_content = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).min_size_content,
-                },
-            );
-
-            if (delete_animation_button.clicked()) {
+            if (pixi.glass_button.icon(@src(), "DeleteAnimationIcon", icons.tvg.lucide.trash, .{ .tooltip = "Delete Animation", .danger = true, .enabled = enabled }, .{})) {
                 if (file.animations.len > 0) {
                     if (file.selected_animation_index) |index| {
                         file.deleteAnimation(index) catch {
@@ -1077,48 +966,10 @@ pub fn drawFrameControls(_: *Sprites) !void {
         const index = if (file.selected_animation_index) |i| i else 0;
         var animation = file.animations.get(index);
 
-        const icon_color = dvui.themeGet().color(.control, .text);
-
         {
-            var sort_anim_asc_button: dvui.ButtonWidget = undefined;
-            sort_anim_asc_button.init(@src(), .{}, .{
-                .expand = .none,
-                .gravity_y = 0.5,
-                .padding = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).padding,
-                .min_size_content = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).min_size_content,
-                .corners = .round(1000),
-                .box_shadow = .{
-                    .color = .black,
-                    .offset = .{ .x = -2.0, .y = 2.0 },
-                    .fade = 6.0,
-                    .alpha = 0.15,
-                    .corners = .round(1000),
-                },
-                .color_fill = .{ .color = dvui.themeGet().color(.control, .fill) },
-            });
-
-            defer sort_anim_asc_button.deinit();
-            sort_anim_asc_button.processEvents();
             const enabled = file.selected_animation_index != null and file.animations.len > 0;
-            sort_anim_asc_button.drawBackground();
 
-            dvui.icon(
-                @src(),
-                "SortAnimationAscIcon",
-                icons.tvg.lucide.@"arrow-up-from-line",
-                .{ .fill_color = .{ .color = disabledIcon(icon_color, dvui.themeGet().color(.control, .fill), enabled) }, .stroke_color = .{ .color = disabledIcon(icon_color, dvui.themeGet().color(.control, .fill), enabled) } },
-                .{
-                    .gravity_x = 0.5,
-                    .gravity_y = 0.5,
-                    .expand = .ratio,
-                    .color_text = sort_anim_asc_button.data().options.color_text,
-                    .margin = dvui.Rect.all(0),
-                    .padding = dvui.Rect.all(0),
-                    .min_size_content = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).min_size_content,
-                },
-            );
-
-            if (sort_anim_asc_button.clicked()) {
+            if (pixi.glass_button.icon(@src(), "SortAnimationAscIcon", icons.tvg.lucide.@"arrow-up-from-line", .{ .tooltip = "Sort Frames Ascending", .enabled = enabled }, .{})) {
                 const prev_order = try runtime.allocator().dupe(pixi.Animation.Frame, animation.frames);
                 std.mem.sort(pixi.Animation.Frame, animation.frames, {}, FrameSort.asc);
 
@@ -1140,45 +991,9 @@ pub fn drawFrameControls(_: *Sprites) !void {
         }
         {
             {
-                var sort_anim_desc_button: dvui.ButtonWidget = undefined;
-                sort_anim_desc_button.init(@src(), .{}, .{
-                    .expand = .none,
-                    .gravity_y = 0.5,
-                    .padding = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).padding,
-                    .min_size_content = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).min_size_content,
-                    .corners = .round(1000),
-                    .box_shadow = .{
-                        .color = .black,
-                        .offset = .{ .x = -2.0, .y = 2.0 },
-                        .fade = 6.0,
-                        .alpha = 0.15,
-                        .corners = .round(1000),
-                    },
-                    .color_fill = .{ .color = dvui.themeGet().color(.control, .fill) },
-                });
-
-                defer sort_anim_desc_button.deinit();
-                sort_anim_desc_button.processEvents();
                 const enabled = file.selected_animation_index != null and file.animations.len > 0;
-                sort_anim_desc_button.drawBackground();
 
-                dvui.icon(
-                    @src(),
-                    "SortAnimationDescIcon",
-                    icons.tvg.lucide.@"arrow-down-from-line",
-                    .{ .fill_color = .{ .color = disabledIcon(icon_color, dvui.themeGet().color(.control, .fill), enabled) }, .stroke_color = .{ .color = disabledIcon(icon_color, dvui.themeGet().color(.control, .fill), enabled) } },
-                    .{
-                        .gravity_x = 0.5,
-                        .gravity_y = 0.5,
-                        .expand = .ratio,
-                        .color_text = sort_anim_desc_button.data().options.color_text,
-                        .margin = dvui.Rect.all(0),
-                        .padding = dvui.Rect.all(0),
-                        .min_size_content = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).min_size_content,
-                    },
-                );
-
-                if (sort_anim_desc_button.clicked()) {
+                if (pixi.glass_button.icon(@src(), "SortAnimationDescIcon", icons.tvg.lucide.@"arrow-down-from-line", .{ .tooltip = "Sort Frames Descending", .enabled = enabled }, .{})) {
                     const prev_order = try runtime.allocator().dupe(pixi.Animation.Frame, animation.frames);
                     std.mem.sort(pixi.Animation.Frame, animation.frames, {}, FrameSort.desc);
 
@@ -1201,45 +1016,9 @@ pub fn drawFrameControls(_: *Sprites) !void {
         }
 
         {
-            var add_sprite_button: dvui.ButtonWidget = undefined;
-            add_sprite_button.init(@src(), .{}, .{
-                .expand = .none,
-                .gravity_y = 0.5,
-                .padding = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).padding,
-                .min_size_content = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).min_size_content,
-                .corners = .round(1000),
-                .box_shadow = .{
-                    .color = .black,
-                    .offset = .{ .x = -2.0, .y = 2.0 },
-                    .fade = 6.0,
-                    .alpha = 0.15,
-                    .corners = .round(1000),
-                },
-                .color_fill = .{ .color = dvui.themeGet().color(.control, .fill) },
-            });
-
-            defer add_sprite_button.deinit();
-            add_sprite_button.processEvents();
             const enabled = file.selected_animation_index != null and file.animations.len > 0;
-            add_sprite_button.drawBackground();
 
-            dvui.icon(
-                @src(),
-                "AddSpriteIcon",
-                icons.tvg.lucide.plus,
-                .{ .fill_color = .{ .color = disabledIcon(icon_color, dvui.themeGet().color(.control, .fill), enabled) }, .stroke_color = .{ .color = disabledIcon(icon_color, dvui.themeGet().color(.control, .fill), enabled) } },
-                .{
-                    .gravity_x = 0.5,
-                    .gravity_y = 0.5,
-                    .expand = .ratio,
-                    .color_text = add_sprite_button.data().options.color_text,
-                    .margin = dvui.Rect.all(0),
-                    .padding = dvui.Rect.all(0),
-                    .min_size_content = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).min_size_content,
-                },
-            );
-
-            if (add_sprite_button.clicked()) {
+            if (pixi.glass_button.icon(@src(), "AddSpriteIcon", icons.tvg.lucide.plus, .{ .tooltip = "Add Selected Sprites as Frames", .enabled = enabled }, .{})) {
                 if (file.editor.selected_sprites.count() > 0) {
                     var iter = file.editor.selected_sprites.iterator(.{ .kind = .set, .direction = .forward });
                     var frames = std.array_list.Managed(pixi.Animation.Frame).init(dvui.currentWindow().arena());
@@ -1290,45 +1069,9 @@ pub fn drawFrameControls(_: *Sprites) !void {
         }
 
         {
-            var duplicate_animation_button: dvui.ButtonWidget = undefined;
-            duplicate_animation_button.init(@src(), .{}, .{
-                .expand = .none,
-                .gravity_y = 0.5,
-                .padding = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).padding,
-                .min_size_content = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).min_size_content,
-                .corners = .round(1000),
-                .box_shadow = .{
-                    .color = .black,
-                    .offset = .{ .x = -2.0, .y = 2.0 },
-                    .fade = 6.0,
-                    .alpha = 0.15,
-                    .corners = .round(1000),
-                },
-                .color_fill = .{ .color = dvui.themeGet().color(.control, .fill) },
-            });
-
-            defer duplicate_animation_button.deinit();
-            duplicate_animation_button.processEvents();
             const enabled = selection_in_animation;
-            duplicate_animation_button.drawBackground();
 
-            dvui.icon(
-                @src(),
-                "DuplicateAnimationIcon",
-                icons.tvg.lucide.@"copy-plus",
-                .{ .fill_color = .{ .color = disabledIcon(icon_color, dvui.themeGet().color(.control, .fill), enabled) }, .stroke_color = .{ .color = disabledIcon(icon_color, dvui.themeGet().color(.control, .fill), enabled) } },
-                .{
-                    .gravity_x = 0.5,
-                    .gravity_y = 0.5,
-                    .expand = .ratio,
-                    .color_text = duplicate_animation_button.data().options.color_text,
-                    .margin = dvui.Rect.all(0),
-                    .padding = dvui.Rect.all(0),
-                    .min_size_content = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).min_size_content,
-                },
-            );
-
-            if (duplicate_animation_button.clicked()) {
+            if (pixi.glass_button.icon(@src(), "DuplicateAnimationIcon", icons.tvg.lucide.@"copy-plus", .{ .tooltip = "Duplicate Selected Frames", .enabled = enabled }, .{})) {
                 var iter = file.editor.selected_sprites.iterator(.{ .kind = .set, .direction = .forward });
                 const prev_order = try runtime.allocator().dupe(pixi.Animation.Frame, animation.frames);
 
@@ -1362,45 +1105,9 @@ pub fn drawFrameControls(_: *Sprites) !void {
         }
 
         {
-            var delete_animation_button: dvui.ButtonWidget = undefined;
-            delete_animation_button.init(@src(), .{}, .{
-                .expand = .none,
-                .gravity_y = 0.5,
-                .padding = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).padding,
-                .min_size_content = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).min_size_content,
-                .corners = .round(1000),
-                .box_shadow = .{
-                    .color = .black,
-                    .offset = .{ .x = -2.0, .y = 2.0 },
-                    .fade = 6.0,
-                    .alpha = 0.15,
-                    .corners = .round(1000),
-                },
-                .color_fill = .{ .color = dvui.themeGet().color(.err, .fill).opacity(0.75) },
-            });
-
-            defer delete_animation_button.deinit();
-            delete_animation_button.processEvents();
             const enabled = selection_in_animation;
-            delete_animation_button.drawBackground();
 
-            dvui.icon(
-                @src(),
-                "DeleteAnimationIcon",
-                icons.tvg.lucide.minus,
-                .{ .fill_color = .{ .color = disabledIcon(dvui.themeGet().color(.err, .text), dvui.themeGet().color(.err, .fill), enabled) }, .stroke_color = .{ .color = disabledIcon(dvui.themeGet().color(.err, .text), dvui.themeGet().color(.err, .fill), enabled) } },
-                .{
-                    .gravity_x = 0.5,
-                    .gravity_y = 0.5,
-                    .color_text = .{ .color = dvui.themeGet().color(.err, .text) },
-                    .expand = .ratio,
-                    .margin = dvui.Rect.all(0),
-                    .padding = dvui.Rect.all(0),
-                    .min_size_content = pixi.round_icon.options(pixi.round_icon.defaultDiameter()).min_size_content,
-                },
-            );
-
-            if (delete_animation_button.clicked()) {
+            if (pixi.glass_button.icon(@src(), "DeleteAnimationIcon", icons.tvg.lucide.minus, .{ .tooltip = "Remove Selected Frames", .danger = true, .enabled = enabled }, .{})) {
                 var iter = file.editor.selected_sprites.iterator(.{ .kind = .set, .direction = .forward });
                 const prev_order = try runtime.allocator().dupe(pixi.Animation.Frame, animation.frames);
 

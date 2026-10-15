@@ -467,27 +467,13 @@ fn drawSelectionModes(_: *Tools, id_extra: u64) void {
                 .id_extra = @intCast(id_extra * 10 + mi),
             });
 
-            // Rest fill is the hover colour at zero alpha, not `.transparent`: dvui fades `.fill` ->
-            // `.fill_hover` with a straight (non-premultiplied) RGBA lerp, so a transparent-*black*
-            // rest dips through a dark wash before reaching the tint. Same RGB ramps alpha only.
-            const hover_fill = dvui.themeGet().color(.content, .fill).lighten(if (dvui.themeGet().dark) 10.0 else -10.0);
-
             var mode_button: dvui.ButtonWidget = undefined;
             mode_button.init(@src(), .{}, .{
                 .expand = .none,
                 .min_size_content = .{ .w = 40, .h = 40 },
                 .id_extra = @intCast(id_extra * 10 + mi + 1),
-                .background = true,
                 .corners = .round(1000),
-                .color_fill = .{ .color = if (selected) dvui.themeGet().color(.content, .fill) else hover_fill.opacity(0) },
-                .color_fill_hover = .{ .color = hover_fill },
-                .box_shadow = if (selected) .{
-                    .color = .black,
-                    .offset = .{ .x = -2.5, .y = 2.5 },
-                    .fade = 4.0,
-                    .alpha = 0.25,
-                    .corners = .round(1000),
-                } else null,
+                .background = false,
                 .padding = .all(0),
             });
             defer mode_button.deinit();
@@ -497,7 +483,8 @@ fn drawSelectionModes(_: *Tools, id_extra: u64) void {
             }
 
             mode_button.processEvents();
-            mode_button.drawBackground();
+            // The selected one is a bubble of glass; the others wash under the pointer, as a menu's rows do.
+            if (selected) pixi.glass_button.background(&mode_button, pixi.glass_button.panelWitness(mode_button.data().borderRectScale().r)) else pixi.glass_button.wash(&mode_button, false);
 
             var rs = mode_button.data().contentRectScale();
             const width = @as(f32, @floatFromInt(sprite.source[2])) * rs.s;

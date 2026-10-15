@@ -1320,7 +1320,7 @@ fn drawRoundButton(
     pixi.glass_button.background(&btn, if (witness) |w| w ^ std.hash.Wyhash.hash(0, std.mem.asBytes(&btn.data().borderRectScale().r)) else null);
 
     // Toggled on, the glass stays glass and the icon takes the highlight.
-    const icon_color = pixi.glass_button.iconColor(active, enabled);
+    const icon_color = pixi.glass_button.iconColor(active, enabled, dvui.themeGet().color(.content, .fill));
 
     // IconWidget takes `min_size_content` as-is and derives the width from the
     // glyph (`iconWidth(h)`) only when `w` is 0 — any other `w` fixes the
