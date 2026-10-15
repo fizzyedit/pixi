@@ -55,11 +55,52 @@ pub fn anyFile(_: *anyopaque) bool {
 pub fn targetFile(path: []const u8, call: *sdk.Command.Call) !*File {
     const st = runtime.state();
     const file = if (path.len == 0)
-        st.docs.activeFile(st.host) orelse return call.fail("no sprite is active: give its path", .{})
+        running_for orelse st.docs.activeFile(st.host) orelse return call.fail("no sprite is active: give its path", .{})
     else
         st.docs.fileFromPath(path) orelse return call.fail("{s} is not open in pixi", .{path});
     file.finishReveal();
     return file;
+}
+
+/// Whether the person has a gesture open on `file` whose end writes or records pixels: a stroke
+/// under their hand (its undo step is whatever changed beneath it), or a transform not yet
+/// accepted (accepting writes its pixels back). Anyone else's edit waits for it (`afterPerson`).
+pub fn personBusy(file: *const File) bool {
+    return file.editor.active_drawing or file.editor.transform != null;
+}
+
+/// Run this call when the person's gesture on `file` ends, not in the middle of it, and answer
+/// that it waits. Calls wait in the order they came and run in that order (`runWaiting`).
+pub fn afterPerson(file: *File, id: []const u8, call: *sdk.Command.Call) !void {
+    const gpa = runtime.allocator();
+    const args = try gpa.dupe(u8, call.args);
+    errdefer gpa.free(args);
+    try file.editor.waiting.append(gpa, .{ .id = id, .args = args });
+    try call.returns(.{ .waiting = if (file.editor.transform != null) "the person's transform" else "the person's stroke" });
+}
+
+/// The sprite the waiting calls run for, while they run: one that named none meant the sprite
+/// that was active when it came, not whichever is active now.
+var running_for: ?*File = null;
+
+/// Run the calls waiting on `file`'s person, once their gesture has ended. Once a frame.
+pub fn runWaiting(file: *File) void {
+    if (file.editor.waiting.items.len == 0 or personBusy(file)) return;
+    const gpa = runtime.allocator();
+    const calls = file.editor.waiting.toOwnedSlice(gpa) catch return;
+    defer {
+        for (calls) |w| gpa.free(w.args);
+        gpa.free(calls);
+    }
+    var arena: std.heap.ArenaAllocator = .init(gpa);
+    defer arena.deinit();
+    running_for = file;
+    defer running_for = null;
+    for (calls) |w| switch (runtime.state().host.callCommand(w.id, w.args, arena.allocator())) {
+        .ok => {},
+        .failed, .bad_args => |m| dvui.log.warn("{s}, run after the person's gesture: {s}", .{ w.id, m }),
+        else => dvui.log.warn("{s}, run after the person's gesture: it did not run", .{w.id}),
+    };
 }
 
 /// The index of the layer `name` names, else the selected one's.

@@ -147,17 +147,10 @@ pub fn setStrokeSize(self: *Tools, size: u8) void {
     self.stroke_size = size;
     if (self.strokeSizeSlot(self.current)) |slot| slot.* = size;
 
-    const stroke_size: usize = @intCast(size);
-
-    self.stroke.setRangeValue(.{ .start = 0, .end = max_brush_size * max_brush_size }, false);
-
-    const center: dvui.Point = .{ .x = @floor(max_brush_size_float / 2), .y = @floor(max_brush_size_float / 2) };
-
-    for (0..(stroke_size * stroke_size)) |index| {
-        if (self.getIndexShapeOffset(center, index)) |i| {
-            self.stroke.set(i);
-        }
-    }
+    self.stroke = Brush.shapeOf(switch (self.stroke_shape) {
+        .circle => .circle,
+        .square => .square,
+    }, size);
     self.brush.build(self.gpa, &self.stroke) catch dvui.log.err("Out of memory building the brush", .{});
 }
 

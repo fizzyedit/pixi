@@ -57,6 +57,9 @@ editor: EditorData = .{},
 /// used each frame to write/read data the editor directly depends on.
 ///
 /// Also, the fields here tend to be directly coupled with the UI library
+/// A command call waiting for the person's gesture to end: its id (static) and arguments.
+pub const Waiting = struct { id: []const u8, args: []const u8 };
+
 pub const EditorData = struct {
     /// Opaque slot handle to the workspace currently drawing this file. Set by the
     /// shell each frame before the file is drawn; recovered in the editor layer via
@@ -76,6 +79,9 @@ pub const EditorData = struct {
     /// A command's drawing being shown drawn (`Reveal`); finished before anything else touches
     /// the pixels (`finishReveal`).
     reveal: ?Reveal = null,
+    /// Calls that came while the person had a gesture open on this sprite, run in order once it
+    /// ends (`commands.afterPerson`). Their `args` are owned.
+    waiting: std.ArrayListUnmanaged(Waiting) = .empty,
 
     playing: bool = false,
     /// `history.bookmark` when the save in flight was snapshotted (`saveSnapshot`, `written`).
@@ -1453,6 +1459,8 @@ fn showRevealed(file: *File, layer: *Layer) void {
 
 pub fn deinit(file: *File) void {
     if (file.editor.reveal) |*r| r.deinit();
+    for (file.editor.waiting.items) |w| runtime.allocator().free(w.args);
+    file.editor.waiting.deinit(runtime.allocator());
     pixi.render.destroyLayerCompositeResources(file);
 
     strokeUndoFreeSnapshot(file);
