@@ -1,13 +1,13 @@
 const std = @import("std");
+const Brush = @import("Brush.zig");
 const dvui = @import("dvui");
 const pixi = @import("pixi.zig");
 const runtime = @import("runtime.zig");
 
 const Tools = @This();
 
-pub const max_brush_size: u32 = 256;
+pub const max_brush_size: u32 = Brush.side;
 pub const max_brush_size_float: f32 = @as(f32, @floatFromInt(max_brush_size));
-pub const min_full_stroke_size: u32 = 10;
 
 pub const Tool = enum(u32) {
     pointer,
@@ -89,20 +89,13 @@ settings_popover: bool = false,
 settings_popover_tool: Tool = .pointer,
 settings_popover_from: dvui.Point.Natural = .{},
 
-stroke: std.StaticBitSet(max_brush_size * max_brush_size) = .initEmpty(),
-offset_table: [][2]f32 = undefined,
+stroke: Brush.Shape = .initEmpty(),
+/// `stroke` as offsets to stamp, rebuilt with it.
+brush: Brush = .{},
+gpa: std.mem.Allocator,
 
 pub fn init(allocator: std.mem.Allocator) !Tools {
-    var tools: Tools = .{
-        .offset_table = try allocator.alloc([2]f32, max_brush_size * max_brush_size),
-    };
-
-    for (0..(max_brush_size * max_brush_size)) |index| {
-        const center: dvui.Point = .{ .x = @floor(max_brush_size_float / 2), .y = @floor(max_brush_size_float / 2) };
-        const x: f32 = @as(f32, @floatFromInt(@mod(index, max_brush_size)));
-        const y: f32 = @as(f32, @floatFromInt(index)) / max_brush_size_float;
-        tools.offset_table[index] = .{ @floor(x - center.x), @floor(y - center.y) };
-    }
+    var tools: Tools = .{ .gpa = allocator };
 
     tools.setStrokeSize(tools.strokeSizeFor(tools.current));
 
@@ -165,10 +158,11 @@ pub fn setStrokeSize(self: *Tools, size: u8) void {
             self.stroke.set(i);
         }
     }
+    self.brush.build(self.gpa, &self.stroke) catch dvui.log.err("Out of memory building the brush", .{});
 }
 
 pub fn deinit(self: *Tools, allocator: std.mem.Allocator) void {
-    allocator.free(self.offset_table);
+    self.brush.deinit(allocator);
 }
 
 pub fn set(self: *Tools, tool: Tool) void {
@@ -533,4 +527,3 @@ fn drawSelectionModes(_: *Tools, id_extra: u64) void {
         }
     }
 }
-

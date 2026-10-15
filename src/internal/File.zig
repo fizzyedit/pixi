@@ -6,6 +6,7 @@ const dvui = @import("dvui");
 
 const Transform = @import("../Transform.zig");
 const Tools = @import("../Tools.zig");
+const Brush = @import("../Brush.zig");
 
 const File = @This();
 
@@ -190,7 +191,6 @@ pub const EditorData = struct {
     selected_frame_indices: std.ArrayListUnmanaged(usize) = .empty,
     selected_frame_indices_for_animation_id: u64 = 0,
     frame_selection_anchor: ?usize = null,
-
 };
 
 pub const History = @import("History.zig");
@@ -1806,6 +1806,9 @@ pub const SelectOptions = struct {
     clear: bool = false,
     stroke_size: usize,
     constrain_to_tile: bool = false,
+    /// The line goes on from a point already selected (a drag's next segment): its first point
+    /// adds nothing, and each after only what the brush gains.
+    continues: bool = false,
 };
 
 /// Selects a point by considering the current stroke size and setting bits in the selection layer mask if there are
@@ -1813,7 +1816,6 @@ pub const SelectOptions = struct {
 /// If `value` is true, the point will be selected, otherwise it will be deselected.
 /// If `clear` is true, the selection layer mask will be cleared before setting the new value.
 pub fn selectPoint(file: *File, point: dvui.Point, select_options: SelectOptions) void {
-    const read_layer: Layer = file.layers.get(file.selected_layer_index);
     var selection_layer: *Layer = &file.editor.selection_layer;
 
     if (select_options.clear) {
@@ -1824,54 +1826,10 @@ pub fn selectPoint(file: *File, point: dvui.Point, select_options: SelectOptions
         return;
     }
 
-    const column = file.columnFromPixel(point);
-    const row = file.rowFromPixel(point);
-
-    const min_x: f32 = @as(f32, @floatFromInt(column)) * @as(f32, @floatFromInt(file.column_width));
-    const min_y: f32 = @as(f32, @floatFromInt(row)) * @as(f32, @floatFromInt(file.row_height));
-
-    const max_x: f32 = min_x + @as(f32, @floatFromInt(file.column_width));
-    const max_y: f32 = min_y + @as(f32, @floatFromInt(file.row_height));
-
-    if (select_options.stroke_size < 10) {
-        const size: usize = @intCast(select_options.stroke_size);
-
-        for (0..(size * size)) |index| {
-            if (selection_layer.getIndexShapeOffset(point, index)) |result| {
-                if (select_options.constrain_to_tile) {
-                    if (result.point.x < min_x or result.point.x >= max_x or result.point.y < min_y or result.point.y >= max_y) {
-                        continue;
-                    }
-                }
-
-                if (read_layer.pixels()[result.index][3] > 0) {
-                    selection_layer.mask.setValue(result.index, select_options.value);
-                }
-            }
-        }
-    } else {
-        var iter = runtime.state().tools.stroke.iterator(.{ .kind = .set, .direction = .forward });
-        while (iter.next()) |i| {
-            const offset = runtime.state().tools.offset_table[i];
-            const new_point: dvui.Point = .{ .x = point.x + offset[0], .y = point.y + offset[1] };
-
-            if (select_options.constrain_to_tile) {
-                if (new_point.x < min_x or new_point.x >= max_x or new_point.y < min_y or new_point.y >= max_y) {
-                    continue;
-                }
-            }
-
-            if (selection_layer.pixelIndex(new_point)) |index| {
-                if (read_layer.pixels()[index][3] > 0) {
-                    selection_layer.mask.setValue(index, select_options.value);
-                }
-            }
-        }
-    }
+    file.selectOffsets(runtime.state().tools.brush.stamp.items, brushPixel(point), file.tileRect(point), select_options);
 }
 
 pub fn selectLine(file: *File, point1: dvui.Point, point2: dvui.Point, select_options: SelectOptions) void {
-    const read_layer: Layer = file.layers.get(file.selected_layer_index);
     var selection_layer: *Layer = &file.editor.selection_layer;
 
     if (select_options.clear) {
@@ -1886,56 +1844,42 @@ pub fn selectLine(file: *File, point1: dvui.Point, point2: dvui.Point, select_op
         return;
     }
 
-    const column = file.columnFromPixel(point2);
-    const row = file.rowFromPixel(point2);
-
-    const min_x: f32 = @as(f32, @floatFromInt(column)) * @as(f32, @floatFromInt(file.column_width));
-    const min_y: f32 = @as(f32, @floatFromInt(row)) * @as(f32, @floatFromInt(file.row_height));
-
-    const max_x: f32 = min_x + @as(f32, @floatFromInt(file.column_width));
-    const max_y: f32 = min_y + @as(f32, @floatFromInt(file.row_height));
-
-    const diff = point2.diff(point1).normalize().scale(4, dvui.Point);
-    const stroke_size: usize = @intCast(Tools.max_brush_size);
-
-    const center: dvui.Point = .{ .x = @floor(Tools.max_brush_size_float / 2), .y = @floor(Tools.max_brush_size_float / 2) };
-    var mask = runtime.state().tools.stroke;
-
-    if (select_options.stroke_size > Tools.min_full_stroke_size) {
-        for (0..(stroke_size * stroke_size)) |index| {
-            if (runtime.state().tools.getIndexShapeOffset(center.diff(diff), index)) |i| {
-                mask.unset(i);
-            }
-        }
-    }
-
+    const tile = file.tileRect(point2);
+    const brush = &runtime.state().tools.brush;
     if (pixi.algorithms.brezenham.process(point1, point2) catch null) |points| {
-        for (points, 0..) |point, point_i| {
-            if (select_options.stroke_size < Tools.min_full_stroke_size) {
-                selectPoint(file, point, select_options);
-            } else {
-                var stroke = if (point_i == 0) runtime.state().tools.stroke else mask;
+        for (points, 0..) |point, k| {
+            const at = brushPixel(point);
+            const offsets = if (k > 0) brush.step(brushPixel(points[k - 1]), at) else if (select_options.continues) continue else brush.stamp.items;
+            file.selectOffsets(offsets, at, tile, select_options);
+        }
+    }
+}
 
-                var iter = stroke.iterator(.{ .kind = .set, .direction = .forward });
-                while (iter.next()) |i| {
-                    const offset = runtime.state().tools.offset_table[i];
-                    const new_point: dvui.Point = .{ .x = point.x + offset[0], .y = point.y + offset[1] };
-
-                    if (select_options.constrain_to_tile) {
-                        if (new_point.x < min_x or new_point.x >= max_x or new_point.y < min_y or new_point.y >= max_y) {
-                            continue;
-                        }
-                    }
-
-                    if (selection_layer.pixelIndex(new_point)) |index| {
-                        if (read_layer.pixels()[index][3] > 0) {
-                            selection_layer.mask.setValue(index, select_options.value);
-                        }
-                    }
-                }
+/// Select (or deselect) the opaque pixels under the brush `offsets` at pixel `at`.
+fn selectOffsets(file: *File, offsets: []const Brush.Offset, at: [2]i32, tile: dvui.Rect, select_options: SelectOptions) void {
+    const read_layer: Layer = file.layers.get(file.selected_layer_index);
+    var selection_layer: *Layer = &file.editor.selection_layer;
+    for (offsets) |o| {
+        const new_point: dvui.Point = .{ .x = @floatFromInt(at[0] + o[0]), .y = @floatFromInt(at[1] + o[1]) };
+        if (select_options.constrain_to_tile and !tile.contains(new_point)) continue;
+        if (selection_layer.pixelIndex(new_point)) |index| {
+            if (read_layer.pixels()[index][3] > 0) {
+                selection_layer.mask.setValue(index, select_options.value);
             }
         }
     }
+}
+
+/// The pixel a brush centred on `point` is stamped at.
+fn brushPixel(point: dvui.Point) [2]i32 {
+    return .{ @intFromFloat(@floor(point.x)), @intFromFloat(@floor(point.y)) };
+}
+
+/// The grid cell `point` is in, in pixels.
+fn tileRect(file: *File, point: dvui.Point) dvui.Rect {
+    const w: f32 = @floatFromInt(file.column_width);
+    const h: f32 = @floatFromInt(file.row_height);
+    return .{ .x = @as(f32, @floatFromInt(file.columnFromPixel(point))) * w, .y = @as(f32, @floatFromInt(file.rowFromPixel(point))) * h, .w = w, .h = h };
 }
 
 /// Selects every opaque pixel on the active layer inside the axis-aligned rectangle between `p1` and `p2` (inclusive).
@@ -2031,6 +1975,9 @@ pub const DrawOptions = struct {
     color: dvui.Color = .{ .r = 0, .g = 0, .b = 0, .a = 255 },
     /// When set, only writes pixels inside this rect (data space). Used for temporary preview draws.
     clip_rect: ?dvui.Rect = null,
+    /// The line goes on from a point already stamped (a stroke's next segment): its first point
+    /// gets nothing, and each after only what the brush gains.
+    continues: bool = false,
 };
 
 /// Computes the pixel bounding rect of a brush stamp, clamped to image bounds.
@@ -2465,81 +2412,12 @@ pub fn drawPoint(file: *File, point: dvui.Point, layer: DrawLayer, draw_options:
 
     const clip_rect: ?dvui.Rect = if (layer == .temporary) draw_options.clip_rect else null;
 
-    const mask_value: bool = draw_options.color.a != 0;
-
-    const column = file.columnFromPixel(point);
-    const row = file.rowFromPixel(point);
-
-    const min_x: f32 = @as(f32, @floatFromInt(column)) * @as(f32, @floatFromInt(file.column_width));
-    const min_y: f32 = @as(f32, @floatFromInt(row)) * @as(f32, @floatFromInt(file.row_height));
-
-    const max_x: f32 = min_x + @as(f32, @floatFromInt(file.column_width));
-    const max_y: f32 = min_y + @as(f32, @floatFromInt(file.row_height));
-
     if (clip_rect) |cr| {
         const br = brushRect(point, draw_options.stroke_size, file.width(), file.height());
         if (br.intersect(cr).empty()) return;
     }
 
-    if (draw_options.stroke_size < 10) {
-        const size: usize = @intCast(draw_options.stroke_size);
-
-        for (0..(size * size)) |index| {
-            if (active_layer.getIndexShapeOffset(point, index)) |result| {
-                if (clip_rect) |cr| {
-                    if (!cr.contains(result.point)) continue;
-                }
-                if (draw_options.constrain_to_tile) {
-                    if (result.point.x < min_x or result.point.x >= max_x or result.point.y < min_y or result.point.y >= max_y) {
-                        continue;
-                    }
-                }
-
-                active_layer.mask.setValue(result.index, mask_value);
-
-                if (draw_options.mask_only) {
-                    continue;
-                }
-
-                if (layer == .selected and !file.editor.stroke_undo_deferred) {
-                    file.buffers.stroke.append(result.index, result.color) catch {
-                        dvui.log.err("Failed to append to stroke buffer", .{});
-                    };
-                }
-
-                active_layer.pixels()[result.index] = draw_options.color.toRGBA();
-            }
-        }
-    } else {
-        var iter = runtime.state().tools.stroke.iterator(.{ .kind = .set, .direction = .forward });
-        while (iter.next()) |i| {
-            const offset = runtime.state().tools.offset_table[i];
-            const new_point: dvui.Point = .{ .x = point.x + offset[0], .y = point.y + offset[1] };
-
-            if (clip_rect) |cr| {
-                if (!cr.contains(new_point)) continue;
-            }
-            if (draw_options.constrain_to_tile) {
-                if (new_point.x < min_x or new_point.x >= max_x or new_point.y < min_y or new_point.y >= max_y) {
-                    continue;
-                }
-            }
-
-            if (active_layer.pixelIndex(new_point)) |index| {
-                active_layer.mask.setValue(index, mask_value);
-                if (draw_options.mask_only) {
-                    continue;
-                }
-                if (layer == .selected and !file.editor.stroke_undo_deferred) {
-                    file.buffers.stroke.append(index, active_layer.pixels()[index]) catch {
-                        dvui.log.err("Failed to append to stroke buffer", .{});
-                    };
-                }
-
-                active_layer.pixels()[index] = draw_options.color.toRGBA();
-            }
-        }
-    }
+    file.drawOffsets(&active_layer, layer, runtime.state().tools.brush.stamp.items, brushPixel(point), file.tileRect(point), draw_options);
 
     if (draw_options.mask_only) {
         return;
@@ -2554,16 +2432,7 @@ pub fn drawPoint(file: *File, point: dvui.Point, layer: DrawLayer, draw_options:
     }
 
     if (draw_options.to_change and layer == .selected) {
-        if (file.editor.stroke_undo_deferred) {
-            file.strokeUndoCommit();
-        } else {
-            const change_opt = file.buffers.stroke.toChange(active_layer.id) catch null;
-            if (change_opt) |change| {
-                file.history.append(change) catch {
-                    dvui.log.err("Failed to append to history", .{});
-                };
-            }
-        }
+        file.commitStroke(active_layer.id);
     }
 }
 
@@ -2584,82 +2453,20 @@ pub fn drawLine(file: *File, point1: dvui.Point, point2: dvui.Point, layer: Draw
     }
 
     const clip_rect: ?dvui.Rect = if (layer == .temporary) draw_options.clip_rect else null;
-    const iw = file.width();
-    const ih = file.height();
-
-    const mask_value: bool = draw_options.color.a != 0;
-
-    const column = file.columnFromPixel(point2);
-    const row = file.rowFromPixel(point2);
-
-    const min_x: f32 = @as(f32, @floatFromInt(column)) * @as(f32, @floatFromInt(file.column_width));
-    const min_y: f32 = @as(f32, @floatFromInt(row)) * @as(f32, @floatFromInt(file.row_height));
-
-    const max_x: f32 = min_x + @as(f32, @floatFromInt(file.column_width));
-    const max_y: f32 = min_y + @as(f32, @floatFromInt(file.row_height));
-
-    const diff = point2.diff(point1).normalize().scale(4, dvui.Point);
-    const stroke_size: usize = @intCast(Tools.max_brush_size);
-
-    const center: dvui.Point = .{ .x = @floor(Tools.max_brush_size_float / 2), .y = @floor(Tools.max_brush_size_float / 2) };
-    var mask = runtime.state().tools.stroke;
-
-    if (draw_options.stroke_size > Tools.min_full_stroke_size) {
-        for (0..(stroke_size * stroke_size)) |index| {
-            if (runtime.state().tools.getIndexShapeOffset(center.diff(diff), index)) |i| {
-                mask.unset(i);
-            }
-        }
-    }
+    const tile = file.tileRect(point2);
+    const brush = &runtime.state().tools.brush;
 
     if (pixi.algorithms.brezenham.process(point1, point2) catch null) |points| {
-        for (points, 0..) |point, point_i| {
+        for (points, 0..) |point, k| {
+            // A stamp wholly outside the clip draws nothing, and the next one's edge is
+            // measured from it: what that edge leaves out is in this stamp, outside too.
             if (clip_rect) |cr| {
-                const br = brushRect(point, draw_options.stroke_size, iw, ih);
+                const br = brushRect(point, draw_options.stroke_size, file.width(), file.height());
                 if (br.intersect(cr).empty()) continue;
             }
-            if (draw_options.stroke_size < Tools.min_full_stroke_size) {
-                drawPoint(file, point, layer, .{
-                    .color = draw_options.color,
-                    .stroke_size = draw_options.stroke_size,
-                    .mask_only = draw_options.mask_only,
-                    .invalidate = false,
-                    .to_change = false,
-                    .constrain_to_tile = draw_options.constrain_to_tile,
-                    .clip_rect = draw_options.clip_rect,
-                });
-            } else {
-                var stroke = if (point_i == 0) runtime.state().tools.stroke else mask;
-
-                var iter = stroke.iterator(.{ .kind = .set, .direction = .forward });
-                while (iter.next()) |i| {
-                    const offset = runtime.state().tools.offset_table[i];
-                    const new_point: dvui.Point = .{ .x = point.x + offset[0], .y = point.y + offset[1] };
-
-                    if (clip_rect) |cr| {
-                        if (!cr.contains(new_point)) continue;
-                    }
-                    if (draw_options.constrain_to_tile) {
-                        if (new_point.x < min_x or new_point.x >= max_x or new_point.y < min_y or new_point.y >= max_y) {
-                            continue;
-                        }
-                    }
-
-                    if (active_layer.pixelIndex(new_point)) |index| {
-                        active_layer.mask.setValue(index, mask_value);
-                        if (draw_options.mask_only) {
-                            continue;
-                        }
-                        if (layer == .selected and !file.editor.stroke_undo_deferred) {
-                            file.buffers.stroke.append(index, active_layer.pixels()[index]) catch {
-                                dvui.log.err("Failed to append to stroke buffer", .{});
-                            };
-                        }
-
-                        active_layer.pixels()[index] = draw_options.color.toRGBA();
-                    }
-                }
-            }
+            const at = brushPixel(point);
+            const offsets = if (k > 0) brush.step(brushPixel(points[k - 1]), at) else if (draw_options.continues) continue else brush.stamp.items;
+            file.drawOffsets(&active_layer, layer, offsets, at, tile, draw_options);
         }
 
         if (draw_options.mask_only) {
@@ -2677,16 +2484,47 @@ pub fn drawLine(file: *File, point1: dvui.Point, point2: dvui.Point, layer: Draw
         }
 
         if (draw_options.to_change and layer == .selected) {
-            if (file.editor.stroke_undo_deferred) {
-                file.strokeUndoCommit();
-            } else {
-                const change_opt = file.buffers.stroke.toChange(active_layer.id) catch null;
-                if (change_opt) |change| {
-                    file.history.append(change) catch {
-                        dvui.log.err("Failed to append to history", .{});
-                    };
-                }
+            file.commitStroke(active_layer.id);
+        }
+    }
+}
+
+/// Paint the brush `offsets` at pixel `at` onto `active_layer`, keeping each pixel's old color in
+/// the stroke buffer when the stroke's undo is not a snapshot.
+fn drawOffsets(file: *File, active_layer: *Layer, layer: DrawLayer, offsets: []const Brush.Offset, at: [2]i32, tile: dvui.Rect, draw_options: DrawOptions) void {
+    const clip_rect: ?dvui.Rect = if (layer == .temporary) draw_options.clip_rect else null;
+    const mask_value: bool = draw_options.color.a != 0;
+    const color = draw_options.color.toRGBA();
+    for (offsets) |o| {
+        const new_point: dvui.Point = .{ .x = @floatFromInt(at[0] + o[0]), .y = @floatFromInt(at[1] + o[1]) };
+        if (clip_rect) |cr| {
+            if (!cr.contains(new_point)) continue;
+        }
+        if (draw_options.constrain_to_tile and !tile.contains(new_point)) continue;
+
+        if (active_layer.pixelIndex(new_point)) |index| {
+            active_layer.mask.setValue(index, mask_value);
+            if (draw_options.mask_only) continue;
+            if (layer == .selected and !file.editor.stroke_undo_deferred) {
+                file.buffers.stroke.append(index, active_layer.pixels()[index]) catch {
+                    dvui.log.err("Failed to append to stroke buffer", .{});
+                };
             }
+            active_layer.pixels()[index] = color;
+        }
+    }
+}
+
+/// The stroke so far becomes one undo step.
+fn commitStroke(file: *File, layer_id: u64) void {
+    if (file.editor.stroke_undo_deferred) {
+        file.strokeUndoCommit();
+    } else {
+        const change_opt = file.buffers.stroke.toChange(layer_id) catch null;
+        if (change_opt) |change| {
+            file.history.append(change) catch {
+                dvui.log.err("Failed to append to history", .{});
+            };
         }
     }
 }
