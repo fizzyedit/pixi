@@ -157,6 +157,8 @@ fn draw(_: *anyopaque, args: Draw.Args, call: *sdk.Command.Call) anyerror!void {
     }
     const changed = edit.changed();
     try edit.commit();
+    // It goes on showing the drawing being drawn: a recorded session gives its step that long.
+    if (file.editor.reveal) |r| call.showing_ms = r.written_ms;
     try call.returns(.{ .changed = changed, .layer = file.layers.items(.name)[layer_index] });
 }
 
