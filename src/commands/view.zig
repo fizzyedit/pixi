@@ -12,6 +12,7 @@ const File = pixi.internal.File;
 pub fn register(host: *sdk.Host, plugin: *sdk.Plugin) !void {
     inline for (.{
         .{ "pixi.view", "Set View", View, view },
+        .{ "pixi.fitView", "Fit to View", FitView, fitView },
         .{ "pixi.isolateLayer", "Isolate Layer", Isolate, isolate },
     }) |c| try host.registerCommand(.{
         .id = c[0],
@@ -60,8 +61,35 @@ fn view(_: *anyopaque, args: View.Args, call: *sdk.Command.Call) anyerror!void {
     canvas.scroll_info.viewport.x = 0;
     canvas.scroll_info.viewport.y = 0;
     canvas.origin = .{ .x = centre.x * canvas.scale - vw / 2, .y = centre.y * canvas.scale - vh / 2 };
+    // The whole sprite fitted and centred stays fitted as its pane changes; any other view is
+    // placed, and kept (`CanvasWidget.fit`, in SDKs that have it).
+    if (@hasField(@TypeOf(canvas.*), "fit")) canvas.fit = args.zoom == 0 and args.cell < 0 and args.x < 0 and args.y < 0;
     dvui.refresh(null, @src(), null);
     try call.returns(.{ .zoom = canvas.scale, .x = centre.x - 0.5, .y = centre.y - 0.5 });
+}
+
+const FitView = sdk.Command.Params(struct {
+    path: commands.PathArg = .init(""),
+});
+/// `fizzy.fitView` (Cmd-0): the sprite fitted to its pane and centred, and kept so until the
+/// person moves the view.
+fn fitView(_: *anyopaque, args: FitView.Args, call: *sdk.Command.Call) anyerror!void {
+    const file = try commands.targetFile(args.path, call);
+    const canvas = &file.editor.canvas;
+    if (@hasDecl(@TypeOf(canvas.*), "fitToView")) {
+        canvas.fitToView();
+    } else {
+        const vw = canvas.scroll_info.viewport.w;
+        const vh = canvas.scroll_info.viewport.h;
+        const w: f32 = @floatFromInt(file.width());
+        const h: f32 = @floatFromInt(file.height());
+        canvas.fitContentContainInHost(.{ .w = w, .h = h }, .{ .w = vw, .h = vh }, 1.25);
+        canvas.scroll_info.virtual_size = .{ .w = w * canvas.scale, .h = h * canvas.scale };
+        canvas.scroll_info.viewport.x = 0;
+        canvas.scroll_info.viewport.y = 0;
+        canvas.origin = .{ .x = w / 2 * canvas.scale - vw / 2, .y = h / 2 * canvas.scale - vh / 2 };
+        dvui.refresh(null, @src(), null);
+    }
 }
 
 const Isolate = sdk.Command.Params(struct {
