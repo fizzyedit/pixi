@@ -56,6 +56,7 @@ var plugin: sdk.Plugin = .{
 
 const vtable: sdk.Plugin.VTable = .{
     .deinit = pluginDeinit,
+    .initPlugin = pluginInit,
     .fileTypes = fileTypes,
     .contributeKeybinds = contributeKeybinds,
     .loadDocument = loadDocument,
@@ -409,8 +410,6 @@ pub fn register(host: *sdk.Host) !void {
     try host.subscribe(.{ .event = "fizzy.folder.closed", .owner = &plugin, .handler = folderClosed });
     try host.subscribe(.{ .event = "fizzy.folder.opened", .owner = &plugin, .handler = folderOpened });
     try host.subscribe(.{ .event = "workbench.pane.closed", .owner = &plugin, .handler = paneClosed });
-    // A folder already open when pixi loads (a hot reload, an install) was opened before it listened.
-    if (host.folder()) |folder| plugin_state.reloadProjectForFolder(sdk.allocator(), folder);
     try host.registerFileRowFillColor(.{ .owner = &plugin, .color = &fileRowFillColor });
     try host.registerPainter(.{ .owner = &plugin, .draw = paint });
     try host.registerSurface(.{
@@ -709,6 +708,15 @@ fn documentHasNativeExtension(state: *anyopaque, doc: DocHandle) bool {
 fn documentHasRecognizedSaveExtension(state: *anyopaque, doc: DocHandle) bool {
     const st: *State = @ptrCast(@alignCast(state));
     return st.documentHasRecognizedSaveExtension(doc);
+}
+
+/// A folder already open when pixi loads (a hot reload, an install) was opened before it
+/// listened, so its project is read here. Not in `register`: in a dylib, `dvui.io` is not yet
+/// the host's there, and reading the file through it crashed every hot reload with a folder open.
+fn pluginInit(state: *anyopaque) anyerror!void {
+    const st: *State = @ptrCast(@alignCast(state));
+    if (st.project != null) return;
+    if (st.host.folder()) |folder| st.reloadProjectForFolder(sdk.allocator(), folder);
 }
 
 fn pluginDeinit(state: *anyopaque) void {
