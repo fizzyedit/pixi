@@ -57,14 +57,14 @@ const Pick = union(enum) {
 
 const Select = sdk.Command.Params(struct {
     picks: Arg([]const Pick, .{ .description =
-    \\What to select, each a one-field struct naming its kind; together they name one set of pixels:
-    \\.{ .rect = .{ .x, .y, .w, .h } }
-    \\.{ .pixels = .{ .x, .y, .rows = "..##\n.###" } } — any character but . and space selects that pixel
-    \\.{ .color = .{ .x, .y, .contiguous = true } } — the area of the color at x,y, as the tool's color mode
-    \\.{ .colors = .{ .colors = .{ "#5a3825", "#7a4a2a" }, .x, .y, .w, .h } } — every pixel of those colors in the region, e.g. a character's hair within its cell
-    \\.{ .cells = .{ .cells = .{ 0, 3 } } }
-    \\.{ .all = .{} }
-    \\Only pixels that hold something on the layer are selected, as with the selection tool.
+        \\What to select, each a one-field struct naming its kind; together they name one set of pixels:
+        \\.{ .rect = .{ .x, .y, .w, .h } }
+        \\.{ .pixels = .{ .x, .y, .rows = "..##\n.###" } } — any character but . and space selects that pixel
+        \\.{ .color = .{ .x, .y, .contiguous = true } } — the area of the color at x,y, as the tool's color mode
+        \\.{ .colors = .{ .colors = .{ "#5a3825", "#7a4a2a" }, .x, .y, .w, .h } } — every pixel of those colors in the region, e.g. a character's hair within its cell
+        \\.{ .cells = .{ .cells = .{ 0, 3 } } }
+        \\.{ .all = .{} }
+        \\Only pixels that hold something on the layer are selected, as with the selection tool.
     }),
     mode: Arg(enum { replace, add, subtract }, .{ .description = "Replace the selection, add to it, or take from it." }) = .init(.replace),
     layer: commands.LayerArg = .init(""),
@@ -260,6 +260,10 @@ fn deleteSelected(_: *anyopaque, args: LayerPath.Args, call: *sdk.Command.Call) 
 }
 
 const Transform = sdk.Command.Params(struct {
+    x: Arg(u32, .{ .description = "With w and h: the region to transform, its left edge. Without: the selection is." }) = .init(0),
+    y: Arg(u32, .{ .description = "The region's top edge." }) = .init(0),
+    w: Arg(u32, .{ .description = "The region's width. 0: transform the selection (pixels, else cells) instead." }) = .init(0),
+    h: Arg(u32, .{ .description = "The region's height." }) = .init(0),
     dx: Arg(i32, .{ .description = "Move right by this many pixels (negative: left)." }) = .init(0),
     dy: Arg(i32, .{ .description = "Move down by this many pixels (negative: up)." }) = .init(0),
     flip_x: Arg(bool, .{ .description = "Mirror left to right." }) = .init(false),
@@ -276,17 +280,24 @@ const Transform = sdk.Command.Params(struct {
 /// selected cells. The selection follows the pixels.
 fn transform(_: *anyopaque, args: Transform.Args, call: *sdk.Command.Call) anyerror!void {
     const file = try commands.targetFile(args.path, call);
-    if (file.editor.transform != null) return call.fail("a transform is open on this sprite: accept or cancel it first", .{});
+    if (commands.personBusy(file)) return commands.afterPerson(file, "pixi.transformSelection", call);
     const layer_index = try commands.targetLayer(file, args.layer, call);
     const w = file.width();
     const h = file.height();
     var edit: PixelEdit = .begin(file, layer_index);
     const px = edit.px;
 
-    // What moves: the pixel selection, else the selected cells' pixels.
+    // What moves: a region the call names (the person's selection left as it is), else the
+    // pixel selection, else the selected cells' pixels.
     var source = try std.DynamicBitSet.initEmpty(call.arena, px.len);
+    const region = args.w > 0 and args.h > 0;
     const mask = &file.editor.selection_layer.mask;
-    if (mask.count() > 0) {
+    if (region) {
+        for (args.y..@min(h, args.y + args.h)) |y| for (args.x..@min(w, args.x + args.w)) |x| {
+            if (px[y * w + x][3] != 0) source.set(y * w + x);
+        };
+        if (source.count() == 0) return call.fail("the region ({d}, {d}) {d}x{d} holds nothing on this layer", .{ args.x, args.y, args.w, args.h });
+    } else if (mask.count() > 0) {
         source.setUnion(mask.*);
     } else {
         var it = file.editor.selected_sprites.iterator(.{ .kind = .set, .direction = .forward });
@@ -370,6 +381,20 @@ fn transform(_: *anyopaque, args: Transform.Args, call: *sdk.Command.Call) anyer
     const changed = edit.changed();
     try edit.commit();
 
+    if (region) {
+        var bx: usize = w;
+        var by: usize = h;
+        var bx1: usize = 0;
+        var by1: usize = 0;
+        var mit = moved.iterator(.{ .kind = .set, .direction = .forward });
+        while (mit.next()) |i| {
+            bx = @min(bx, i % w);
+            by = @min(by, i / w);
+            bx1 = @max(bx1, i % w + 1);
+            by1 = @max(by1, i / w + 1);
+        }
+        return call.returns(.{ .changed = changed, .x = bx, .y = by, .w = bx1 -| bx, .h = by1 -| by });
+    }
     if (mask.count() > 0) {
         if (args.copy) mask.setUnion(moved) else {
             mask.setRangeValue(.{ .start = 0, .end = mask.capacity() }, false);

@@ -18,6 +18,8 @@ pub const side = 256;
 pub const Shape = std.StaticBitSet(side * side);
 pub const Offset = [2]i16;
 
+pub const Kind = enum { circle, square };
+
 stamp: std.ArrayList(Offset) = .empty,
 /// By step: `(dx + 1) + (dy + 1) * 3` for a step of `dx`, `dy` in -1…1.
 edges: [9]std.ArrayList(Offset) = @splat(.empty),
@@ -25,6 +27,30 @@ edges: [9]std.ArrayList(Offset) = @splat(.empty),
 pub fn deinit(self: *Brush, gpa: std.mem.Allocator) void {
     self.stamp.deinit(gpa);
     for (&self.edges) |*e| e.deinit(gpa);
+}
+
+/// The shape of a brush `size` pixels across, centred at `side / 2`: every pixel of a square, or
+/// those of a circle, its radius trimmed a little so small circles read round.
+pub fn shapeOf(kind: Kind, size: u8) Shape {
+    var out: Shape = .initEmpty();
+    const s: i32 = @max(1, size);
+    const half = @divFloor(s, 2);
+    var i: i32 = 0;
+    while (i < s * s) : (i += 1) {
+        const o: [2]i32 = .{ @mod(i, s) - half, @divFloor(i, s) - half };
+        if (kind == .circle and s > 1) {
+            const even: i32 = if (@mod(s, 2) == 0) 1 else 0;
+            const cx = o[0] * 2 + even;
+            const cy = o[1] * 2 + even;
+            const mult: f32 = if (s == 3 or s > 10) 0.7 else 0.8;
+            if (@as(f32, @floatFromInt(cx * cx + cy * cy)) > @as(f32, @floatFromInt(s * s)) * mult) continue;
+        }
+        const x = o[0] + side / 2;
+        const y = o[1] + side / 2;
+        if (x < 0 or y < 0 or x >= side or y >= side) continue;
+        out.set(@intCast(x + y * side));
+    }
+    return out;
 }
 
 /// Rebuild from `shape`, keeping the memory.
@@ -144,6 +170,17 @@ test "a step that skips pixels stamps the whole brush" {
     try brush.build(testing.allocator, &shape);
     try testing.expectEqual(brush.stamp.items.len, brush.step(.{ 0, 0 }, .{ 3, 0 }).len);
     try testing.expectEqual(@as(usize, 0), brush.step(.{ 2, 2 }, .{ 2, 2 }).len);
+}
+
+test "a shape is its size: one pixel, a full square, a round circle" {
+    try testing.expectEqual(@as(usize, 1), shapeOf(.circle, 1).count());
+    try testing.expectEqual(@as(usize, 1), shapeOf(.square, 1).count());
+    try testing.expectEqual(@as(usize, 49), shapeOf(.square, 7).count());
+    const c = shapeOf(.circle, 9);
+    try testing.expect(c.count() < 81 and c.count() > 40);
+    // Round: the middle row is full, the corners are not.
+    try testing.expect(covers(&c, .{ -4, 0 }) and covers(&c, .{ 4, 0 }));
+    try testing.expect(!covers(&c, .{ -4, -4 }));
 }
 
 test "a circle's edge is a sliver of it" {

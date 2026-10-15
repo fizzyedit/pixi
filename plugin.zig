@@ -798,6 +798,8 @@ fn beginFrame(state: *anyopaque) void {
     // Drawings being shown drawn, a little more each frame.
     const now = dvui.frameTimeNS();
     for (st.docs.files.values()) |*file| file.stepReveal(now);
+    // Calls that waited for the person to let go: run now that they have.
+    for (st.docs.files.values()) |*file| commands.runWaiting(file);
     if (comptime @import("builtin").target.cpu.arch == .wasm32) pack_project.runWasmWorkers(st);
 }
 

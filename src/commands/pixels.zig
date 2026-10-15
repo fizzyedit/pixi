@@ -7,6 +7,7 @@ const sdk = pixi.sdk;
 const Arg = sdk.Command.Arg;
 const File = pixi.internal.File;
 const PixelEdit = commands.PixelEdit;
+const Brush = @import("../Brush.zig");
 
 pub fn register(host: *sdk.Host, plugin: *sdk.Plugin) !void {
     try host.registerCommand(.{
@@ -112,6 +113,10 @@ const Op = union(enum) {
     /// fills every pixel of that color.
     fill: struct { x: i32, y: i32, color: []const u8, contiguous: bool = true },
     line: struct { x1: i32, y1: i32, x2: i32, y2: i32, color: []const u8 },
+    /// A pen's stroke, as the pencil draws under a person's hand: a brush `size` pixels across,
+    /// round or `square`, carried through `points` in straight lines, pixel for pixel what the
+    /// pencil would draw. `color` "none" erases, as the eraser does.
+    stroke: struct { points: []const [2]i32, color: []const u8, size: u8 = 1, square: bool = false },
     rect: struct { x: i32, y: i32, w: u32, h: u32, color: []const u8, filled: bool = true },
     ellipse: struct { x: i32, y: i32, w: u32, h: u32, color: []const u8, filled: bool = true },
     /// Make a region transparent. `w`/`h` 0: to the sprite's edge.
@@ -120,23 +125,26 @@ const Op = union(enum) {
 
 const Draw = sdk.Command.Params(struct {
     ops: Arg([]const Op, .{ .description =
-    \\The steps, in order, each a one-field struct naming its kind:
-    \\.{ .paint = .{ .x, .y, .rows = "..##..\n.#oo#.", .legend = "#=#3b2a1a o=#e8b04a" } } — pixels as text, one line per row; `.` transparent, a space leaves the pixel as it is.
-    \\.{ .fill = .{ .x, .y, .color, .contiguous = true } } — the bucket.
-    \\.{ .line = .{ .x1, .y1, .x2, .y2, .color } }
-    \\.{ .rect = .{ .x, .y, .w, .h, .color, .filled = true } }
-    \\.{ .ellipse = .{ .x, .y, .w, .h, .color, .filled = true } }
-    \\.{ .clear = .{ .x, .y, .w, .h } } — transparent; w/h 0 reach the edge.
-    \\Colors are #rrggbb, #rrggbbaa or none. Coordinates are pixels from the sprite's top left; what falls outside is skipped.
+        \\The steps, in order, each a one-field struct naming its kind:
+        \\.{ .paint = .{ .x, .y, .rows = "..##..\n.#oo#.", .legend = "#=#3b2a1a o=#e8b04a" } } — pixels as text, one line per row; `.` transparent, a space leaves the pixel as it is.
+        \\.{ .fill = .{ .x, .y, .color, .contiguous = true } } — the bucket.
+        \\.{ .line = .{ .x1, .y1, .x2, .y2, .color } }
+        \\.{ .stroke = .{ .points = .{ .{ x, y }, .{ x, y } }, .color, .size = 1, .square = false } } — the pencil's stroke through the points, with a brush that size; color none erases. Drawing is strokes, looked at between passes: paint is for pixels you already have.
+        \\.{ .rect = .{ .x, .y, .w, .h, .color, .filled = true } }
+        \\.{ .ellipse = .{ .x, .y, .w, .h, .color, .filled = true } }
+        \\.{ .clear = .{ .x, .y, .w, .h } } — transparent; w/h 0 reach the edge.
+        \\Colors are #rrggbb, #rrggbbaa or none. Coordinates are pixels from the sprite's top left; what falls outside is skipped.
     }),
     layer: commands.LayerArg = .init(""),
     path: commands.PathArg = .init(""),
 });
 /// Draws `ops` onto one layer as a single undo step. A step that fails puts back everything the
-/// call drew and says which step. Returns how many pixels changed.
+/// call drew and says which step. Returns how many pixels changed. Nothing here is the person's:
+/// not their tool, colours, brush or selection. A call that comes while the person has a stroke
+/// or transform open on the sprite waits for it to end (`commands.afterPerson`).
 fn draw(_: *anyopaque, args: Draw.Args, call: *sdk.Command.Call) anyerror!void {
     const file = try commands.targetFile(args.path, call);
-    if (file.editor.active_drawing) return call.fail("the person is drawing on this sprite: try again when the stroke ends", .{});
+    if (commands.personBusy(file)) return commands.afterPerson(file, "pixi.draw", call);
     const layer_index = try commands.targetLayer(file, args.layer, call);
 
     var edit: PixelEdit = .begin(file, layer_index);
@@ -196,24 +204,25 @@ fn apply(e: *PixelEdit, op: Op, call: *sdk.Command.Call) !void {
         },
         .line => |l| {
             const c = try commands.color(l.color, call);
-            var x: i64 = l.x1;
-            var y: i64 = l.y1;
-            const dx: i64 = @intCast(@abs(@as(i64, l.x2) - l.x1));
-            const dy: i64 = @intCast(@abs(@as(i64, l.y2) - l.y1));
-            const sx: i64 = if (l.x1 < l.x2) 1 else -1;
-            const sy: i64 = if (l.y1 < l.y2) 1 else -1;
-            var err = dx - dy;
-            while (true) {
-                e.put(x, y, c);
-                if (x == l.x2 and y == l.y2) break;
-                const e2 = 2 * err;
-                if (e2 > -dy) {
-                    err -= dy;
-                    x += sx;
-                }
-                if (e2 < dx) {
-                    err += dx;
-                    y += sy;
+            e.put(l.x1, l.y1, c);
+            var walk: Walk = .init(.{ l.x1, l.y1 }, .{ l.x2, l.y2 });
+            while (walk.next()) |p| e.put(p[0], p[1], c);
+        },
+        .stroke => |st| {
+            const c = try commands.color(st.color, call);
+            if (st.points.len == 0) return;
+            const shape = Brush.shapeOf(if (st.square) .square else .circle, @max(1, st.size));
+            var brush: Brush = .{};
+            try brush.build(call.arena, &shape);
+            // The whole brush where the pen goes down, then at each pixel after only what that
+            // step adds (`Brush.step`).
+            var at: [2]i64 = .{ st.points[0][0], st.points[0][1] };
+            stamp(e, brush.stamp.items, at, c);
+            for (st.points[1..]) |to| {
+                var walk: Walk = .init(at, .{ to[0], to[1] });
+                while (walk.next()) |p| {
+                    stamp(e, brush.step(.{ @intCast(at[0]), @intCast(at[1]) }, .{ @intCast(p[0]), @intCast(p[1]) }), p, c);
+                    at = p;
                 }
             }
         },
@@ -250,6 +259,53 @@ fn apply(e: *PixelEdit, op: Op, call: *sdk.Command.Call) !void {
         },
     }
 }
+
+/// The brush `offsets` put down at pixel `at`.
+fn stamp(e: *PixelEdit, offsets: []const Brush.Offset, at: [2]i64, c: pixel_text.Rgba) void {
+    for (offsets) |o| e.put(at[0] + o[0], at[1] + o[1], c);
+}
+
+/// The pixels of a line after its first, in order, as Bresenham steps them: each a neighbour of
+/// the last.
+const Walk = struct {
+    x: i64,
+    y: i64,
+    to: [2]i64,
+    dx: i64,
+    dy: i64,
+    sx: i64,
+    sy: i64,
+    err: i64,
+
+    fn init(from: [2]i64, to: [2]i64) Walk {
+        const dx: i64 = @intCast(@abs(to[0] - from[0]));
+        const dy: i64 = @intCast(@abs(to[1] - from[1]));
+        return .{
+            .x = from[0],
+            .y = from[1],
+            .to = to,
+            .dx = dx,
+            .dy = dy,
+            .sx = if (from[0] < to[0]) 1 else -1,
+            .sy = if (from[1] < to[1]) 1 else -1,
+            .err = dx - dy,
+        };
+    }
+
+    fn next(w: *Walk) ?[2]i64 {
+        if (w.x == w.to[0] and w.y == w.to[1]) return null;
+        const e2 = 2 * w.err;
+        if (e2 > -w.dy) {
+            w.err -= w.dy;
+            w.x += w.sx;
+        }
+        if (e2 < w.dx) {
+            w.err += w.dx;
+            w.y += w.sy;
+        }
+        return .{ w.x, w.y };
+    }
+};
 
 /// Whether pixel `col`,`row` of a `w` x `h` box has its centre inside the ellipse the box holds.
 fn inEllipse(w: u32, h: u32, col: i64, row: i64) bool {
