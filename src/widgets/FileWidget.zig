@@ -3294,6 +3294,7 @@ pub fn processSelection(self: *FileWidget) void {
                                         .{
                                             .value = !me.mod.matchBind("shift"),
                                             .stroke_size = runtime.state().tools.stroke_size,
+                                            .continues = true,
                                         },
                                     );
                                 }
@@ -3409,6 +3410,9 @@ fn processStrokeDragSegment(
                 .invalidate = true,
                 .to_change = false,
                 .stroke_size = stroke_size,
+                // Pressed with shift held, the stroke stamped nothing where it began: a
+                // segment after shift is let go stamps its start whole.
+                .continues = !self.previous_mods.matchBind("shift"),
             },
         );
         pixi.perf.draw_event_count += 1;
