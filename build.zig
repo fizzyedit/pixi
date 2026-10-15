@@ -14,8 +14,6 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    
-    
 
     // Packed assets — pixi's own bundled cursor atlas, palettes, etc. (this repo's assets/).
     plugin.module.addImport("assets", assetpack.pack(b, b.path("assets"), .{}));
