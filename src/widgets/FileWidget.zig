@@ -5206,6 +5206,14 @@ pub fn drawCursor(self: *FileWidget) void {
     if (self.sample_data_point != null) return;
 
     _ = dvui.cursorSet(.hidden);
+    // The tool's own cursor is the pointer here: a tape's pointer gives way to it.
+    if (@hasDecl(pixi.core.anchor, "own_cursor")) pixi.core.anchor.markRect(
+        self.init_options.file.editor.canvas.id,
+        .{ .x = mouse_point.x - 16, .y = mouse_point.y - 16, .w = 32, .h = 32 },
+        true,
+        "{s}",
+        .{pixi.core.anchor.own_cursor},
+    );
 
     const data_point = self.init_options.file.editor.canvas.dataFromScreenPoint(mouse_point);
 
@@ -6668,6 +6676,15 @@ pub fn processEvents(self: *FileWidget) void {
     }
 
     defer self.previous_mods = dvui.currentWindow().modifiers;
+
+    // The whole sprite, wherever it is scrolled: a point in it as fractions of it is a pixel, so a
+    // tape aims at the art at any zoom (`pixi.canvas:<path>`, pixel x at (x + 0.5) / width).
+    {
+        const file = self.init_options.file;
+        const canvas = &file.editor.canvas;
+        const art: dvui.Rect = .{ .w = @floatFromInt(file.width()), .h = @floatFromInt(file.height()) };
+        pixi.core.anchor.markRect(canvas.id, canvas.screenFromDataRect(art), true, "pixi.canvas:{s}", .{file.path});
+    }
 
     defer if (self.drag_data_point) |drag_data_point| {
         dvui.dataSet(null, self.init_options.file.editor.canvas.id, "drag_data_point", drag_data_point);
