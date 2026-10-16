@@ -150,25 +150,13 @@ pub fn draw() !void {
         rect.y -= rect.h / 2.0;
 
         const tool = @as(Tools.Tool, @enumFromInt(i));
-        // Rest fill is the hover colour at zero alpha, not `.transparent`: dvui fades `.fill` ->
-        // `.fill_hover` with a straight (non-premultiplied) RGBA lerp, so a transparent-*black*
-        // rest dips through a dark wash before reaching the tint. Same RGB ramps alpha only.
-        const hover_fill = dvui.themeGet().color(.content, .fill).lighten(if (dvui.themeGet().dark) 10.0 else -10.0);
 
         var button: dvui.ButtonWidget = undefined;
         button.init(@src(), .{}, .{
             .rect = rect,
             .id_extra = i,
             .corners = .round(1000.0),
-            .color_fill = .{ .color = if (tool == runtime.state().tools.current) dvui.themeGet().color(.content, .fill) else hover_fill.opacity(0) },
-            .color_fill_hover = .{ .color = hover_fill },
-            .box_shadow = if (tool == runtime.state().tools.current) .{
-                .color = .black,
-                .offset = .{ .x = -2.5, .y = 2.5 },
-                .fade = 4.0,
-                .alpha = 0.25,
-                .corners = .round(1000),
-            } else null,
+            .background = false,
             .padding = .all(0),
             .margin = .all(0),
         });
@@ -200,7 +188,8 @@ pub fn draw() !void {
         };
 
         button.processEvents();
-        button.drawBackground();
+        // The selected one is a bubble of glass; the others wash under the pointer, as a menu's rows do.
+        if (tool == runtime.state().tools.current) pixi.glass_button.background(&button, null) else pixi.glass_button.wash(&button, false);
 
         var rs = button.data().contentRectScale();
         const sw = @as(f32, @floatFromInt(sprite.source[2])) * rs.s;
@@ -242,21 +231,7 @@ pub fn draw() !void {
 
     if (runtime.state().host.activeDoc()) |doc| {
         if (runtime.state().docs.fileById(doc.id)) |file| {
-            if (dvui.buttonIcon(@src(), "Play", if (file.editor.playing) icons.tvg.entypo.pause else icons.tvg.entypo.play, .{}, .{}, .{
-                .expand = .none,
-                .corners = .round(1000),
-                .box_shadow = .{
-                    .color = .black,
-                    .offset = .{ .x = -2.5, .y = 2.5 },
-                    .fade = 4.0,
-                    .alpha = 0.25,
-                    .corners = .round(1000),
-                },
-                .color_fill = .{ .color = dvui.themeGet().color(.control, .fill_hover) },
-                .rect = rect,
-                .padding = pixi.round_icon.options(rect.w).padding,
-                .min_size_content = pixi.round_icon.options(rect.w).min_size_content,
-            })) {
+            if (pixi.glass_button.icon(@src(), "Play", if (file.editor.playing) icons.tvg.entypo.pause else icons.tvg.entypo.play, .{ .tooltip = if (file.editor.playing) "Pause" else "Play", .diameter = rect.w }, .{ .rect = rect })) {
                 file.editor.playing = !file.editor.playing;
                 if (runtime.state().tools.radial_menu.opened_by_press) {
                     runtime.state().tools.radial_menu.close();
