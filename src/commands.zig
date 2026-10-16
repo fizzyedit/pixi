@@ -62,7 +62,77 @@ pub fn targetFile(path: []const u8, call: *sdk.Command.Call) !*File {
         st.docs.fileFromPath(path) orelse return call.fail("{s} is not open in pixi", .{path});
     file.finishReveal();
     remember(file);
+    // Not for a call run after the person's gesture (`runWaiting`): nobody reads its answer, so the
+    // person's activity waits for the caller's next command.
+    if (running > 0 and running_for == null and file.history.person.any()) {
+        heard = file.history.person;
+        file.history.person = .{};
+    }
     return file;
+}
+
+/// Commands running now: an edit made with none running is the person's (`History.person`).
+pub var running: u32 = 0;
+/// The person's activity on the sprite the running command acts on, taken by `targetFile` and
+/// told with the command's answer (`bind`).
+var heard: ?pixi.internal.History.Person = null;
+
+/// `P.bind(handler)`, and the command's caller hears what the person changed on the sprite since
+/// the last command acted on it: with its answer, or with why it failed. An agent drawing beside
+/// the person learns that they undid its pass or reshaped the grid, rather than drawing on blind.
+pub fn bind(comptime P: type, comptime handler: anytype) *const fn (state: *anyopaque, call: *sdk.Command.Call) anyerror!void {
+    return &struct {
+        fn run(state: *anyopaque, call: *sdk.Command.Call) anyerror!void {
+            running += 1;
+            defer running -= 1;
+            // Each call its own: a pixi command run from inside another keeps the outer's.
+            const outer = heard;
+            heard = null;
+            defer heard = outer;
+            P.bind(handler)(state, call) catch |err| {
+                if (heard) |h| call.message = try std.fmt.allocPrint(call.arena, "{s} (and since the last command on this sprite, {s})", .{ call.message orelse @errorName(err), try personWords(h, call.arena) });
+                return err;
+            };
+            if (heard) |h| try tell(call, h);
+        }
+    }.run;
+}
+
+/// The answer, wrapped: `.{ .person = .{ ... }, .result = <the command's own> }`.
+fn tell(call: *sdk.Command.Call, h: pixi.internal.History.Person) !void {
+    const a = call.arena;
+    var kinds: std.ArrayListUnmanaged([]const u8) = .empty;
+    var it = h.kinds.iterator();
+    while (it.next()) |k| {
+        const word = kindWord(k);
+        for (kinds.items) |w| {
+            if (std.mem.eql(u8, w, word)) break;
+        } else try kinds.append(a, word);
+    }
+    var person: std.Io.Writer.Allocating = .init(a);
+    try std.zon.stringify.serialize(.{
+        .note = "the person changed this sprite since your last command on it: look again before your next pass",
+        .edits = h.edits,
+        .undone = h.undone,
+        .redone = h.redone,
+        .changed = kinds.items,
+    }, .{ .whitespace = false }, &person.writer);
+    call.result = try std.fmt.allocPrint(a, ".{{ .person = {s}, .result = {s} }}", .{ person.written(), call.result orelse "null" });
+}
+
+fn personWords(h: pixi.internal.History.Person, a: std.mem.Allocator) ![]const u8 {
+    return std.fmt.allocPrint(a, "the person made {d} edits, undid {d} and redid {d}", .{ h.edits, h.undone, h.redone });
+}
+
+fn kindWord(k: pixi.internal.History.ChangeType) []const u8 {
+    return switch (k) {
+        .pixels => "pixels",
+        .origins => "origins",
+        .animation_name, .animation_frames, .animation_settings, .animation_order, .animation_restore_delete => "animations",
+        .layers_order, .layer_restore_delete, .layer_name, .layer_settings, .layer_merge => "layers",
+        .resize => "the canvas size",
+        .reorder_col_row, .reorder_cell, .grid_layout => "the grid",
+    };
 }
 
 /// The sprite the last command made or acted on, by its document id (a path changes with Save As).

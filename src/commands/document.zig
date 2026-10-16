@@ -20,14 +20,14 @@ pub fn register(host: *sdk.Host, plugin: *sdk.Plugin) !void {
         .owner = plugin,
         .title = "New Sprite",
         .params = Create.params,
-        .runWith = Create.bind(create),
+        .runWith = commands.bind(Create, create),
     });
     try host.registerCommand(.{
         .id = "pixi.describe",
         .owner = plugin,
         .title = "Describe Sprite",
         .params = Describe.params,
-        .runWith = Describe.bind(describe),
+        .runWith = commands.bind(Describe, describe),
         .isEnabled = commands.anyFile,
     });
 }
