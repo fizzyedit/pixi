@@ -23,6 +23,27 @@ they did, and decide the next mark from what you saw. The picture comes out of t
   "the cap's runs go 3, 2, 1, 1, 2: make them 3, 2, 1, 1 then 2, 6". A plan written before you
   looked is a traced picture.
 
+### The commands you need
+
+Everything below takes `path`: the sprite's, as `pixi.create` answered it. Give it on every call.
+To see one command's parameters in full, call `fizzy_commands` with its whole id as the prefix
+(`"pixi.draw"`). Listing all of pixi's at once is tens of kilobytes.
+
+- `pixi.create`: `.{ .path, .width = 32, .height = 32, .columns = 1, .rows = 1 }`. One cell's size
+  and the grid. An empty `path` makes an untitled sprite.
+- `pixi.describe`: `.{ .path }`. Size, grid, layers, animations.
+- `pixi.read`: `.{ .x, .y, .w, .h, .layer, .path }`. A region as text rows and a legend; `w`/`h` 0
+  reach the edge; `layer = "*"` reads every visible layer together.
+- `pixi.draw`: `.{ .ops, .layer, .path }`. Strokes and shapes (below), one undo step.
+- `pixi.stamp`: `.{ .rows, .legend, .x, .y, .layer, .path }`. Puts back pixels you read.
+- `pixi.addLayer`: `.{ .name, .path }`.
+- `pixi.setGrid`: `.{ .cell_width, .cell_height, .columns, .rows, .mode = .resize, .path }`.
+- `pixi.createAnimation`: `.{ .frames = .{ .{ .cell = 0, .ms = 100 }, ... }, .name, .path }`.
+- `pixi.setFrames`: `.{ .frames, .animation, .path }`.
+- `pixi.playAnimation`: `.{ .playing = true, .animation, .path }`.
+- `pixi.view`: `.{ .zoom, .cell, .x, .y, .path }`, and `pixi.fitView`: `.{ .path }`. Where the person
+  looks; leave it to them unless asked.
+
 ### `pixi.draw`'s ops
 
 One call is a list of steps, each a one-field struct naming its kind, drawn in order onto one layer
@@ -44,9 +65,10 @@ colour the legend names. Read with `layer = "*"` to see every visible layer toge
 
 ### A sprite sheet and its animation
 
-1. `pixi.create` with `width`/`height` (one cell) and `columns`/`rows`, and a `path` if it should
-   be saved. It opens the sprite and answers its path (an untitled one's too): give that `path` to
-   every call after.
+1. `pixi.create` with `width`/`height` (one cell) and `columns`/`rows`, and a `path` in the
+   person's project folder if it should be saved (never `/tmp`, which the system clears). It
+   opens the sprite and answers its path (an untitled one's too): give that `path` to every
+   call after.
 2. Cell `i` is at `x = (i % columns) * width`, `y = (i / columns) * height`. Draw each frame in its
    cell, in passes, looking between them (below).
 3. `pixi.createAnimation` with `frames = .{ .{ .cell = 0, .ms = 100 }, ... }`, then
@@ -77,6 +99,11 @@ testing the interface as a person uses it), and say everything in the call:
   drawn, with a pen of its own, while the person's cursor stays theirs.
 - **To move or redo a part**, name the region: `pixi.transformSelection {x, y, w, h, dx, dy}`
   moves what is in it; `clear` (an op) empties it. Neither touches the person's selection.
+- **When the person changed the sprite since your last command on it** (they undid your pass,
+  drew, reshaped the grid), the answer says so: `.{ .person = .{ .edits, .undone, .redone,
+  .changed = .{ "pixels", "the grid", ... } }, .result = <the command's own> }`. Their change
+  stands: don't redo what they undid. Read the sprite again (`pixi.describe`, `pixi.read`) and
+  plan the next pass from what is there now.
 - **When the person is mid-stroke or has a transform open**, your call answers
   `.{ .waiting = ... }` and runs the moment they let go. Look again before planning the next pass:
   they may have drawn too.

@@ -29,7 +29,7 @@ pub fn register(host: *sdk.Host, plugin: *sdk.Plugin) !void {
         .owner = plugin,
         .title = c[1],
         .params = c[2].params,
-        .runWith = c[2].bind(c[3]),
+        .runWith = commands.bind(c[2], c[3]),
         .isEnabled = c[4],
     });
 }

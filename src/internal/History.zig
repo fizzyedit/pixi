@@ -7,6 +7,7 @@ const Layer = @import("Layer.zig");
 const pixi = @import("../pixi.zig");
 const plugin = @import("../../plugin.zig");
 const runtime = @import("../runtime.zig");
+const commands = @import("../commands.zig");
 
 pub const Action = enum { undo, redo };
 pub const RestoreDelete = enum { restore, delete };
@@ -27,6 +28,24 @@ pub const ChangeType = enum {
     reorder_cell,
     layer_merge,
     grid_layout,
+};
+
+/// What the person did to a sprite while no command ran: edits they made, steps they undid and
+/// redid, and what kinds of thing those steps changed. An agent drawing beside them hears it with
+/// its next command on the sprite, so it looks again rather than drawing on as if nothing moved.
+pub const Person = struct {
+    edits: u32 = 0,
+    undone: u32 = 0,
+    redone: u32 = 0,
+    kinds: std.EnumSet(ChangeType) = .initEmpty(),
+
+    pub fn any(p: Person) bool {
+        return p.edits + p.undone + p.redone > 0;
+    }
+
+    fn note(p: *Person, kind: ChangeType) void {
+        p.kinds.insert(kind);
+    }
 };
 
 pub const Change = union(ChangeType) {
@@ -236,6 +255,9 @@ pub const Change = union(ChangeType) {
 };
 
 bookmark: i32 = 0,
+/// What the person did to the sprite while no command ran (`Person`): a command acting on it next
+/// reports it to its caller and clears it (`commands.targetFile`).
+person: Person = .{},
 undo_stack: std.array_list.Managed(Change),
 redo_stack: std.array_list.Managed(Change),
 
@@ -270,6 +292,10 @@ pub fn append(self: *History, change: Change) !void {
     const file: *pixi.internal.File = @alignCast(@fieldParentPtr("history", self));
     file.finishReveal();
     runtime.state().host.documentEdited(file.id);
+    if (commands.running == 0) {
+        self.person.edits += 1;
+        self.person.note(std.meta.activeTag(change));
+    }
     const track_pixels = pixi.perf.record and std.meta.activeTag(change) == .pixels;
     const pixel_slots: usize = if (track_pixels) switch (change) {
         .pixels => |p| p.indices.len,
@@ -467,6 +493,13 @@ pub fn undoRedo(self: *History, file: *pixi.internal.File, action: Action) !void
 
     if (active_stack.items.len == 0) return;
     defer runtime.state().host.documentEdited(file.id);
+    if (commands.running == 0) {
+        switch (action) {
+            .undo => self.person.undone += 1,
+            .redo => self.person.redone += 1,
+        }
+        self.person.note(std.meta.activeTag(active_stack.items[active_stack.items.len - 1]));
+    }
 
     var temporary: bool = false;
 

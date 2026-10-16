@@ -15,7 +15,7 @@ pub fn register(host: *sdk.Host, plugin: *sdk.Plugin) !void {
         .owner = plugin,
         .title = "Read Pixels",
         .params = Read.params,
-        .runWith = Read.bind(read),
+        .runWith = commands.bind(Read, read),
         .isEnabled = commands.anyFile,
     });
     try host.registerCommand(.{
@@ -23,7 +23,7 @@ pub fn register(host: *sdk.Host, plugin: *sdk.Plugin) !void {
         .owner = plugin,
         .title = "Put Back Pixels",
         .params = Stamp.params,
-        .runWith = Stamp.bind(stampPixels),
+        .runWith = commands.bind(Stamp, stampPixels),
         .isEnabled = commands.anyFile,
     });
     try host.registerCommand(.{
@@ -31,7 +31,7 @@ pub fn register(host: *sdk.Host, plugin: *sdk.Plugin) !void {
         .owner = plugin,
         .title = "Draw",
         .params = Draw.params,
-        .runWith = Draw.bind(draw),
+        .runWith = commands.bind(Draw, draw),
         .isEnabled = commands.anyFile,
     });
 }

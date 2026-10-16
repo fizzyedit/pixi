@@ -1,6 +1,7 @@
 //! `pixi.guide`: what an agent needs to know to work in pixi well (`GUIDE.md`, the same page people
 //! read in the plugin store), as a command an agent finds first in its index of commands.
 const pixi = @import("../pixi.zig");
+const commands = @import("../commands.zig");
 const sdk = pixi.sdk;
 
 const text = @embedFile("../../GUIDE.md");
@@ -11,7 +12,7 @@ pub fn register(host: *sdk.Host, plugin: *sdk.Plugin) !void {
         .owner = plugin,
         .title = "Guide: How to Draw in pixi (read first)",
         .params = Guide.params,
-        .runWith = Guide.bind(guide),
+        .runWith = commands.bind(Guide, guide),
     });
 }
 
