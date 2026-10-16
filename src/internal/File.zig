@@ -201,6 +201,7 @@ pub const EditorData = struct {
 
 pub const History = @import("History.zig");
 pub const Reveal = @import("Reveal.zig");
+const steps = @import("steps.zig");
 pub const Buffers = @import("Buffers.zig");
 
 pub const InitOptions = struct {
@@ -1422,9 +1423,47 @@ pub fn restoreState(file: *File, bytes: []const u8) !void {
     file.editor.layer_composite_dirty = true;
     file.editor.split_composite_dirty = true;
     file.invalidateActiveLayerTransparencyMaskCache();
+    History.restarted(file);
 }
 
 const state_version: u8 = 1;
+
+/// Apply a recorded step (`steps`, pixi's step format) as a new entry on the history: its pixels
+/// checked against the layer and written, an undo away like any edit. `show` draws it in as a
+/// hand would (`Reveal`), a replay at pace; otherwise it lands at once (a seek). A step that does
+/// not fit the sprite (another layer, other colours under it) is refused, the sprite as it was.
+pub fn applyStep(file: *File, effect: []const u8, show: bool) !void {
+    const gpa = runtime.allocator();
+    const step = try steps.decode(gpa, effect);
+    defer step.deinit(gpa);
+    file.finishReveal();
+    var layer = file.getLayer(step.layer_id) orelse return error.StepDoesNotApply;
+    const px = layer.pixels();
+    try steps.apply(px, step);
+    // A pixel change holds the colours before, as every one does: undo swaps them back. Kept out
+    // of the history, the step would not undo: then it is taken back.
+    errdefer steps.apply(px, .{ .layer_id = step.layer_id, .indices = step.indices, .before = step.after, .after = step.before }) catch {};
+    const indices = try gpa.dupe(usize, step.indices);
+    const values = gpa.dupe([4]u8, step.before) catch |err| {
+        gpa.free(indices);
+        return err;
+    };
+    file.history.append(.{ .pixels = .{ .layer_id = step.layer_id, .indices = indices, .values = values } }) catch |err| {
+        gpa.free(indices);
+        gpa.free(values);
+        return err;
+    };
+    // In the history now, the step stays whatever else fails: drawn in, or at once without it.
+    if (show and step.indices.len > 0) if (gpa.alloc(Reveal.Pixel, step.indices.len)) |drawn| {
+        for (drawn, step.indices, step.after) |*d, i, a| d.* = .{ .index = @intCast(i), .color = a };
+        file.editor.reveal = .begin(px, file.width(), step.layer_id, drawn, step.before, dvui.frameTimeNS());
+    } else |_| {};
+    layer.invalidate();
+    file.editor.layer_composite_dirty = true;
+    file.editor.split_composite_dirty = true;
+    file.invalidateActiveLayerTransparencyMaskCache();
+    dvui.refresh(null, @src(), null);
+}
 
 /// Draw the rest of a drawing being shown drawn, at once: before anything else reads or writes
 /// the pixels.

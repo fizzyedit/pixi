@@ -52,6 +52,7 @@ var plugin: sdk.Plugin = .{
     .vtable = &vtable,
     .id = plugin_options.id,
     .display_name = plugin_options.name,
+    .step_format = @import("src/internal/steps.zig").format,
 };
 
 const vtable: sdk.Plugin.VTable = .{
@@ -71,6 +72,7 @@ const vtable: sdk.Plugin.VTable = .{
     .isDirty = isDirty,
     .captureDocumentState = captureDocumentState,
     .restoreDocumentState = restoreDocumentState,
+    .applyStep = applyStep,
     .documentSnapshot = documentSnapshot,
     .encodeSnapshot = encodeSnapshot,
     .releaseSnapshot = releaseSnapshot,
@@ -204,6 +206,10 @@ fn captureDocumentState(_: *anyopaque, doc: DocHandle, allocator: std.mem.Alloca
 }
 fn restoreDocumentState(_: *anyopaque, doc: DocHandle, bytes: []const u8) anyerror!void {
     try docFile(doc).restoreState(bytes);
+}
+
+fn applyStep(_: *anyopaque, doc: DocHandle, effect: []const u8, _: []const u8, ms: u32) anyerror!void {
+    try docFile(doc).applyStep(effect, ms > 0);
 }
 
 fn isDirty(_: *anyopaque, doc: DocHandle) bool {
