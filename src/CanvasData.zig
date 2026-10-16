@@ -17,6 +17,7 @@ const Export = @import("dialogs/Export.zig");
 const GridLayout = @import("dialogs/GridLayout.zig");
 const Clipboard = @import("clipboard.zig");
 const TransformOp = @import("transform_op.zig");
+const view_commands = @import("commands/view.zig");
 const pixi = @import("pixi.zig");
 const runtime = @import("runtime.zig");
 
@@ -45,10 +46,6 @@ vertical_scroll_info: dvui.ScrollInfo = .{ .vertical = .given, .horizontal = .gi
 
 horizontal_ruler_height: f32 = 0.0,
 vertical_ruler_width: f32 = 0.0,
-
-/// Floating Edit-pill quick-access bar collapse state. Starts collapsed (single hamburger
-/// button); the user toggles to expand the full action row.
-edit_pill_expanded: bool = false,
 
 pub fn init(grouping: u64) CanvasData {
     return .{
@@ -855,7 +852,8 @@ pub fn drawTransformDialog(_: *CanvasData, file: *File, container: *dvui.WidgetD
 /// `pane_file` is the document this pane shows — what lies under the pill, for its glass's
 /// witness (`pixi.glass_button.canvasWitness`).
 pub fn drawEditPill(self: *CanvasData, container: *dvui.WidgetData, pane_file: *File) void {
-    const file = runtime.state().docs.activeFile(runtime.state().host) orelse return;
+    // This pane's sprite, not the active one: every visible sprite has its own menu.
+    const file = pane_file;
     // The transform dialog takes the same top-left corner (`drawTransformDialog`), with its
     // own accept/cancel; the pill steps aside while it is up.
     if (file.editor.transform != null) return;
@@ -890,30 +888,31 @@ pub fn drawEditPill(self: *CanvasData, container: *dvui.WidgetData, pane_file: *
         .{ .action = .grid_layout, .tvg = icons.tvg.lucide.@"layout-grid", .tooltip = "Grid Layout" },
     };
 
-    // Vertical pill: width is fixed (one button + padding), height animates between a
-    // single-button "collapsed" state and the full-stack "expanded" state. Most screens
-    // have more vertical real estate than horizontal, so growing the pill downward keeps
-    // it from eating into the canvas's working width.
-    const pill_w: f32 = button_size + 2 * pill_padding;
-    const collapsed_h: f32 = button_size + 2 * pill_padding;
-    const expanded_h: f32 = @as(f32, @floatFromInt(entries.len + 1)) * button_size +
-        @as(f32, @floatFromInt(entries.len)) * button_gap + 2 * pill_padding;
-    const pill_radius: f32 = pill_w / 2;
-    const btn_radius: f32 = button_size / 2;
+    // The actions are bubbles of their own under the menu button, running together into a column
+    // (`merge`): shut, they sit in the menu button's glass and it is one disc; opening, they drop
+    // out of it, each as far as its place in the column, so the column grows downward out of the
+    // button. Most screens have more room down than across, so it keeps out of the canvas's width.
+    const pitch: f32 = button_size + button_gap;
+    // Points between bubbles before their glass runs together: a little past the column's gaps,
+    // so at rest the column is joined, and a bubble on its way out pulls away from the one above.
+    const merge: f32 = button_gap + 6;
 
     // Drive the expand/collapse with a dvui animation. Look up the current value, and on
     // a toggle click kick off a new animation between the current value and the target.
     const anim_id = dvui.Id.update(container.id, "edit_pill_expand");
-    var anim_value: f32 = if (self.edit_pill_expanded) 1.0 else 0.0;
-    if (dvui.animationGet(anim_id, "_t")) |a| anim_value = std.math.clamp(a.value(), 0.0, 1.0);
-
-    const pill_h: f32 = collapsed_h + (expanded_h - collapsed_h) * anim_value;
+    // Open or shut per pane, keyed as its animation is: `CanvasData` is shared by every pane of a
+    // grouping, and a flag on it opened the menu on all of them at once.
+    const expanded = dvui.dataGet(null, anim_id, "expanded", bool) orelse false;
+    var anim_value: f32 = if (expanded) 1.0 else 0.0;
+    if (dvui.animationGet(anim_id, "_t")) |a| anim_value = a.value();
+    // Past 1 when motion is playful: the column overshoots and settles.
+    const open = @max(anim_value, 0);
 
     // Compute the scroll-area rect — the canvas region inside the rulers. We pull this
     // off the live `canvas_vbox` (so the values are this frame's, not a stale latch) and
     // subtract the ruler thickness from the top/left. Anchoring against this rect means
-    // the pill follows the workspace exactly: as a split is dragged shut the canvas area
-    // shrinks, and once it's narrower than the pill we bail and draw nothing this frame —
+    // the menu follows the workspace exactly: as a split is dragged shut the canvas area
+    // shrinks, and once it's narrower than the menu we bail and draw nothing this frame —
     // so closing splits cleanly hides the menu.
     const wb = container.rectScale().r.toNatural();
     const ruler_top: f32 = if (runtime.state().settings.show_rulers.get()) self.horizontal_ruler_height else 0;
@@ -925,156 +924,136 @@ pub fn drawEditPill(self: *CanvasData, container: *dvui.WidgetData, pane_file: *
         .h = wb.h - ruler_top,
     };
 
-    if (canvas_nat.w < pill_w + margin + right_margin or canvas_nat.h < collapsed_h + 2 * margin) return;
+    const outer: f32 = button_size + 2 * pill_padding;
+    if (canvas_nat.w < outer + margin + right_margin or canvas_nat.h < outer + 2 * margin) return;
 
-    const pill_x: f32 = canvas_nat.x + margin;
-    const pill_y: f32 = canvas_nat.y + margin;
-
-    // Clamp the bottom edge so the expanded pill never spills past the canvas area —
-    // FloatingWidget bypasses parent clipping, so we cap the height explicitly.
-    const max_pill_h: f32 = canvas_nat.h - 2 * margin;
-    const effective_pill_h: f32 = @min(pill_h, max_pill_h);
+    // The menu button, where the sample button lines up with it.
+    const home: dvui.Point = .{ .x = canvas_nat.x + margin + pill_padding, .y = canvas_nat.y + margin + pill_padding };
+    // Where each bubble is this frame, the menu button first.
+    var rects: [entries.len + 1]dvui.Rect = undefined;
+    rects[0] = .{ .x = home.x, .y = home.y, .w = button_size, .h = button_size };
+    var bounds = rects[0];
+    for (0..entries.len) |i| {
+        // Straight down, each as far as its place in the column.
+        const row: f32 = @floatFromInt(i + 1);
+        rects[i + 1] = .{ .x = home.x, .y = home.y + row * pitch * open, .w = button_size, .h = button_size };
+        bounds = bounds.unionWith(rects[i + 1]);
+    }
 
     var fw: dvui.FloatingWidget = undefined;
     fw.init(@src(), .{}, .{
-        .rect = .{
-            .x = pill_x,
-            .y = pill_y,
-            .w = pill_w,
-            .h = effective_pill_h,
-        },
+        .rect = bounds,
         .expand = .none,
         .background = false,
-        .corners = .round(pill_radius),
     });
     defer fw.deinit();
     // Onto the screen it is on — the main window, or the window of a float out of it — rather than
     // dvui's clip to the main window, which a canvas in a popped-out float lies far past (`core.screens`).
-    dvui.clipSet(pixi.core.screens.pixelsFor(.cast(fw.data().rect)));
+    // To the canvas: a column longer than the canvas is cut at its bottom edge.
+    dvui.clipSet(pixi.core.screens.pixelsFor(.cast(fw.data().rect)).intersect(container.rectScale().r));
 
-    // The pill is one bubble of liquid glass over the canvas (`pixi.glass_button`): shut, exactly
-    // the hamburger's disc; opening, it grows out of that disc into the whole pill, and the
-    // buttons in it are washes on it, as a menu's rows are.
-    {
-        const rs = fw.data().borderRectScale();
-        const open = std.math.clamp(anim_value, 0, 1);
-        const inset = pill_padding * (1 - open);
-        const glass = rs.r.insetAll(inset * rs.s);
-        pixi.core.dialogs.glassBubbles(fw.data().id, &.{.{ .rect = glass }}, rs.s, .{ .witness = pixi.glass_button.canvasWitness(pane_file, glass) });
-    }
-
-    var vbox = dvui.box(@src(), .{ .dir = .vertical }, .{
-        .expand = .both,
-        .background = false,
-        .padding = dvui.Rect.all(pill_padding),
-    });
-    defer vbox.deinit();
-
-    // Hamburger toggle is always present at the top of the pill; the stack of action
-    // buttons grows downward beneath it as the pill expands.
-    {
+    const fully_expanded = anim_value >= 0.999;
+    // The buttons first, for what they light: the glass goes under all of them in one field, and
+    // the icons on top. The menu button before the actions, which lie under it while shut.
+    var lights: [entries.len + 1]f32 = @splat(0);
+    var pressable: [entries.len + 1]?dvui.Rect.Physical = @splat(null);
+    var clicked: ?usize = null;
+    for (rects, 0..) |r, i| {
+        // Shut, the actions are under the menu button's glass: nothing to press.
+        if (i > 0 and !fully_expanded) break;
         var btn: dvui.ButtonWidget = undefined;
         btn.init(@src(), .{}, pixi.glass_button.options(button_size, .{
-            .id_extra = entries.len, // distinct from action button ids below
-            .gravity_x = 0.5,
-            .gravity_y = 0.0,
-            .corners = .round(btn_radius),
+            .id_extra = i,
+            .rect = .{ .x = r.x - bounds.x, .y = r.y - bounds.y, .w = r.w, .h = r.h },
         }));
         defer btn.deinit();
         btn.processEvents();
-        pixi.glass_button.wash(&btn, false);
+        lights[i] = if (btn.pressed()) pixi.core.dialogs.bubble_press else if (btn.hovered()) pixi.core.dialogs.bubble_hover else 0;
+        pressable[i] = btn.data().rectScale().r;
+        if (btn.clicked()) clicked = i;
+    }
 
-        const icon_color = dvui.themeGet().color(.content, .text);
-        dvui.icon(
-            @src(),
-            "edit_pill_toggle",
-            icons.tvg.lucide.menu,
-            .{ .stroke_color = .{ .color = icon_color }, .fill_color = .{ .color = icon_color } },
-            .{
-                .expand = .ratio,
-                .gravity_x = 0.5,
-                .gravity_y = 0.5,
-                .min_size_content = .{ .w = 1.0, .h = 1.0 },
-                .padding = dvui.Rect.all(icon_padding),
-            },
-        );
-
-        if (btn.clicked()) {
-            self.edit_pill_expanded = !self.edit_pill_expanded;
-            const target: f32 = if (self.edit_pill_expanded) 1.0 else 0.0;
-            // On the app's motion, as a menu opens: past its size and back when motion is
-            // playful, straight in at minimal, not at all when it is off.
-            const motion = pixi.core.motion;
-            dvui.animation(anim_id, "_t", .{
-                .start_val = anim_value,
-                .end_val = target,
-                .end_time = motion.duration(300_000),
-                .easing = if (self.edit_pill_expanded) motion.enter else motion.settle,
-            });
+    {
+        const rs = fw.data().borderRectScale();
+        var bubbles: [entries.len + 1]pixi.core.dialogs.Bubble = undefined;
+        for (rects, 0..) |r, i| bubbles[i] = .{ .rect = rs.rectToPhysical(.{ .x = r.x - bounds.x, .y = r.y - bounds.y, .w = r.w, .h = r.h }), .light = lights[i] };
+        // Shut, the menu button alone: the actions stacked in it doubled its edge nine times over.
+        const drawn = if (open < 0.01) bubbles[0..1] else bubbles[0..];
+        pixi.core.dialogs.glassBubbles(fw.data().id, drawn, rs.s, .{
+            .merge = merge,
+            .shadow = 0,
+            .witness = pixi.glass_button.canvasWitness(pane_file, rs.r),
+        });
+        // The rings ours, after the glass, for the same reason. Each comes in as its bubble
+        // leaves, at half, since a ring lies dark across the bridges of the joined column.
+        const shown = std.math.clamp(open, 0, 1);
+        for (drawn, 0..) |b, i| {
+            const share = if (i == 0) 1 - 0.5 * shown else 0.5 * shown;
+            if (share < 0.01) continue;
+            pixi.core.dialogs.glassShadow(b.rect, .round(b.rect.w / 2 / rs.s), rs.s, pixi.core.dialogs.surfaceShadow(), share);
         }
     }
 
-    // Action buttons live inside a scroll area so the pill stays the right width and
-    // never visually "squishes" when there isn't enough vertical room — instead the
-    // overflow buttons become reachable via vertical scroll inside the pill. Bars are
-    // hidden to preserve the rounded-pill look; touch / wheel still drives the scroll.
-    var actions_scroll = dvui.scrollArea(@src(), .{
-        .vertical_bar = .hide,
-        .horizontal_bar = .hide,
-    }, .{
-        .expand = .both,
-        .background = false,
-        .padding = .{},
-        .margin = .{},
-        .border = dvui.Rect.all(0),
-        .color_fill = .transparent,
-    });
-    defer actions_scroll.deinit();
+    for (rects, 0..) |r, i| {
+        const enabled: bool = if (i == 0) true else switch (entries[i - 1].action) {
+            .save => file.dirty(),
+            .undo => file.history.undo_stack.items.len > 0,
+            .redo => file.history.redo_stack.items.len > 0,
+            else => true,
+        };
+        // Disabled: the text colour most of the way to the button's fill, not see-through —
+        // a stroked icon is overlapping pieces, and at partial alpha its caps and joins
+        // doubled up darker than the lines between them. The actions' icons come in as they
+        // leave the menu button, which they lie under while shut.
+        const text = dvui.themeGet().color(.content, .text);
+        const base = if (enabled) text else text.lerp(dvui.themeGet().color(.content, .fill), 0.65);
+        const icon_color = if (i == 0) base else base.opacity(std.math.clamp(open, 0, 1));
+        if (i > 0 and open < 0.05) continue;
+        dvui.icon(
+            @src(),
+            if (i == 0) "edit_pill_toggle" else entries[i - 1].tooltip,
+            if (i == 0) icons.tvg.lucide.menu else entries[i - 1].tvg,
+            .{ .stroke_color = .{ .color = icon_color }, .fill_color = .{ .color = icon_color } },
+            .{
+                .id_extra = i,
+                .rect = .{ .x = r.x - bounds.x, .y = r.y - bounds.y, .w = r.w, .h = r.h },
+                .padding = dvui.Rect.all(icon_padding),
+            },
+        );
+    }
 
-    // Action buttons stacked below the hamburger. We draw them all and let the
-    // scrollArea handle any overflow when the pill is clamped to the canvas height.
-    for (entries, 0..) |entry, i| {
+    // A tooltip for each button there is to press: the menu button, and the actions while open.
+    for (pressable, 0..) |r, i| {
+        const rect = r orelse continue;
+        pixi.glass_button.tooltip(@src(), rect, if (i == 0) (if (expanded) "Close Menu" else "Edit Menu") else entries[i - 1].tooltip, i);
+    }
+
+    if (clicked == 0) {
+        dvui.dataSet(null, anim_id, "expanded", !expanded);
+        const target: f32 = if (!expanded) 1.0 else 0.0;
+        // On the app's motion, as a menu opens: past its size and back when motion is
+        // playful, straight in at minimal, not at all when it is off.
+        const motion = pixi.core.motion;
+        dvui.animation(anim_id, "_t", .{
+            .start_val = std.math.clamp(anim_value, 0, 1),
+            .end_val = target,
+            .end_time = motion.duration(300_000),
+            .easing = if (!expanded) motion.enter else motion.settle,
+        });
+    }
+
+    const index = clicked orelse return;
+    if (index == 0) return;
+    {
+        const entry = entries[index - 1];
         const enabled: bool = switch (entry.action) {
             .save => file.dirty(),
             .undo => file.history.undo_stack.items.len > 0,
             .redo => file.history.redo_stack.items.len > 0,
             else => true,
         };
-
-        var btn: dvui.ButtonWidget = undefined;
-        btn.init(@src(), .{}, pixi.glass_button.options(button_size, .{
-            .id_extra = i,
-            .gravity_x = 0.5,
-            .corners = .round(btn_radius),
-            .margin = .{ .y = button_gap },
-        }));
-        defer btn.deinit();
-        btn.processEvents();
-        pixi.glass_button.wash(&btn, false);
-
-        // Disabled: the text colour most of the way to the button's fill, not see-through —
-        // a stroked icon is overlapping pieces, and at partial alpha its caps and joins
-        // doubled up darker than the lines between them.
-        const icon_color = if (enabled) dvui.themeGet().color(.content, .text) else dvui.themeGet().color(.content, .text).lerp(dvui.themeGet().color(.content, .fill), 0.65);
-
-        dvui.icon(
-            @src(),
-            entry.tooltip,
-            entry.tvg,
-            .{ .stroke_color = .{ .color = icon_color }, .fill_color = .{ .color = icon_color } },
-            .{
-                .expand = .ratio,
-                .gravity_x = 0.5,
-                .gravity_y = 0.5,
-                .min_size_content = .{ .w = 1.0, .h = 1.0 },
-                .padding = dvui.Rect.all(icon_padding),
-            },
-        );
-
-        // Suppress activation while collapsed (or mid-animation) so a stray tap on a
-        // partially-visible button doesn't fire an Edit action behind the hamburger.
-        const fully_expanded = anim_value >= 0.999;
-        if (btn.clicked() and enabled and fully_expanded) {
+        // Only pressable fully open (above), so a stray tap mid-animation fires nothing.
+        if (enabled) {
             switch (entry.action) {
                 .save => runtime.state().host.save() catch {
                     dvui.log.err("Failed to save", .{});
@@ -1155,7 +1134,9 @@ pub fn drawSampleButton(self: *CanvasData, container: *dvui.WidgetData, pane_fil
     if (canvas_nat.w < pill_outer_w + gap + button_size + margin + right_margin) return;
     if (canvas_nat.h < button_size + 2 * margin) return;
 
-    const btn_x = canvas_nat.x + margin + pill_outer_w + gap;
+    // One gap after the menu button, as between the bubbles after it (the menu's own glass is
+    // the button's disc: its padding is only where the button sits).
+    const btn_x = canvas_nat.x + margin + pill_padding + pill_button_size + gap;
     // Match the hamburger row inside the pill (pill top + inner vbox padding).
     const btn_y = canvas_nat.y + margin + pill_padding;
 
@@ -1257,7 +1238,7 @@ pub fn drawSampleButton(self: *CanvasData, container: *dvui.WidgetData, pane_fil
     // (non-claimed) events — i.e. plain mouse hover when we're not in a drag.
     btn.processEvents();
     // Its own disc of liquid glass over the canvas.
-    pixi.glass_button.background(&btn, false, pixi.glass_button.canvasWitness(pane_file, btn.data().borderRectScale().r));
+    pixi.glass_button.background(&btn, pixi.glass_button.canvasWitness(pane_file, btn.data().borderRectScale().r));
 
     const icon_color = dvui.themeGet().color(.content, .text);
     dvui.icon(
@@ -1285,23 +1266,58 @@ pub fn drawSampleButton(self: *CanvasData, container: *dvui.WidgetData, pane_fil
     // Tooltip prompting the gesture. We hide it during an active sample drag so it
     // doesn't compete with the magnifier on screen.
     if (!is_drag_sampling) {
-        var tooltip: dvui.FloatingTooltipWidget = undefined;
-        tooltip.init(@src(), .{
-            .active_rect = btn.data().rectScale().r,
-            .delay = 350_000,
-        }, pixi.tooltip.options(0));
-        defer tooltip.deinit();
-
-        if (tooltip.shown()) {
-            const prev_alpha = pixi.tooltip.begin(&tooltip, 250_000);
-            defer dvui.alphaSet(prev_alpha);
-
-            var tl = dvui.textLayout(@src(), .{}, .{
-                .background = false,
-                .padding = dvui.Rect.all(6),
-            });
-            tl.format("Drag to sample color", .{}, .{ .font = dvui.Font.theme(.body) });
-            tl.deinit();
-        }
+        pixi.glass_button.tooltip(@src(), btn.data().rectScale().r, "Drag to sample color", 0);
     }
+}
+
+/// Fit to View as a bubble of glass beside the sample button: the sprite fitted to its pane and
+/// centred (`pixi.fitView`, Cmd-0). `pane_file` as `drawEditPill`'s.
+pub fn drawFitButton(self: *CanvasData, container: *dvui.WidgetData, pane_file: *File) void {
+    const file = runtime.state().docs.activeFile(runtime.state().host) orelse return;
+    // Steps aside for the transform dialog with the pill (see `drawEditPill`).
+    if (file.editor.transform != null) return;
+
+    const button_size: f32 = 36;
+    const pill_padding: f32 = 6;
+    const margin: f32 = 10;
+    const gap: f32 = 6;
+    const right_margin: f32 = margin + dvui.ScrollBarWidget.defaults.min_sizeGet().w;
+
+    const wb = container.rectScale().r.toNatural();
+    const ruler_top: f32 = if (runtime.state().settings.show_rulers.get()) self.horizontal_ruler_height else 0;
+    const ruler_left: f32 = if (runtime.state().settings.show_rulers.get()) self.vertical_ruler_width else 0;
+    const canvas_nat = dvui.Rect{ .x = wb.x + ruler_left, .y = wb.y + ruler_top, .w = wb.w - ruler_left, .h = wb.h - ruler_top };
+
+    // After the menu button and the sample button, a gap after each.
+    const x = canvas_nat.x + margin + pill_padding + 2 * (button_size + gap);
+    if (canvas_nat.x + canvas_nat.w - right_margin < x + button_size) return;
+    if (canvas_nat.h < button_size + 2 * margin) return;
+
+    var fw: dvui.FloatingWidget = undefined;
+    fw.init(@src(), .{}, .{
+        .rect = .{ .x = x, .y = canvas_nat.y + margin + 6, .w = button_size, .h = button_size },
+        .expand = .none,
+        .background = false,
+    });
+    defer fw.deinit();
+    dvui.clipSet(pixi.core.screens.pixelsFor(.cast(fw.data().rect)));
+
+    var btn: dvui.ButtonWidget = undefined;
+    btn.init(@src(), .{}, pixi.glass_button.options(button_size, .{ .expand = .both }));
+    defer btn.deinit();
+    btn.processEvents();
+    pixi.glass_button.background(&btn, pixi.glass_button.canvasWitness(pane_file, btn.data().borderRectScale().r));
+
+    const icon_color = dvui.themeGet().color(.content, .text);
+    dvui.icon(@src(), "fit_view", icons.tvg.lucide.scan, .{ .stroke_color = .{ .color = icon_color }, .fill_color = .{ .color = icon_color } }, .{
+        .expand = .ratio,
+        .gravity_x = 0.5,
+        .gravity_y = 0.5,
+        .min_size_content = .{ .w = 1.0, .h = 1.0 },
+        .padding = dvui.Rect.all(button_size * 0.33),
+    });
+
+    if (btn.clicked()) view_commands.fit(file);
+
+    pixi.glass_button.tooltip(@src(), btn.data().rectScale().r, "Fit to View", 0);
 }
