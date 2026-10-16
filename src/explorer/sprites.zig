@@ -596,9 +596,15 @@ pub fn drawAnimations(self: *Sprites) !void {
         anim_rename_hit_te_id = null;
         anim_rename_hit_rect = null;
 
+        // Vertical-only, like the frames list beside it: names ellipsize to the column, and the
+        // explorer pans horizontally.
+        file.editor.animations_scroll_info.horizontal = .none;
+        file.editor.animations_scroll_info.viewport.x = 0;
+        file.editor.animations_scroll_info.velocity.x = 0;
+
         var scroll_area = dvui.scrollArea(@src(), .{
             .scroll_info = &file.editor.animations_scroll_info,
-            .horizontal_bar = .auto_overlay,
+            .horizontal_bar = .hide,
             .vertical_bar = .auto_overlay,
         }, .{
             .expand = .horizontal,
@@ -618,17 +624,6 @@ pub fn drawAnimations(self: *Sprites) !void {
             .margin = .{ .h = 6, .w = 6 },
         });
         defer inner_box.deinit();
-
-        defer {
-            if (file.editor.animations_scroll_info.viewport.w < file.editor.animations_scroll_info.virtual_size.w) {
-                if (file.editor.animations_scroll_info.offset(.horizontal) < file.editor.animations_scroll_info.scrollMax(.horizontal)) {
-                    pixi.core.draw.drawEdgeShadow(scroll_area.data().contentRectScale(), .right, .{});
-                }
-                if (file.editor.animations_scroll_info.offset(.horizontal) > 0.0) {
-                    pixi.core.draw.drawEdgeShadow(scroll_area.data().contentRectScale(), .left, .{});
-                }
-            }
-        }
 
         const vertical_scroll = file.editor.animations_scroll_info.offset(.vertical);
 
