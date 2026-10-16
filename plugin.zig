@@ -459,6 +459,9 @@ pub fn register(host: *sdk.Host) !void {
     });
     try plugin_state.registerSettings(host, &plugin);
 
+    // The guide before every other command, so an agent's index of commands opens on it.
+    try commands.guide.register(host, &plugin);
+
     // Pixel-art's invocable, plugin-specific features. The shell/menus/keybinds trigger these
     // by id via `host.runCommand` without naming them. (Generic active-doc editing verbs like
     // `transform`/`copy`/`paste` are *not* commands — they are `Plugin.VTable` hooks the shell
