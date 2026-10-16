@@ -8,6 +8,7 @@ const pixi = @import("../pixi.zig");
 const plugin = @import("../../plugin.zig");
 const runtime = @import("../runtime.zig");
 const commands = @import("../commands.zig");
+const steps = @import("steps.zig");
 
 pub const Action = enum { undo, redo };
 pub const RestoreDelete = enum { restore, delete };
@@ -270,6 +271,12 @@ redo_animation_data_stack: std.array_list.Managed([][]pixi.Animation.Frame),
 undo_sprite_data_stack: std.array_list.Managed([][2]f32),
 redo_sprite_data_stack: std.array_list.Managed([][2]f32),
 
+/// Each entry's id, beside `undo_stack` and `redo_stack` and moved with its entry: what a
+/// recorded step names it by (`sdk.Step.id`). Never reused.
+undo_ids: std.ArrayListUnmanaged(u64) = .empty,
+redo_ids: std.ArrayListUnmanaged(u64) = .empty,
+next_id: u64 = 1,
+
 pub fn init(allocator: std.mem.Allocator) History {
     return .{
         .undo_stack = std.array_list.Managed(Change).init(allocator),
@@ -309,6 +316,7 @@ pub fn append(self: *History, change: Change) !void {
         }
         self.redo_stack.clearRetainingCapacity();
     }
+    self.redo_ids.clearRetainingCapacity();
 
     if (self.redo_layer_data_stack.items.len > 0) {
         for (self.redo_layer_data_stack.items) |data| {
@@ -402,8 +410,12 @@ pub fn append(self: *History, change: Change) !void {
         var discard = change;
         Change.deinit(&discard);
     } else {
+        try self.undo_ids.ensureUnusedCapacity(runtime.allocator(), 1);
         try self.undo_stack.append(change);
+        self.undo_ids.appendAssumeCapacity(self.next_id);
+        self.next_id += 1;
         self.bookmark += 1;
+        record(file, .added, self.undo_ids.getLast(), &self.undo_stack.items[self.undo_stack.items.len - 1]);
     }
 
     if (track_pixels and t_hist != 0) {
@@ -505,6 +517,11 @@ pub fn undoRedo(self: *History, file: *pixi.internal.File, action: Action) !void
 
     // Modify this change before its put into the other stack.
     var change = active_stack.pop().?;
+    const active_ids, const other_ids = switch (action) {
+        .undo => .{ &self.undo_ids, &self.redo_ids },
+        .redo => .{ &self.redo_ids, &self.undo_ids },
+    };
+    const entry_id = active_ids.pop() orelse 0;
 
     defer {
         // Microseconds-since-epoch (~1.7e15) overflows a 32-bit `usize` on wasm32, so a
@@ -960,7 +977,13 @@ pub fn undoRedo(self: *History, file: *pixi.internal.File, action: Action) !void
     }
 
     if (!temporary) {
+        try other_ids.ensureUnusedCapacity(runtime.allocator(), 1);
         try other_stack.append(change);
+        other_ids.appendAssumeCapacity(entry_id);
+        record(file, switch (action) {
+            .undo => .undone,
+            .redo => .redone,
+        }, entry_id, &other_stack.items[other_stack.items.len - 1]);
     } else {
         var discard = change;
         Change.deinit(&discard);
@@ -972,6 +995,42 @@ pub fn undoRedo(self: *History, file: *pixi.internal.File, action: Action) !void
     };
 }
 
+/// Tell whoever records `file`'s steps (`sdk.Host.recordStep`) what `change`, entry `id`, just
+/// did: a pixel change as a step (`steps`), its colours before in the change and after in the
+/// layer, as both an append and an undo or redo leave them. Every other kind of change is not
+/// encoded yet, so it says the history started over: the track begins again from the sprite as
+/// it is after it, exactly, and the process before it stays on the track that ended.
+fn record(file: *pixi.internal.File, kind: sdk.Step.Kind, id: u64, change: *const Change) void {
+    const host = runtime.state().host;
+    if (!host.recording(file.id)) return;
+    const pixels = switch (change.*) {
+        .pixels => |p| p,
+        else => return host.recordStep(file.id, .{ .kind = .restarted, .id = 0 }),
+    };
+    const layer = file.getLayer(pixels.layer_id) orelse return host.recordStep(file.id, .{ .kind = .restarted, .id = 0 });
+    // The frame's arena: the recorder copies what it keeps.
+    const arena = host.arena();
+    const px = layer.pixels();
+    var out: std.Io.Writer.Allocating = .init(arena);
+    encoded: {
+        const after = arena.alloc([4]u8, pixels.indices.len) catch break :encoded;
+        for (pixels.indices, after) |i, *a| a.* = px[i];
+        steps.encode(arena, &out.writer, pixels.layer_id, pixels.indices, pixels.values, after) catch break :encoded;
+        return host.recordStep(file.id, .{ .kind = kind, .id = id, .effect = out.written() });
+    }
+    // A step not kept would leave the track behind the sprite, every later step written against
+    // a sprite its replay never reaches: it starts again from the sprite instead.
+    std.log.err("pixi: a step of {d} was not recorded (out of memory); its track starts again", .{file.id});
+    host.recordStep(file.id, .{ .kind = .restarted, .id = 0 });
+}
+
+/// The history started over as far as a recorder can follow: `file` was put back in place to a
+/// state none of its steps lead to (`File.restoreState`).
+pub fn restarted(file: *pixi.internal.File) void {
+    const host = runtime.state().host;
+    if (host.recording(file.id)) host.recordStep(file.id, .{ .kind = .restarted, .id = 0 });
+}
+
 pub fn clearAndFree(self: *History) void {
     for (self.undo_stack.items) |*u| {
         Change.deinit(u);
@@ -981,6 +1040,8 @@ pub fn clearAndFree(self: *History) void {
     }
     self.undo_stack.clearAndFree();
     self.redo_stack.clearAndFree();
+    self.undo_ids.clearAndFree(runtime.allocator());
+    self.redo_ids.clearAndFree(runtime.allocator());
 }
 
 pub fn clearRetainingCapacity(self: *History) void {
@@ -992,6 +1053,8 @@ pub fn clearRetainingCapacity(self: *History) void {
     }
     self.undo_stack.clearRetainingCapacity();
     self.redo_stack.clearRetainingCapacity();
+    self.undo_ids.clearRetainingCapacity();
+    self.redo_ids.clearRetainingCapacity();
 }
 
 pub fn deinit(self: *History) void {
