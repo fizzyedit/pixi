@@ -61,6 +61,7 @@ const vtable: sdk.Plugin.VTable = .{
     .contributeKeybinds = contributeKeybinds,
     .loadDocument = loadDocument,
     .loadDocumentFromBytes = loadDocumentFromBytes,
+    .loadUntitledDocument = loadUntitledDocument,
     .documentStackSize = documentStackSize,
     .documentStackAlign = documentStackAlign,
     .documentIdFromBuffer = documentIdFromBuffer,
@@ -181,6 +182,19 @@ fn loadDocument(_: *anyopaque, path: []const u8, out_doc: *anyopaque) anyerror!v
 /// As `loadDocument`, from in-memory bytes (browser file picker; synchronous).
 fn loadDocumentFromBytes(_: *anyopaque, path: []const u8, bytes: []const u8, out_doc: *anyopaque) anyerror!void {
     const file = try Internal.File.fromBytes(path, bytes) orelse return error.InvalidFile;
+    @as(*Internal.File, @ptrCast(@alignCast(out_doc))).* = file;
+}
+
+/// A sprite never saved, back from its unsaved bytes after a crash or a restart: read as the
+/// format they were written in (`bytes_path`, `untitled.pixi`), then given its title back. A path
+/// with no extension is what keeps it untitled and unsaved (`File.dirty`), so Save offers Save As.
+fn loadUntitledDocument(_: *anyopaque, title: []const u8, bytes_path: []const u8, bytes: []const u8, out_doc: *anyopaque) anyerror!void {
+    var file = try Internal.File.fromBytes(bytes_path, bytes) orelse return error.InvalidFile;
+    errdefer file.deinit();
+    const gpa = runtime.allocator();
+    const owned = try gpa.dupe(u8, title);
+    gpa.free(file.path);
+    file.path = owned;
     @as(*Internal.File, @ptrCast(@alignCast(out_doc))).* = file;
 }
 
