@@ -71,6 +71,7 @@ fn create(_: *anyopaque, args: Create.Args, call: *sdk.Command.Call) anyerror!vo
     if (args.path.len > 0) {
         file.writeNow() catch |err| return call.fail("could not write {s}: {s}", .{ path, @errorName(err) });
     }
+    commands.remember(file);
     try call.returns(.{ .path = file.path, .width = file.width(), .height = file.height() });
 }
 
