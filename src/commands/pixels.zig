@@ -19,6 +19,14 @@ pub fn register(host: *sdk.Host, plugin: *sdk.Plugin) !void {
         .isEnabled = commands.anyFile,
     });
     try host.registerCommand(.{
+        .id = "pixi.stamp",
+        .owner = plugin,
+        .title = "Put Back Pixels",
+        .params = Stamp.params,
+        .runWith = Stamp.bind(stampPixels),
+        .isEnabled = commands.anyFile,
+    });
+    try host.registerCommand(.{
         .id = "pixi.draw",
         .owner = plugin,
         .title = "Draw",
@@ -39,8 +47,8 @@ const Read = sdk.Command.Params(struct {
     layer: Arg([]const u8, .{ .description = "The layer to read, by its name. Empty: the selected one. \"*\": every visible layer, as they show together." }) = .init(""),
     path: commands.PathArg = .init(""),
 });
-/// A region of a layer as `rows` and the `legend` that reads them, in the form `pixi.draw`'s
-/// `paint` takes: `.` is transparent, every other character a color the legend names.
+/// A region of a layer as `rows` and the `legend` that reads them, in the form `pixi.stamp`
+/// takes: `.` is transparent, every other character a color the legend names.
 fn read(_: *anyopaque, args: Read.Args, call: *sdk.Command.Call) anyerror!void {
     const file = try commands.targetFile(args.path, call);
     const fw = file.width();
@@ -105,10 +113,6 @@ fn over(src: [4]u8, dst: [4]u8) [4]u8 {
 
 /// One step of a drawing.
 const Op = union(enum) {
-    /// Pixels as text: `rows` one line per pixel row, `legend` what each character paints
-    /// (`"#=#3b2a1a o=#e8b04a"`). `.` is transparent unless the legend says otherwise; a space
-    /// leaves the pixel as it is.
-    paint: struct { x: i32 = 0, y: i32 = 0, rows: []const u8, legend: []const u8 = "" },
     /// Fill the area of one color that `x`,`y` is in, as the bucket does; `contiguous = false`
     /// fills every pixel of that color.
     fill: struct { x: i32, y: i32, color: []const u8, contiguous: bool = true },
@@ -126,10 +130,9 @@ const Op = union(enum) {
 const Draw = sdk.Command.Params(struct {
     ops: Arg([]const Op, .{ .description =
         \\The steps, in order, each a one-field struct naming its kind:
-        \\.{ .paint = .{ .x, .y, .rows = "..##..\n.#oo#.", .legend = "#=#3b2a1a o=#e8b04a" } } — pixels as text, one line per row; `.` transparent, a space leaves the pixel as it is.
         \\.{ .fill = .{ .x, .y, .color, .contiguous = true } } — the bucket.
         \\.{ .line = .{ .x1, .y1, .x2, .y2, .color } }
-        \\.{ .stroke = .{ .points = .{ .{ x, y }, .{ x, y } }, .color, .size = 1, .square = false } } — the pencil's stroke through the points, with a brush that size; color none erases. Drawing is strokes, looked at between passes: paint is for pixels you already have.
+        \\.{ .stroke = .{ .points = .{ .{ x, y }, .{ x, y } }, .color, .size = 1, .square = false } } — the pencil's stroke through the points, with a brush that size; color none erases. Drawing is strokes, looked at between passes (`pixi.guide`).
         \\.{ .rect = .{ .x, .y, .w, .h, .color, .filled = true } }
         \\.{ .ellipse = .{ .x, .y, .w, .h, .color, .filled = true } }
         \\.{ .clear = .{ .x, .y, .w, .h } } — transparent; w/h 0 reach the edge.
@@ -162,24 +165,48 @@ fn draw(_: *anyopaque, args: Draw.Args, call: *sdk.Command.Call) anyerror!void {
     try call.returns(.{ .changed = changed, .layer = file.layers.items(.name)[layer_index] });
 }
 
+const Stamp = sdk.Command.Params(struct {
+    rows: Arg([]const u8, .{ .description = "The pixels, one line per row, as `pixi.read` answers them: `.` transparent, a space leaves the pixel as it is, every other character a color the legend names." }),
+    legend: Arg([]const u8, .{ .description = "What each character is: <char>=<color> entries separated by spaces, \"#=#3b2a1a o=#e8b04a\"; colors #rrggbb, #rrggbbaa or none." }) = .init(""),
+    x: Arg(i32, .{ .description = "Where the rows' left edge goes, in pixels from the sprite's left." }) = .init(0),
+    y: Arg(i32, .{ .description = "Where the top row goes, in pixels from the sprite's top." }) = .init(0),
+    layer: commands.LayerArg = .init(""),
+    path: commands.PathArg = .init(""),
+});
+/// Puts back pixels a caller already has, exactly: a region read with `pixi.read`, moved, copied
+/// to another cell or another sprite. Not a way to draw: a picture made elsewhere and stamped in
+/// is a picture generated, not drawn. Drawing is `pixi.draw`'s strokes and shapes, looked at
+/// between passes (`pixi.guide`); this was one of its ops, and an agent took it for the cheap way
+/// to make the art. One undo step; waits for the person's stroke or transform, as `pixi.draw` does.
+fn stampPixels(_: *anyopaque, args: Stamp.Args, call: *sdk.Command.Call) anyerror!void {
+    const file = try commands.targetFile(args.path, call);
+    if (commands.personBusy(file)) return commands.afterPerson(file, "pixi.stamp", call);
+    const layer_index = try commands.targetLayer(file, args.layer, call);
+    const legend = pixel_text.Legend.parse(args.legend) catch |err| return switch (err) {
+        error.BadColor => call.fail("a legend color is not #rrggbb, #rrggbbaa or none", .{}),
+        else => call.fail("the legend is <char>=<color> entries separated by spaces: \"#=#3b2a1a o=#e8b04a\"", .{}),
+    };
+    const At = struct {
+        e: *PixelEdit,
+        x: i64,
+        y: i64,
+        fn put(at: @This(), col: usize, row: usize, c: pixel_text.Rgba) void {
+            at.e.put(at.x + @as(i64, @intCast(col)), at.y + @as(i64, @intCast(row)), c);
+        }
+    };
+    var edit: PixelEdit = .begin(file, layer_index);
+    _ = pixel_text.decode(args.rows, &legend, At{ .e = &edit, .x = args.x, .y = args.y }, At.put) catch {
+        edit.rollback();
+        return call.fail("a row uses a character the legend does not name: {s}", .{try unnamed(args.rows, &legend, call.arena)});
+    };
+    const changed = edit.changed();
+    try edit.commit();
+    if (file.editor.reveal) |r| call.showing_ms = r.written_ms;
+    try call.returns(.{ .changed = changed, .layer = file.layers.items(.name)[layer_index] });
+}
+
 fn apply(e: *PixelEdit, op: Op, call: *sdk.Command.Call) !void {
     switch (op) {
-        .paint => |p| {
-            const legend = pixel_text.Legend.parse(p.legend) catch |err| return switch (err) {
-                error.BadColor => call.fail("a legend color is not #rrggbb, #rrggbbaa or none", .{}),
-                else => call.fail("the legend is <char>=<color> entries separated by spaces: \"#=#3b2a1a o=#e8b04a\"", .{}),
-            };
-            const At = struct {
-                e: *PixelEdit,
-                x: i64,
-                y: i64,
-                fn put(at: @This(), col: usize, row: usize, c: pixel_text.Rgba) void {
-                    at.e.put(at.x + @as(i64, @intCast(col)), at.y + @as(i64, @intCast(row)), c);
-                }
-            };
-            _ = pixel_text.decode(p.rows, &legend, At{ .e = e, .x = p.x, .y = p.y }, At.put) catch
-                return call.fail("a row uses a character the legend does not name: {s}", .{try unnamed(p.rows, &legend, call.arena)});
-        },
         .fill => |f| {
             const c = try commands.color(f.color, call);
             const target = e.get(f.x, f.y) orelse return call.fail("({d}, {d}) is outside the sprite", .{ f.x, f.y });

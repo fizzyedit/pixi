@@ -8,6 +8,7 @@
         "plugin.zig",
         "plugin.zig.zon",
         "ICON.png",
+        "GUIDE.md",
         "src",
         "assets",
     },

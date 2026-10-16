@@ -15,6 +15,7 @@ const File = pixi.internal.File;
 const Layer = pixi.internal.Layer;
 const Buffers = pixi.internal.Buffers;
 
+pub const guide = @import("commands/guide.zig");
 pub const document = @import("commands/document.zig");
 pub const pixels = @import("commands/pixels.zig");
 pub const layers = @import("commands/layers.zig");
@@ -55,11 +56,26 @@ pub fn anyFile(_: *anyopaque) bool {
 pub fn targetFile(path: []const u8, call: *sdk.Command.Call) !*File {
     const st = runtime.state();
     const file = if (path.len == 0)
-        running_for orelse st.docs.activeFile(st.host) orelse return call.fail("no sprite is active: give its path", .{})
+        running_for orelse st.docs.activeFile(st.host) orelse lastFile() orelse
+            return call.fail("no sprite is active, and no command has used one yet: give its path", .{})
     else
         st.docs.fileFromPath(path) orelse return call.fail("{s} is not open in pixi", .{path});
     file.finishReveal();
+    remember(file);
     return file;
+}
+
+/// The sprite the last command made or acted on, by its document id (a path changes with Save As).
+/// Where a command given no path goes when no sprite is active: a caller drawing from a chat has
+/// the chat focused, and named the sprite once, when it made or first touched it.
+var last_id: ?u64 = null;
+
+pub fn remember(file: *const File) void {
+    last_id = file.id;
+}
+
+fn lastFile() ?*File {
+    return runtime.state().docs.fileById(last_id orelse return null);
 }
 
 /// Whether the person has a gesture open on `file` whose end writes or records pixels: a stroke
