@@ -227,7 +227,14 @@ pub fn callAfter(id: dvui.Id, response: dvui.enums.DialogResponse) anyerror!void
                 // mounted folder) it stays open unsaved, saved like any other document.
                 file.writeNow() catch |err| dvui.log.info("New file {s} opens unsaved: {t}", .{ new_path, err });
 
-                try runtime.state().host.setExplorerNewFilePath(file.path);
+                // fizzy#449 replaced `setExplorerNewFilePath` with the `files` service's `reveal`:
+                // whichever this SDK has, until pixi repins to a release with only the service.
+                const host = runtime.state().host;
+                if (comptime @hasDecl(@TypeOf(host.*), "setExplorerNewFilePath")) {
+                    try host.setExplorerNewFilePath(file.path);
+                } else if (host.getServiceTyped(pixi.sdk.services.files.Api)) |files| {
+                    files.reveal(file.path);
+                }
                 dvui.refresh(null, @src(), dvui.currentWindow().data().id);
             } else {
                 const new_path = try runtime.state().host.allocUntitledPath();
