@@ -265,12 +265,12 @@ fn drawDocument(_: *anyopaque, doc: DocHandle) anyerror!void {
     }
 
     canvas.drawTransformDialog(file, container);
-    canvas.drawEditPill(container, file);
     // Before the file widget so FloatingWidget uses window-scale coords (not canvas zoom).
-    // Fit before the sample button: each floats over what came before it, and the sample
-    // button's tooltip opens to its right, over the Fit bubble.
+    // Right to left: each floats over what came before it, a tooltip only over what its own
+    // bubble floats over, and each button's tooltip opens to its right, over its neighbours.
     canvas.drawFitButton(container, file);
     canvas.drawSampleButton(container, file);
+    canvas.drawEditPill(container, file);
 
     var file_widget = FileWidget.init(@src(), .{
         .file = file,
