@@ -73,6 +73,8 @@ const vtable: sdk.Plugin.VTable = .{
     .captureDocumentState = captureDocumentState,
     .restoreDocumentState = restoreDocumentState,
     .applyStep = applyStep,
+    .historyLine = historyLine,
+    .historyGoTo = historyGoTo,
     .documentSnapshot = documentSnapshot,
     .encodeSnapshot = encodeSnapshot,
     .releaseSnapshot = releaseSnapshot,
@@ -206,6 +208,19 @@ fn captureDocumentState(_: *anyopaque, doc: DocHandle, allocator: std.mem.Alloca
 }
 fn restoreDocumentState(_: *anyopaque, doc: DocHandle, bytes: []const u8) anyerror!void {
     try docFile(doc).restoreState(bytes);
+}
+
+fn historyLine(_: *anyopaque, doc: DocHandle, arena: std.mem.Allocator) anyerror!sdk.Plugin.HistoryLine {
+    const history = &docFile(doc).history;
+    const steps = try history.line(arena);
+    const entries = try arena.alloc(sdk.Plugin.HistoryLine.Entry, steps.len);
+    for (steps, entries) |st, *e| e.* = .{ .id = st.id, .title = st.title };
+    return .{ .version = history.version, .entries = entries, .at = history.undo_stack.items.len };
+}
+
+fn historyGoTo(_: *anyopaque, doc: DocHandle, id: u64) anyerror!void {
+    const file = docFile(doc);
+    try file.history.goTo(file, id);
 }
 
 fn applyStep(_: *anyopaque, doc: DocHandle, effect: []const u8, _: []const u8, ms: u32) anyerror!void {
