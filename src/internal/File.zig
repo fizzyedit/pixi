@@ -339,7 +339,7 @@ pub fn checkerboardTileBlurredTexture(file: *File, sigma_px: f32, screen_scale: 
                 const b: f32 = @floatFromInt(even[ch]);
                 px[ch] = @intFromFloat(std.math.clamp(@round(a + (b - a) * f), 0, 255));
             }
-            buf[y * w + x] = @bitCast(px);
+            buf[y * w + x] = std.mem.bytesToValue(dvui.Color.PMA, &px);
         }
     }
 
@@ -491,7 +491,7 @@ fn loadFizzyZip(path: []const u8, file_bytes: ?[]const u8) !?pixi.internal.File 
         return error.InvalidExtension;
 
     const null_terminated_path = if (file_bytes == null)
-        try runtime.allocator().dupeZ(u8, path)
+        try runtime.allocator().dupeSentinel(u8, path, 0)
     else
         "";
     defer if (file_bytes == null) runtime.allocator().free(null_terminated_path);

@@ -41,8 +41,8 @@ pub const reflection_surface_cols = pixi.water_surface.reflection_surface_cols;
 /// the seam (positive = down). The card itself stays flat — only the reflection
 /// mesh pins its top edge and propagates ripples downward.
 pub const ReflectionLagSample = struct {
-    cols_dx: [reflection_surface_cols]f32 = .{0} ** reflection_surface_cols,
-    cols_dy: [reflection_surface_cols]f32 = .{0} ** reflection_surface_cols,
+    cols_dx: [reflection_surface_cols]f32 = @splat(0),
+    cols_dy: [reflection_surface_cols]f32 = @splat(0),
 };
 
 pub fn sprite(src: std.builtin.SourceLocation, init_opts: SpriteInitOptions, opts: dvui.Options) dvui.WidgetData {

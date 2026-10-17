@@ -1178,7 +1178,7 @@ fn renderFrostDetail(acc: *const TriAcc, tex: dvui.Texture, share: f32, uv_rect:
         if (uv_rect) |r| v.uv = .{ (v.pos.x - r.x) / r.w, (v.pos.y - r.y) / r.h };
     }
     var copy = acc.*;
-    copy.vtx = .{ .items = vtx, .capacity = vtx.len };
+    copy.vtx = .fromOwnedSlice(vtx);
     if (dvui.Backend.support_texture_blend) dvui.currentWindow().backend.textureBlend(tex, .over) catch {};
     copy.render(tex);
 }
@@ -2081,7 +2081,7 @@ fn drawSpriteBubbleForRow(
         var id_extra: usize = sprite_index;
 
         if (animation_index) |ai| {
-            id_extra = dvui.Id.extendId(@enumFromInt(sprite_index), @src(), ai).asUsize();
+            id_extra = dvui.Id.extendId(@fromBackingInt(@intCast(sprite_index)), @src(), ai).asUsize();
         }
 
         {
@@ -2095,16 +2095,16 @@ fn drawSpriteBubbleForRow(
 
             if (distance < max_distance and pan.peek and current_point.y - sprite_rect.y < 0.0 and current_point.y - sprite_rect.y > -sprite_rect.h) {
                 open = false;
-                id_extra = dvui.Id.update(@enumFromInt(id_extra), "peek").asUsize();
+                id_extra = dvui.Id.update(@fromBackingInt(@intCast(id_extra)), "peek").asUsize();
             } else {
-                id_extra = dvui.Id.update(@enumFromInt(id_extra), "unpeek").asUsize();
+                id_extra = dvui.Id.update(@fromBackingInt(@intCast(id_extra)), "unpeek").asUsize();
             }
         }
 
         if (accs != null) {
-            id_extra = dvui.Id.update(@enumFromInt(id_extra), "geom").asUsize();
+            id_extra = dvui.Id.update(@fromBackingInt(@intCast(id_extra)), "geom").asUsize();
         } else {
-            id_extra = dvui.Id.update(@enumFromInt(id_extra), "ui").asUsize();
+            id_extra = dvui.Id.update(@fromBackingInt(@intCast(id_extra)), "ui").asUsize();
         }
 
         var t: f32 = 0.0;
@@ -3723,7 +3723,7 @@ pub fn processTransform(self: *FileWidget) void {
             triangles.rotate(.{ .x = transform.point(.pivot).x, .y = transform.point(.pivot).y }, transform.rotation);
 
             for (transform.data_points[0..6], 0..) |*data_point, point_index| {
-                const transform_point = @as(pixi.Transform.TransformPoint, @enumFromInt(point_index));
+                const transform_point = @as(pixi.Transform.TransformPoint, @fromBackingInt(@intCast(point_index)));
                 const screen_point = if (point_index < 4) file.editor.canvas.screenFromDataPoint(.{ .x = triangles.vertexes[point_index].pos.x, .y = triangles.vertexes[point_index].pos.y }) else file.editor.canvas.screenFromDataPoint(data_point.*);
 
                 var screen_rect = dvui.Rect.Physical.fromPoint(screen_point);
@@ -3740,7 +3740,7 @@ pub fn processTransform(self: *FileWidget) void {
                     if (screen_rect.contains(dvui.currentWindow().mouse_pt)) {
                         dvui.cursorSet(.hand);
                     } else if (transform.active_point) |active_point| {
-                        if (active_point == @as(pixi.Transform.TransformPoint, @enumFromInt(point_index))) {
+                        if (active_point == @as(pixi.Transform.TransformPoint, @fromBackingInt(@intCast(point_index)))) {
                             dvui.cursorSet(.hand);
                         }
                     }
@@ -3773,7 +3773,7 @@ pub fn processTransform(self: *FileWidget) void {
 
                             if (me.action == .press and me.button.pointer()) {
                                 if (screen_rect.contains(me.p)) {
-                                    transform.active_point = @enumFromInt(point_index);
+                                    transform.active_point = @fromBackingInt(@intCast(point_index));
                                     e.handle(@src(), self.init_options.file.editor.canvas.scroll_container.data());
                                     dvui.captureMouse(self.init_options.file.editor.canvas.scroll_container.data(), e.num);
                                     dvui.dragPreStart(me.button, me.p, .{ .name = "transform_vertex_drag" });
@@ -3817,7 +3817,7 @@ pub fn processTransform(self: *FileWidget) void {
                                     if (dvui.dragging(me.p, "transform_vertex_drag")) |_| {
                                         transform.dragging = true;
                                         if (transform.active_point) |active_point| {
-                                            if (@intFromEnum(active_point) == point_index) {
+                                            if (@backingInt(active_point) == point_index) {
                                                 e.handle(@src(), self.init_options.file.editor.canvas.scroll_container.data());
 
                                                 // Set this state in advance so we can use it for the radius calculation
@@ -4079,7 +4079,7 @@ pub fn drawTransform(self: *FileWidget) void {
     if (file.editor.transform) |*transform| {
         const show_ortho_dims = transform.ortho and blk: {
             if (transform.active_point) |ap| {
-                break :blk @intFromEnum(ap) < 4;
+                break :blk @backingInt(ap) < 4;
             }
             break :blk transform.dragging;
         };
@@ -4508,7 +4508,7 @@ pub fn drawTransform(self: *FileWidget) void {
                 var color = dvui.themeGet().color(.window, .text);
 
                 if (transform.active_point) |active_point| {
-                    if (active_point == @as(pixi.Transform.TransformPoint, @enumFromInt(point_index))) {
+                    if (active_point == @as(pixi.Transform.TransformPoint, @fromBackingInt(@intCast(point_index)))) {
                         color = dvui.themeGet().color(.highlight, .fill);
                     }
                 } else if (screen_rect.contains(dvui.currentWindow().mouse_pt)) {

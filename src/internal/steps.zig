@@ -25,7 +25,7 @@ pub fn encode(gpa: std.mem.Allocator, w: *std.Io.Writer, layer_id: u64, indices:
     const order = try indexOrder(gpa, indices);
     defer gpa.free(order);
 
-    try w.writeByte(@intFromEnum(Tag.pixels));
+    try w.writeByte(@backingInt(Tag.pixels));
     try w.writeUleb128(layer_id);
     try w.writeUleb128(indices.len);
     var last: usize = 0;

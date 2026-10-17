@@ -32,7 +32,7 @@ pub fn deinit(self: *Brush, gpa: std.mem.Allocator) void {
 /// The shape of a brush `size` pixels across, centred at `side / 2`: every pixel of a square, or
 /// those of a circle, its radius trimmed a little so small circles read round.
 pub fn shapeOf(kind: Kind, size: u8) Shape {
-    var out: Shape = .initEmpty();
+    var out: Shape = .empty;
     const s: i32 = @max(1, size);
     const half = @divFloor(s, 2);
     var i: i32 = 0;
@@ -90,7 +90,7 @@ fn covers(shape: *const Shape, o: Offset) bool {
 const testing = std.testing;
 
 fn shapeFrom(comptime inside: fn (x: i32, y: i32) bool) Shape {
-    var s: Shape = .initEmpty();
+    var s: Shape = .empty;
     var y: i32 = -side / 2;
     while (y < side / 2) : (y += 1) {
         var x: i32 = -side / 2;
