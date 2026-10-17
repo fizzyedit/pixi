@@ -161,7 +161,7 @@ pub fn afterPerson(file: *File, id: []const u8, call: *sdk.Command.Call) !void {
     const gpa = runtime.allocator();
     const args = try gpa.dupe(u8, call.args);
     errdefer gpa.free(args);
-    try file.editor.waiting.append(gpa, .{ .id = id, .args = args });
+    try file.editor.waiting.append(gpa, .{ .id = id, .args = args, .acting = runtime.state().host.acted() });
     try call.returns(.{ .waiting = if (file.editor.transform != null) "the person's transform" else "the person's stroke" });
 }
 
@@ -182,11 +182,17 @@ pub fn runWaiting(file: *File) void {
     defer arena.deinit();
     running_for = file;
     defer running_for = null;
-    for (calls) |w| switch (runtime.state().host.callCommand(w.id, w.args, arena.allocator())) {
-        .ok => {},
-        .failed, .bad_args => |m| dvui.log.warn("{s}, run after the person's gesture: {s}", .{ w.id, m }),
-        else => dvui.log.warn("{s}, run after the person's gesture: it did not run", .{w.id}),
-    };
+    const host = runtime.state().host;
+    for (calls) |w| {
+        // As whoever called it, in the same run: an agent's draw that waited is still the agent's.
+        const outer = host.actAgain(w.acting);
+        defer host.endAct(outer);
+        switch (host.callCommand(w.id, w.args, arena.allocator())) {
+            .ok => {},
+            .failed, .bad_args => |m| dvui.log.warn("{s}, run after the person's gesture: {s}", .{ w.id, m }),
+            else => dvui.log.warn("{s}, run after the person's gesture: it did not run", .{w.id}),
+        }
+    }
 }
 
 /// The index of the layer `name` names, else the selected one's.
