@@ -276,6 +276,10 @@ redo_sprite_data_stack: std.array_list.Managed([][2]f32),
 undo_ids: std.ArrayListUnmanaged(u64) = .empty,
 redo_ids: std.ArrayListUnmanaged(u64) = .empty,
 next_id: u64 = 1,
+/// Moves whenever the line does: an entry added, undone or redone (`line`).
+version: u64 = 0,
+/// Going to a step (`goTo`): each undo and redo on the way is not announced by a toast of its own.
+quiet: bool = false,
 
 pub fn init(allocator: std.mem.Allocator) History {
     return .{
@@ -415,6 +419,7 @@ pub fn append(self: *History, change: Change) !void {
         self.undo_ids.appendAssumeCapacity(self.next_id);
         self.next_id += 1;
         self.bookmark += 1;
+        self.version += 1;
         record(file, .added, self.undo_ids.getLast(), &self.undo_stack.items[self.undo_stack.items.len - 1]);
     }
 
@@ -522,8 +527,9 @@ pub fn undoRedo(self: *History, file: *pixi.internal.File, action: Action) !void
         .redo => .{ &self.redo_ids, &self.undo_ids },
     };
     const entry_id = active_ids.pop() orelse 0;
+    self.version += 1;
 
-    defer {
+    defer if (!self.quiet) {
         // Microseconds-since-epoch (~1.7e15) overflows a 32-bit `usize` on wasm32, so a
         // direct `@intCast` to `usize` crashes the safe-mode build with an "integer cast
         // truncates value" panic every time the user undoes/redoes. `id_extra` only needs
@@ -659,7 +665,7 @@ pub fn undoRedo(self: *History, file: *pixi.internal.File, action: Action) !void
 
         dvui.dataSetSlice(dvui.currentWindow(), id, "_message", message);
         id_mutex.mutex.unlock(dvui.io);
-    }
+    };
 
     switch (change) {
         .pixels => |*pixels| {
@@ -995,6 +1001,88 @@ pub fn undoRedo(self: *History, file: *pixi.internal.File, action: Action) !void
     };
 }
 
+/// One step of the history as `line` gives it: its id and what it did, as a person reads it.
+pub const Step = struct { id: u64, title: []const u8 };
+
+/// Every step, oldest first: the undo stack, then the redo stack from the next redo on. The first
+/// `undo_stack.items.len` are applied.
+pub fn line(self: *const History, arena: std.mem.Allocator) ![]Step {
+    // The ids move with their entries, so the lists are as long as the stacks; to the shorter
+    // all the same, so a stack pushed to past `append` reads short rather than crashing a frame.
+    const n_undo = @min(self.undo_ids.items.len, self.undo_stack.items.len);
+    const n_redo = @min(self.redo_ids.items.len, self.redo_stack.items.len);
+    const out = try arena.alloc(Step, n_undo + n_redo);
+    for (self.undo_ids.items[0..n_undo], self.undo_stack.items[0..n_undo], 0..) |id, c, i| out[i] = .{ .id = id, .title = title(c) };
+    for (self.redo_ids.items[0..n_redo], self.redo_stack.items[0..n_redo], 0..) |id, c, i| out[out.len - 1 - i] = .{ .id = id, .title = title(c) };
+    return out;
+}
+
+/// How many steps to undo (negative) or redo (positive) for step `id` to be the last applied; 0
+/// goes back before the first. Null when `id` is not on the line.
+pub fn stepsTo(self: *const History, id: u64) ?isize {
+    const applied: isize = @intCast(self.undo_ids.items.len);
+    if (id == 0) return -applied;
+    for (self.undo_ids.items, 0..) |e, i| if (e == id) return @as(isize, @intCast(i + 1)) - applied;
+    const redo = self.redo_ids.items;
+    for (redo, 0..) |e, i| if (e == id) return @intCast(redo.len - i);
+    return null;
+}
+
+/// Undo or redo until step `id` is the last applied (0: before the first), quietly: one move along
+/// the line, not a toast per step, and the person's layer and sidebar as they were rather than
+/// wherever each step on the way would put them. `error.NoSuchStep` when `id` is not on it, and
+/// `error.PersonBusy` while the person has a stroke or a transform open (undo under an open stroke
+/// would leave its record of what it drew over wrong); nothing moves for either. A step on the way
+/// that fails puts the sprite back where it began, as far as it can, and says so.
+pub fn goTo(self: *History, file: *pixi.internal.File, id: u64) !void {
+    const n = self.stepsTo(id) orelse return error.NoSuchStep;
+    if (n == 0) return;
+    if (@import("../commands.zig").personBusy(file)) return error.PersonBusy;
+    const host = runtime.state().host;
+    const layer = file.selected_layer_index;
+    var sidebar_buf: [128]u8 = undefined;
+    const sidebar: ?[]const u8 = if (host.selectionFor(sdk.keywords.ide.sidebar)) |v| if (v.len <= sidebar_buf.len) blk: {
+        @memcpy(sidebar_buf[0..v.len], v);
+        break :blk sidebar_buf[0..v.len];
+    } else null else null;
+    self.quiet = true;
+    defer {
+        self.quiet = false;
+        if (layer < file.layers.len) file.selected_layer_index = layer;
+        if (sidebar) |v| host.setSelectionFor(sdk.keywords.ide.sidebar, v);
+    }
+    const back: Action = if (n < 0) .redo else .undo;
+    for (0..@abs(n)) |done| {
+        self.undoRedo(file, if (n < 0) .undo else .redo) catch |err| {
+            for (0..done) |_| self.undoRedo(file, back) catch break;
+            std.log.err("pixi: going to step {d} stopped after {d} of {d}: {t}; the sprite is back where it was", .{ id, done, @abs(n), err });
+            return err;
+        };
+    }
+}
+
+/// What a change did, as the timeline names it.
+fn title(c: Change) []const u8 {
+    return switch (c) {
+        .pixels => "Draw",
+        .origins => "Move Origins",
+        .animation_name => "Rename Animation",
+        .animation_frames => "Animation Frames",
+        .animation_settings => "Animation Settings",
+        .animation_order => "Reorder Animations",
+        .animation_restore_delete => "Animation",
+        .layers_order => "Reorder Layers",
+        .layer_restore_delete => "Layer",
+        .layer_name => "Rename Layer",
+        .layer_settings => "Layer Settings",
+        .resize => "Resize",
+        .reorder_col_row => "Reorder Cells",
+        .reorder_cell => "Reorder Cells",
+        .layer_merge => "Merge Layers",
+        .grid_layout => "Grid",
+    };
+}
+
 /// Tell whoever records `file`'s steps (`sdk.Host.recordStep`) what `change`, entry `id`, just
 /// did: a pixel change as a step (`steps`), its colours before in the change and after in the
 /// layer, as both an append and an undo or redo leave them. Every other kind of change is not
@@ -1040,6 +1128,7 @@ pub fn clearAndFree(self: *History) void {
     }
     self.undo_stack.clearAndFree();
     self.redo_stack.clearAndFree();
+    self.version += 1;
     self.undo_ids.clearAndFree(runtime.allocator());
     self.redo_ids.clearAndFree(runtime.allocator());
 }
@@ -1053,6 +1142,7 @@ pub fn clearRetainingCapacity(self: *History) void {
     }
     self.undo_stack.clearRetainingCapacity();
     self.redo_stack.clearRetainingCapacity();
+    self.version += 1;
     self.undo_ids.clearRetainingCapacity();
     self.redo_ids.clearRetainingCapacity();
 }
