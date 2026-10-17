@@ -57,8 +57,9 @@ editor: EditorData = .{},
 /// used each frame to write/read data the editor directly depends on.
 ///
 /// Also, the fields here tend to be directly coupled with the UI library
-/// A command call waiting for the person's gesture to end: its id (static) and arguments.
-pub const Waiting = struct { id: []const u8, args: []const u8 };
+/// A command call waiting for the person's gesture to end: its id (static), its arguments, and
+/// who called it (`Host.acted`), so the steps it makes when it runs are still theirs.
+pub const Waiting = struct { id: []const u8, args: []const u8, acting: sdk.Host.Acting };
 
 pub const EditorData = struct {
     /// Opaque slot handle to the workspace currently drawing this file. Set by the
