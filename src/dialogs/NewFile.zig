@@ -58,16 +58,16 @@ pub fn dialog(id: dvui.Id) anyerror!bool {
             defer hbox.deinit();
 
             for (0..2) |i| {
-                const color = if (i == @intFromEnum(mode)) dvui.themeGet().color(.window, .fill).lighten(-4) else dvui.themeGet().color(.control, .fill);
+                const color = if (i == @backingInt(mode)) dvui.themeGet().color(.window, .fill).lighten(-4) else dvui.themeGet().color(.control, .fill);
                 const button_opts: dvui.Options = .{
                     .padding = .all(6),
                     .margin = .{ .y = 2, .h = 4 },
                     .corners = if (i == 0) .{ .tl = .round(100000), .bl = .round(100000) } else .{ .tr = .round(100000), .br = .round(100000) },
                     .expand = .horizontal,
                     .color_fill = .{ .color = color },
-                    .color_fill_hover = if (i == @intFromEnum(mode)) .{ .color = color } else null,
+                    .color_fill_hover = if (i == @backingInt(mode)) .{ .color = color } else null,
                     .id_extra = i,
-                    .box_shadow = if (i != @intFromEnum(mode)) .{
+                    .box_shadow = if (i != @backingInt(mode)) .{
                         .color = .black,
                         .offset = .{ .x = 0.0, .y = 2.0 },
                         .fade = 7.0,
@@ -80,7 +80,7 @@ pub fn dialog(id: dvui.Id) anyerror!bool {
                 button.init(@src(), .{}, button_opts);
                 defer button.deinit();
 
-                if (i != @intFromEnum(mode)) {
+                if (i != @backingInt(mode)) {
                     button.processEvents();
                 }
 
@@ -90,7 +90,7 @@ pub fn dialog(id: dvui.Id) anyerror!bool {
                     dvui.labelNoFmt(@src(), "Single", .{}, button_opts.strip().override(button.style()).override(.{
                         .gravity_x = 0.5,
                         .gravity_y = 0.5,
-                        .color_text = .{ .color = if (i == @intFromEnum(mode)) dvui.themeGet().color(.window, .text) else dvui.themeGet().color(.control, .text) },
+                        .color_text = .{ .color = if (i == @backingInt(mode)) dvui.themeGet().color(.window, .text) else dvui.themeGet().color(.control, .text) },
                     }));
                     if (button.clicked()) {
                         mode = .single;
@@ -100,7 +100,7 @@ pub fn dialog(id: dvui.Id) anyerror!bool {
                     dvui.labelNoFmt(@src(), "Grid", .{}, button_opts.strip().override(button.style()).override(.{
                         .gravity_x = 0.5,
                         .gravity_y = 0.5,
-                        .color_text = .{ .color = if (i == @intFromEnum(mode)) dvui.themeGet().color(.window, .text) else dvui.themeGet().color(.control, .text) },
+                        .color_text = .{ .color = if (i == @backingInt(mode)) dvui.themeGet().color(.window, .text) else dvui.themeGet().color(.control, .text) },
                     }));
                     if (button.clicked()) {
                         mode = .grid;

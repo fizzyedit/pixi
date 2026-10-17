@@ -31,4 +31,4 @@ jobs:
     with:
       sdk-version: ${{ github.event.client_payload.version || inputs.sdk-version || '' }}
       force: ${{ inputs.force == true }}
-      zig-version: "0.16.0"
+      zig-version: "0.17.0"

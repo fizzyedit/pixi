@@ -38,7 +38,7 @@ pub const Person = struct {
     edits: u32 = 0,
     undone: u32 = 0,
     redone: u32 = 0,
-    kinds: std.EnumSet(ChangeType) = .initEmpty(),
+    kinds: std.EnumSet(ChangeType) = .empty,
 
     pub fn any(p: Person) bool {
         return p.edits + p.undone + p.redone > 0;
@@ -214,7 +214,7 @@ pub const Change = union(ChangeType) {
                 .selected = 0,
             } },
             .layer_name => .{ .animation_name = .{
-                .name = [_:0]u8{0} ** pixi.max_name_len,
+                .name = &.{},
                 .index = 0,
             } },
             else => error.NotSupported,

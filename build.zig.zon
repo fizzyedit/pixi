@@ -1,7 +1,7 @@
 .{
     .name = .pixi,
     .version = "0.0.1",
-    .minimum_zig_version = "0.16.0",
+    .minimum_zig_version = "0.17.0",
     .paths = .{
         "build.zig",
         "build.zig.zon",
@@ -15,8 +15,8 @@
     .fingerprint = 0xdef5a52dbae70684,
     .dependencies = .{
         .assetpack = .{
-            .url = "https://github.com/foxnne/assetpack/archive/ac7592f3f5988857840d0df4610e1e1fad690e2e.tar.gz",
-            .hash = "assetpack-0.2.0-5DA2d1ZkAADJanNVdWrUBOGMhOzUENhrUiqXcHADxY2x",
+            .url = "git+https://github.com/foxnne/assetpack#fbc4392910375d428735ed9852fa2aedabc6ff52",
+            .hash = "assetpack-0.2.0-5DA2d2hkAACLscFkiyim4xD-Fqum33ndL5V5IFvN_dAS",
         },
         .icons = .{
             .url = "https://github.com/foxnne/zig-lib-icons/archive/db034786a1286ab28dc35aba534c098aa4f1a3aa.tar.gz",

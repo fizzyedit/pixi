@@ -15,6 +15,6 @@ jobs:
   check:
     uses: fizzyedit/plugin-build-action/.github/workflows/check.yml@v7
     with:
-      zig-version: "0.16.0"
+      zig-version: "0.17.0"
     # secrets:
     #   build_env: ${{ secrets.MY_BUILD_ENV }}   # as in release.yml, if the build needs one

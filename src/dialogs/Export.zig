@@ -84,8 +84,8 @@ pub fn dialog(id: dvui.Id) anyerror!bool {
                 .margin = .{ .y = 2, .h = 4 },
                 .padding = .all(6),
                 .expand = .horizontal,
-                .color_fill = .{ .color = if (mode == @as(@TypeOf(mode), @enumFromInt(i))) dvui.themeGet().color(.window, .fill).lighten(-4) else dvui.themeGet().color(.control, .fill) },
-                .box_shadow = if (i != @intFromEnum(mode)) .{
+                .color_fill = .{ .color = if (mode == @as(@TypeOf(mode), @fromBackingInt(@intCast(i)))) dvui.themeGet().color(.window, .fill).lighten(-4) else dvui.themeGet().color(.control, .fill) },
+                .box_shadow = if (i != @backingInt(mode)) .{
                     .color = .black,
                     .offset = .{ .x = 0.0, .y = 2 },
                     .fade = 7.0,
@@ -95,7 +95,7 @@ pub fn dialog(id: dvui.Id) anyerror!bool {
                 } else null,
             });
             defer button.deinit();
-            if (i != @intFromEnum(mode)) {
+            if (i != @backingInt(mode)) {
                 button.processEvents();
             }
 
@@ -120,13 +120,13 @@ pub fn dialog(id: dvui.Id) anyerror!bool {
             dvui.labelNoFmt(@src(), name, .{}, .{
                 .gravity_x = 0.5,
                 .gravity_y = 0.5,
-                .color_text = .{ .color = if (mode == @as(@TypeOf(mode), @enumFromInt(i))) dvui.themeGet().color(.window, .text) else dvui.themeGet().color(.control, .text) },
+                .color_text = .{ .color = if (mode == @as(@TypeOf(mode), @fromBackingInt(@intCast(i)))) dvui.themeGet().color(.window, .text) else dvui.themeGet().color(.control, .text) },
                 .margin = .all(0),
                 .padding = .all(0),
             });
 
             if (button.clicked()) {
-                mode = @enumFromInt(i);
+                mode = @fromBackingInt(@intCast(i));
                 if (mode == .animation) {
                     anim_frame_index = 0;
                     dvui.currentWindow().timerRemove(id);
