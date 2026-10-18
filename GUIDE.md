@@ -16,6 +16,14 @@ they did, and decide the next mark from what you saw. The picture comes out of t
   script, a raytracer) and bring it in: that is generating, not drawing. `pixi.stamp` puts back
   pixels you already have from `pixi.read`, such as a frame copied to the next cell, and nothing
   else.
+- **One colour a pass**, as a person draws: pick a colour, make every mark that colour needs,
+  then the next. A pass of several colours at once is a picture assembled, not drawn, and a tape
+  of it (`fizzy.tracks.export`) shows parts appearing rather than a picture being made. Mark with
+  strokes, not row after row of lines or dots.
+- **Big areas are filled, or brushed big.** Outline an area with the pencil, closed, and fill it
+  with the bucket (`fill`); or paint it with a brush its size (`stroke`'s `size`). Choose the brush
+  for the mark: a wide one for a broad sweep, 2 or 3 for a form's shadow, 1 for an edge or a glint.
+  Never fill an area with a pencil a pixel at a time.
 - **Look between passes.** After each pass, look twice: `fizzy_capture` with the canvas for the
   whole impression, and `pixi.read` for exact pixels. The image shows whether it reads; the grid
   shows where it is wrong.
@@ -111,6 +119,9 @@ testing the interface as a person uses it), and say everything in the call:
   pixels: that is the line you mean.
 
 ### Passes that work
+
+Each pass is shown drawn at a hand's pace, a few seconds at most. Wait for it before the next:
+a command on the sprite finishes the drawing under way at once.
 
 1. **Ground.** On a dark theme the checkerboard swallows dark inks. Fill the bottom layer with a
    light paper colour (a `fill`), then `pixi.addLayer` to draw above it, and name it in each call.

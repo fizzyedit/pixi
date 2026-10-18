@@ -277,6 +277,10 @@ redo_sprite_data_stack: std.array_list.Managed([][2]f32),
 undo_ids: std.ArrayListUnmanaged(u64) = .empty,
 redo_ids: std.ArrayListUnmanaged(u64) = .empty,
 next_id: u64 = 1,
+/// How long the change being appended goes on showing being drawn (a command's pass, `Reveal`):
+/// its recorded step says so (`sdk.Step.ms`), and a tape replays it drawn at that pace rather than
+/// all at once. Set by whoever appends a revealed change, for that append only; 0 otherwise.
+showing_ms: u32 = 0,
 /// Moves whenever the line does: an entry added, undone or redone (`line`).
 version: u64 = 0,
 /// Going to a step (`goTo`): each undo and redo on the way is not announced by a toast of its own.
@@ -1074,7 +1078,10 @@ fn record(file: *pixi.internal.File, kind: sdk.Step.Kind, id: u64, change: *cons
         const after = arena.alloc([4]u8, pixels.indices.len) catch break :encoded;
         for (pixels.indices, after) |i, *a| a.* = px[i];
         steps.encode(arena, &out.writer, pixels.layer_id, pixels.indices, pixels.values, after) catch break :encoded;
-        return host.recordStep(file.id, .{ .kind = kind, .id = id, .effect = out.written() });
+        // An append that is drawn as it lands says how long it takes (`showing_ms`); an undo or a
+        // redo lands at once.
+        const ms = if (kind == .added) file.history.showing_ms else 0;
+        return host.recordStep(file.id, .{ .kind = kind, .id = id, .effect = out.written(), .ms = ms });
     }
     // A step not kept would leave the track behind the sprite, every later step written against
     // a sprite its replay never reaches: it starts again from the sprite instead.
