@@ -155,6 +155,14 @@ pub fn personBusy(file: *const File) bool {
     return file.editor.active_drawing or file.editor.transform != null;
 }
 
+/// Refuse to move `file`'s history while the person has a gesture open and someone else is
+/// acting: an undo under their stroke would take back what the stroke is drawing over. The caller
+/// is told to try again once it ends (`PersonBusy`, `Plugin.historyGoTo`). The person's own undo
+/// mid-stroke runs as it always has.
+pub fn refuseWhilePersonBusy(file: *const File) error{PersonBusy}!void {
+    if (personBusy(file) and runtime.state().host.author().kind != .person) return error.PersonBusy;
+}
+
 /// Run this call when the person's gesture on `file` ends, not in the middle of it, and answer
 /// that it waits. Calls wait in the order they came and run in that order (`runWaiting`).
 pub fn afterPerson(file: *File, id: []const u8, call: *sdk.Command.Call) !void {

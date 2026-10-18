@@ -220,6 +220,7 @@ fn historyLine(_: *anyopaque, doc: DocHandle, arena: std.mem.Allocator) anyerror
 
 fn historyGoTo(_: *anyopaque, doc: DocHandle, id: u64) anyerror!void {
     const file = docFile(doc);
+    try commands.refuseWhilePersonBusy(file);
     try file.history.goTo(file, id);
 }
 
@@ -419,6 +420,7 @@ fn undoEnabled(state: *anyopaque) bool {
 
 fn pluginUndo(state: *anyopaque) anyerror!void {
     const file = docFile(activeOurs(state) orelse return);
+    try commands.refuseWhilePersonBusy(file);
     try file.history.undoRedo(file, .undo);
 }
 
@@ -429,6 +431,7 @@ fn redoEnabled(state: *anyopaque) bool {
 
 fn pluginRedo(state: *anyopaque) anyerror!void {
     const file = docFile(activeOurs(state) orelse return);
+    try commands.refuseWhilePersonBusy(file);
     try file.history.undoRedo(file, .redo);
 }
 
