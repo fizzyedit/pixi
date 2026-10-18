@@ -1248,7 +1248,7 @@ const art_frost_max_texels: f32 = 4096;
 pub fn artFrostSignature(file: *pixi.internal.File) u64 {
     var h = std.hash.Wyhash.init(0);
     const history = &file.history;
-    h.update(std.mem.asBytes(&.{ history.bookmark, history.undo_stack.items.len, history.redo_stack.items.len }));
+    h.update(std.mem.asBytes(&.{ history.version, history.undo_stack.items.len, history.redo_stack.items.len }));
     // Not the temporary or selection layers: the frost draws the art without them (`overlays`).
     h.update(std.mem.asBytes(&file.editor.layer_composite_generation));
     h.update(std.mem.asBytes(&.{ runtime.state().checker_color_even, runtime.state().checker_color_odd, dvui.themeGet().color(.content, .fill) }));
