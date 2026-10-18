@@ -1058,9 +1058,12 @@ fn title(c: Change) []const u8 {
 /// layer, as both an append and an undo or redo leave them. Every other kind of change is not
 /// encoded yet, so it says the history started over: the track begins again from the sprite as
 /// it is after it, exactly, and the process before it stays on the track that ended.
+/// Tell fizzy of a step: every one, so fizzy knows who made it (`Host.stepAuthor`, the step on
+/// top); its effect only while something records the sprite, which is when one is read.
 fn record(file: *pixi.internal.File, kind: sdk.Step.Kind, id: u64, change: *const Change) void {
     const host = runtime.state().host;
-    if (!host.recording(file.id)) return;
+    const on_top = file.history.top();
+    if (!host.recording(file.id)) return host.recordStep(file.id, .{ .kind = kind, .id = id, .top = on_top });
     const pixels = switch (change.*) {
         .pixels => |p| p,
         else => return host.recordStep(file.id, .{ .kind = .restarted, .id = 0 }),
@@ -1074,7 +1077,7 @@ fn record(file: *pixi.internal.File, kind: sdk.Step.Kind, id: u64, change: *cons
         const after = arena.alloc([4]u8, pixels.indices.len) catch break :encoded;
         for (pixels.indices, after) |i, *a| a.* = px[i];
         steps.encode(arena, &out.writer, pixels.layer_id, pixels.indices, pixels.values, after) catch break :encoded;
-        return host.recordStep(file.id, .{ .kind = kind, .id = id, .effect = out.written() });
+        return host.recordStep(file.id, .{ .kind = kind, .id = id, .top = on_top, .effect = out.written() });
     }
     // A step not kept would leave the track behind the sprite, every later step written against
     // a sprite its replay never reaches: it starts again from the sprite instead.
@@ -1086,7 +1089,7 @@ fn record(file: *pixi.internal.File, kind: sdk.Step.Kind, id: u64, change: *cons
 /// state none of its steps lead to (`File.restoreState`).
 pub fn restarted(file: *pixi.internal.File) void {
     const host = runtime.state().host;
-    if (host.recording(file.id)) host.recordStep(file.id, .{ .kind = .restarted, .id = 0 });
+    host.recordStep(file.id, .{ .kind = .restarted, .id = 0 });
 }
 
 /// The id of the step on top, the last one applied; 0 when none is.
