@@ -85,8 +85,9 @@ pub const EditorData = struct {
     waiting: std.ArrayListUnmanaged(Waiting) = .empty,
 
     playing: bool = false,
-    /// `history.bookmark` when the save in flight was snapshotted (`saveSnapshot`, `written`).
-    saving_bookmark: i32 = 0,
+    /// The step on top (`History.top`) when the save in flight was snapshotted (`saveSnapshot`,
+    /// `written`): what the sprite is saved as once it is written.
+    saving_top: u64 = 0,
     grouping: u64 = 0,
 
     // Internal layers for editor
@@ -1386,13 +1387,14 @@ pub fn reorderRows(file: *File, removed_row_index: usize, insert_before_row_inde
     }
 }
 
-/// The layers' pixels, by layer id, as a demo's snapshot holds them (`Plugin.captureDocumentState`):
-/// a drawing still being shown drawn is in them whole.
+/// The layers' pixels, by layer id, as a demo's snapshot holds them (`Plugin.captureDocumentState`),
+/// and whether the sprite was saved: a drawing still being shown drawn is in them whole.
 pub fn captureState(file: *File, allocator: std.mem.Allocator) ![]u8 {
     var out: std.Io.Writer.Allocating = .init(allocator);
     errdefer out.deinit();
     const w = &out.writer;
     try w.writeByte(state_version);
+    try w.writeByte(@intFromBool(file.history.top() == file.history.saved));
     try w.writeInt(u32, @intCast(file.layers.len), .little);
     for (0..file.layers.len) |i| {
         const layer = file.layers.get(i);
@@ -1407,10 +1409,13 @@ pub fn captureState(file: *File, allocator: std.mem.Allocator) ![]u8 {
 }
 
 /// Put back what `captureState` took, in place: refused when the layers are not the same ones,
-/// so the app reopens the sprite instead.
+/// so the app reopens the sprite instead. The history goes, as text's does on a restore: its
+/// changes were made to pixels that are no longer there, and undoing one would write it over
+/// these. The sprite is saved or unsaved as it was then.
 pub fn restoreState(file: *File, bytes: []const u8) !void {
     var r: std.Io.Reader = .fixed(bytes);
     if (try r.takeByte() != state_version) return error.UnknownStateVersion;
+    const was_saved = try r.takeByte() != 0;
     if (try r.takeInt(u32, .little) != file.layers.len) return error.LayersChanged;
     if (file.editor.reveal) |*rv| rv.deinit();
     file.editor.reveal = null;
@@ -1424,10 +1429,14 @@ pub fn restoreState(file: *File, bytes: []const u8) !void {
     file.editor.layer_composite_dirty = true;
     file.editor.split_composite_dirty = true;
     file.invalidateActiveLayerTransparencyMaskCache();
+    file.history.clearRetainingCapacity();
+    // With no step left, the sprite is saved while `saved` is 0, and unsaved while it names one
+    // that is gone.
+    file.history.saved = if (was_saved) 0 else std.math.maxInt(u64);
     History.restarted(file);
 }
 
-const state_version: u8 = 1;
+const state_version: u8 = 2;
 
 /// Apply a recorded step (`steps`, pixi's step format) as a new entry on the history: its pixels
 /// checked against the layer and written, an undo away like any edit. `show` draws it in as a
@@ -1545,9 +1554,10 @@ pub fn deinit(file: *File) void {
 }
 
 pub fn dirty(self: File) bool {
-    // Never-saved buffers use a path with no extension (e.g. `untitled-1`); treat as unsaved even at bookmark 0.
+    // Never-saved buffers use a path with no extension (e.g. `untitled-1`); treat as unsaved even
+    // with no step.
     if (std.fs.path.extension(self.path).len == 0) return true;
-    return self.history.bookmark != 0;
+    return self.history.top() != self.history.saved;
 }
 
 /// Replace in-memory contents from disk (shell document watcher / discard-on-conflict).
@@ -2963,7 +2973,7 @@ pub fn saveSnapshot(self: *File, path: []const u8, allocator: std.mem.Allocator)
             .density = if (png) @intFromFloat(@round(scale * 72.0 / 0.0254)) else @intFromFloat(@round(scale * 72.0)),
         } };
     } else return error.UnsupportedSaveExtension;
-    self.editor.saving_bookmark = self.history.bookmark;
+    self.editor.saving_top = self.history.top();
     return snap;
 }
 
@@ -2993,8 +3003,7 @@ pub fn written(self: *File, path: []const u8) !void {
         gpa.free(self.path);
         self.path = copy;
     }
-    self.history.bookmark -= self.editor.saving_bookmark;
-    self.editor.saving_bookmark = 0;
+    self.history.saved = self.editor.saving_top;
 }
 
 /// Write this document to its own path on the disk now, on the UI thread: a new file has to exist

@@ -54,7 +54,6 @@ pub const Change = union(ChangeType) {
         layer_id: u64,
         indices: []usize,
         values: [][4]u8,
-        temporary: bool = false,
     };
 
     pub const Origins = struct {
@@ -191,7 +190,6 @@ pub const Change = union(ChangeType) {
                     .layer_id = 0,
                     .indices = try allocator.alloc(usize, len),
                     .values = try allocator.alloc([4]u8, len),
-                    .temporary = false,
                 },
             },
             .origins => .{
@@ -255,7 +253,10 @@ pub const Change = union(ChangeType) {
     }
 };
 
-bookmark: i32 = 0,
+/// The id of the step on top when the sprite was last saved (`top`); 0, none: as it was opened.
+/// The sprite is unsaved while another is on top. Ids are never reused, so saving, undoing and
+/// then editing reads as unsaved, which a count of steps since the save did not.
+saved: u64 = 0,
 /// What the person did to the sprite while no command ran (`Person`): a command acting on it next
 /// reports it to its caller and clears it (`commands.targetFile`).
 person: Person = .{},
@@ -298,39 +299,13 @@ pub fn init(allocator: std.mem.Allocator) History {
 }
 
 pub fn append(self: *History, change: Change) !void {
-    // A drawing still being shown drawn is finished before anything is recorded over it, and
-    // fizzy hears of every edit, to show the command that made it.
     const file: *pixi.internal.File = @alignCast(@fieldParentPtr("history", self));
-    file.finishReveal();
-    runtime.state().host.documentEdited(file.id);
-    if (commands.running == 0) {
-        self.person.edits += 1;
-        self.person.note(std.meta.activeTag(change));
-    }
     const track_pixels = pixi.perf.record and std.meta.activeTag(change) == .pixels;
     const pixel_slots: usize = if (track_pixels) switch (change) {
         .pixels => |p| p.indices.len,
         else => 0,
     } else 0;
     const t_hist: i128 = if (track_pixels) pixi.perf.nanoTimestamp() else 0;
-
-    if (self.redo_stack.items.len > 0) {
-        for (self.redo_stack.items) |*c| {
-            Change.deinit(c);
-        }
-        self.redo_stack.clearRetainingCapacity();
-    }
-    self.redo_ids.clearRetainingCapacity();
-
-    if (self.redo_layer_data_stack.items.len > 0) {
-        for (self.redo_layer_data_stack.items) |data| {
-            for (data) |layer| {
-                runtime.allocator().free(layer);
-            }
-            runtime.allocator().free(data);
-        }
-        self.redo_layer_data_stack.clearRetainingCapacity();
-    }
 
     // Equality check, don't append if equal
     var equal: bool = self.undo_stack.items.len > 0;
@@ -410,15 +385,24 @@ pub fn append(self: *History, change: Change) !void {
         } else equal = false;
     }
 
+    // The same change again is no step: nothing is reported, and redo is kept.
     if (equal) {
         var discard = change;
         Change.deinit(&discard);
     } else {
+        // A drawing still being shown drawn is finished before anything is recorded over it, and
+        // fizzy hears of every edit, to show the command that made it.
+        file.finishReveal();
+        runtime.state().host.documentEdited(file.id);
+        if (commands.running == 0) {
+            self.person.edits += 1;
+            self.person.note(std.meta.activeTag(change));
+        }
+        self.clearRedo();
         try self.undo_ids.ensureUnusedCapacity(runtime.allocator(), 1);
         try self.undo_stack.append(change);
         self.undo_ids.appendAssumeCapacity(self.next_id);
         self.next_id += 1;
-        self.bookmark += 1;
         self.version += 1;
         record(file, .added, self.undo_ids.getLast(), &self.undo_stack.items[self.undo_stack.items.len - 1]);
     }
@@ -517,8 +501,6 @@ pub fn undoRedo(self: *History, file: *pixi.internal.File, action: Action) !void
         }
         self.person.note(std.meta.activeTag(active_stack.items[active_stack.items.len - 1]));
     }
-
-    var temporary: bool = false;
 
     // Modify this change before its put into the other stack.
     var change = active_stack.pop().?;
@@ -669,8 +651,6 @@ pub fn undoRedo(self: *History, file: *pixi.internal.File, action: Action) !void
 
     switch (change) {
         .pixels => |*pixels| {
-            if (pixels.temporary) temporary = true;
-
             const layer_index = for (file.layers.slice().items(.id), 0..) |layer_id, i| {
                 if (layer_id == pixels.layer_id) break i;
             } else 0;
@@ -982,23 +962,13 @@ pub fn undoRedo(self: *History, file: *pixi.internal.File, action: Action) !void
         },
     }
 
-    if (!temporary) {
-        try other_ids.ensureUnusedCapacity(runtime.allocator(), 1);
-        try other_stack.append(change);
-        other_ids.appendAssumeCapacity(entry_id);
-        record(file, switch (action) {
-            .undo => .undone,
-            .redo => .redone,
-        }, entry_id, &other_stack.items[other_stack.items.len - 1]);
-    } else {
-        var discard = change;
-        Change.deinit(&discard);
-    }
-
-    self.bookmark += switch (action) {
-        .undo => -1,
-        .redo => 1,
-    };
+    try other_ids.ensureUnusedCapacity(runtime.allocator(), 1);
+    try other_stack.append(change);
+    other_ids.appendAssumeCapacity(entry_id);
+    record(file, switch (action) {
+        .undo => .undone,
+        .redo => .redone,
+    }, entry_id, &other_stack.items[other_stack.items.len - 1]);
 }
 
 /// One step of the history as `line` gives it: its id and what it did, as a person reads it.
@@ -1119,7 +1089,44 @@ pub fn restarted(file: *pixi.internal.File) void {
     if (host.recording(file.id)) host.recordStep(file.id, .{ .kind = .restarted, .id = 0 });
 }
 
+/// The id of the step on top, the last one applied; 0 when none is.
+pub fn top(self: *const History) u64 {
+    return self.undo_ids.getLastOrNull() orelse 0;
+}
+
+/// Drop the redo stack and the sprite as it was before each resize in it.
+fn clearRedo(self: *History) void {
+    for (self.redo_stack.items) |*c| Change.deinit(c);
+    self.redo_stack.clearRetainingCapacity();
+    self.redo_ids.clearRetainingCapacity();
+    freeSides(&self.redo_layer_data_stack, &self.redo_animation_data_stack, &self.redo_sprite_data_stack);
+}
+
+/// Free and empty one side's resize data (layers, animations, sprites): all three, always, so a
+/// resize's undo never takes another's.
+fn freeSides(
+    layers: *std.array_list.Managed([][][4]u8),
+    animations: *std.array_list.Managed([][]pixi.Animation.Frame),
+    sprites: *std.array_list.Managed([][2]f32),
+) void {
+    const gpa = runtime.allocator();
+    for (layers.items) |data| {
+        for (data) |layer| gpa.free(layer);
+        gpa.free(data);
+    }
+    layers.clearRetainingCapacity();
+    for (animations.items) |data| {
+        for (data) |frames| gpa.free(frames);
+        gpa.free(data);
+    }
+    animations.clearRetainingCapacity();
+    for (sprites.items) |data| gpa.free(data);
+    sprites.clearRetainingCapacity();
+}
+
 pub fn clearAndFree(self: *History) void {
+    freeSides(&self.undo_layer_data_stack, &self.undo_animation_data_stack, &self.undo_sprite_data_stack);
+    freeSides(&self.redo_layer_data_stack, &self.redo_animation_data_stack, &self.redo_sprite_data_stack);
     for (self.undo_stack.items) |*u| {
         Change.deinit(u);
     }
@@ -1134,6 +1141,8 @@ pub fn clearAndFree(self: *History) void {
 }
 
 pub fn clearRetainingCapacity(self: *History) void {
+    freeSides(&self.undo_layer_data_stack, &self.undo_animation_data_stack, &self.undo_sprite_data_stack);
+    freeSides(&self.redo_layer_data_stack, &self.redo_animation_data_stack, &self.redo_sprite_data_stack);
     for (self.undo_stack.items) |*u| {
         Change.deinit(u);
     }
@@ -1148,23 +1157,13 @@ pub fn clearRetainingCapacity(self: *History) void {
 }
 
 pub fn deinit(self: *History) void {
-    for (self.undo_layer_data_stack.items) |data| {
-        for (data) |layer| {
-            runtime.allocator().free(layer);
-        }
-        runtime.allocator().free(data);
-    }
-
-    for (self.redo_layer_data_stack.items) |data| {
-        for (data) |layer| {
-            runtime.allocator().free(layer);
-        }
-        runtime.allocator().free(data);
-    }
-
+    self.clearAndFree();
     self.undo_layer_data_stack.deinit();
     self.redo_layer_data_stack.deinit();
-    self.clearAndFree();
+    self.undo_animation_data_stack.deinit();
+    self.redo_animation_data_stack.deinit();
+    self.undo_sprite_data_stack.deinit();
+    self.redo_sprite_data_stack.deinit();
     self.undo_stack.deinit();
     self.redo_stack.deinit();
 }
