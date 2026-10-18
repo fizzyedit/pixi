@@ -250,6 +250,10 @@ pub const PixelEdit = struct {
     px: [][4]u8,
     /// What each written pixel held before the first write: what undo puts back.
     before: Buffers.Stroke,
+    /// Each pixel in the order it was first written, and the marks (`Reveal.Mark`) that order is
+    /// made of: what the reveal draws, tool by tool, and the recorded step's motion.
+    order: std.ArrayListUnmanaged(u32) = .empty,
+    marks: std.ArrayListUnmanaged(File.Reveal.Mark) = .empty,
 
     pub fn begin(file: *File, layer_index: usize) PixelEdit {
         const layer = file.layers.get(layer_index);
@@ -268,12 +272,22 @@ pub const PixelEdit = struct {
         return e.px[i];
     }
 
+    /// Start a mark made by `kind` of tool: the pixels written from here are its.
+    pub fn mark(e: *PixelEdit, kind: File.Reveal.Mark.Kind) void {
+        e.marks.append(runtime.allocator(), .{ .kind = kind, .len = 0 }) catch {};
+    }
+
     /// Write `c` at `x`,`y`; outside the canvas is skipped.
     pub fn put(e: *PixelEdit, x: i64, y: i64, c: [4]u8) void {
         const i = e.index(x, y) orelse return;
         if (std.mem.eql(u8, &e.px[i], &c)) return;
+        const fresh = !e.before.pixels.contains(i);
         e.before.append(i, e.px[i]) catch return;
         e.px[i] = c;
+        if (fresh and e.marks.items.len > 0) {
+            e.order.append(runtime.allocator(), @intCast(i)) catch return;
+            e.marks.items[e.marks.items.len - 1].len += 1;
+        }
     }
 
     fn index(e: *const PixelEdit, x: i64, y: i64) ?usize {
@@ -287,33 +301,54 @@ pub const PixelEdit = struct {
 
     /// Record what changed as one history entry, and show it being drawn (`File.Reveal`).
     pub fn commit(e: *PixelEdit) !void {
+        const gpa = runtime.allocator();
         defer e.before.pixels.deinit();
+        defer e.order.deinit(gpa);
+        defer e.marks.deinit(gpa);
         const n = e.changed();
         if (n == 0) return;
         var layer = e.file.layers.get(e.layer_index);
-        // What each pixel is now and was, before the history takes the record of it.
-        const gpa = runtime.allocator();
+        // What each pixel is now and was, in the order the marks made them, before the history
+        // takes the record of it.
         const drawn = try gpa.alloc(File.Reveal.Pixel, n);
         errdefer gpa.free(drawn);
         const was = try gpa.alloc([4]u8, n);
         defer gpa.free(was);
-        var it = e.before.pixels.iterator();
-        var i: usize = 0;
-        while (it.next()) |entry| : (i += 1) {
-            drawn[i] = .{ .index = @intCast(entry.key_ptr.*), .color = e.px[entry.key_ptr.*] };
-            was[i] = entry.value_ptr.*;
+        const marked = e.order.items.len == n;
+        if (marked) {
+            for (e.order.items, drawn, was) |idx, *d, *w| {
+                d.* = .{ .index = idx, .color = e.px[idx] };
+                w.* = e.before.pixels.get(idx).?;
+            }
+        } else {
+            var it = e.before.pixels.iterator();
+            var i: usize = 0;
+            while (it.next()) |entry| : (i += 1) {
+                drawn[i] = .{ .index = @intCast(entry.key_ptr.*), .color = e.px[entry.key_ptr.*] };
+                was[i] = entry.value_ptr.*;
+            }
         }
-        // Its recorded step says how long it shows being drawn, so a tape draws it too.
-        e.file.history.showing_ms = File.Reveal.writtenMs(n);
-        defer e.file.history.showing_ms = 0;
+        const marks = try gpa.dupe(File.Reveal.Mark, if (marked) e.marks.items else &.{});
+        errdefer gpa.free(marks);
+        // Its recorded step says how it was drawn and how long that takes, so a tape draws it too.
+        e.file.history.showing_ms = File.Reveal.writtenMs(if (marked) marks else &.{.{ .kind = .pen, .len = @intCast(n) }});
+        e.file.history.showing_order = if (marked) e.order.items else &.{};
+        e.file.history.showing_marks = marks;
+        defer {
+            e.file.history.showing_ms = 0;
+            e.file.history.showing_order = &.{};
+            e.file.history.showing_marks = &.{};
+        }
         try e.file.history.append(try e.before.toChange(layer.id));
-        e.file.editor.reveal = .begin(e.px, e.w, layer.id, drawn, was, dvui.frameTimeNS());
+        e.file.editor.reveal = .begin(e.px, e.w, layer.id, drawn, marks, was, dvui.frameTimeNS());
         e.show(&layer);
     }
 
     /// Put back everything written.
     pub fn rollback(e: *PixelEdit) void {
         defer e.before.pixels.deinit();
+        defer e.order.deinit(runtime.allocator());
+        defer e.marks.deinit(runtime.allocator());
         var it = e.before.pixels.iterator();
         while (it.next()) |entry| e.px[entry.key_ptr.*] = entry.value_ptr.*;
         var layer = e.file.layers.get(e.layer_index);

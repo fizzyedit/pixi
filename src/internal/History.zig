@@ -281,6 +281,10 @@ next_id: u64 = 1,
 /// its recorded step says so (`sdk.Step.ms`), and a tape replays it drawn at that pace rather than
 /// all at once. Set by whoever appends a revealed change, for that append only; 0 otherwise.
 showing_ms: u32 = 0,
+/// And how it shows being drawn, for that append's step (`steps.Motion`): its pixels in the order
+/// drawn, and the marks they make. Borrowed for the append; empty otherwise.
+showing_order: []const u32 = &.{},
+showing_marks: []const pixi.internal.File.Reveal.Mark = &.{},
 /// Moves whenever the line does: an entry added, undone or redone (`line`).
 version: u64 = 0,
 /// Going to a step (`goTo`): each undo and redo on the way is not announced by a toast of its own.
@@ -1062,6 +1066,34 @@ fn title(c: Change) []const u8 {
 /// layer, as both an append and an undo or redo leave them. Every other kind of change is not
 /// encoded yet, so it says the history started over: the track begins again from the sprite as
 /// it is after it, exactly, and the process before it stays on the track that ended.
+/// The appended change's motion (`showing_order`, `showing_marks`) over its pixels `indices`: each
+/// drawn pixel as its position among them sorted, as the step's effect holds them. Empty when
+/// there is none, or it does not cover them.
+fn motionOf(arena: std.mem.Allocator, history: *const History, indices: []const usize) []const u8 {
+    const order = history.showing_order;
+    const marks = history.showing_marks;
+    if (order.len != indices.len or marks.len == 0) return "";
+    const sorted = arena.dupe(usize, indices) catch return "";
+    std.mem.sort(usize, sorted, {}, std.sort.asc(usize));
+    const positions = arena.alloc(u32, order.len) catch return "";
+    for (order, positions) |idx, *p| {
+        p.* = @intCast(std.sort.binarySearch(usize, sorted, @as(usize, idx), struct {
+            fn cmp(key: usize, item: usize) std.math.Order {
+                return std.math.order(key, item);
+            }
+        }.cmp) orelse return "");
+    }
+    const kinds = arena.alloc(u8, marks.len) catch return "";
+    const lens = arena.alloc(u32, marks.len) catch return "";
+    for (marks, kinds, lens) |m, *k, *l| {
+        k.* = @intFromEnum(m.kind);
+        l.* = m.len;
+    }
+    var out: std.Io.Writer.Allocating = .init(arena);
+    steps.encodeMotion(arena, &out.writer, kinds, lens, positions) catch return "";
+    return out.written();
+}
+
 fn record(file: *pixi.internal.File, kind: sdk.Step.Kind, id: u64, change: *const Change) void {
     const host = runtime.state().host;
     if (!host.recording(file.id)) return;
@@ -1085,7 +1117,8 @@ fn record(file: *pixi.internal.File, kind: sdk.Step.Kind, id: u64, change: *cons
         // An append that is drawn as it lands says how long it takes (`showing_ms`); an undo or a
         // redo lands at once.
         const ms = if (kind == .added) file.history.showing_ms else 0;
-        return host.recordStep(file.id, .{ .kind = kind, .id = id, .effect = out.written(), .ms = ms });
+        const motion = if (kind == .added) motionOf(arena, &file.history, pixels.indices) else "";
+        return host.recordStep(file.id, .{ .kind = kind, .id = id, .effect = out.written(), .motion = motion, .ms = ms });
     }
     // A step not kept would leave the track behind the sprite, every later step written against
     // a sprite its replay never reaches: it starts again from the sprite instead.

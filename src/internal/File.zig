@@ -1442,7 +1442,7 @@ const state_version: u8 = 2;
 /// checked against the layer and written, an undo away like any edit. `show` draws it in as a
 /// hand would (`Reveal`), a replay at pace; otherwise it lands at once (a seek). A step that does
 /// not fit the sprite (another layer, other colours under it) is refused, the sprite as it was.
-pub fn applyStep(file: *File, effect: []const u8, show: bool) !void {
+pub fn applyStep(file: *File, effect: []const u8, motion: []const u8, show: bool) !void {
     const gpa = runtime.allocator();
     const step = try steps.decode(gpa, effect);
     defer step.deinit(gpa);
@@ -1466,9 +1466,30 @@ pub fn applyStep(file: *File, effect: []const u8, show: bool) !void {
         return err;
     };
     // In the history now, the step stays whatever else fails: drawn in, or at once without it.
+    // Drawn as it was made when the step says how (`steps.Motion`): mark by mark, each its tool's way.
     if (show and step.indices.len > 0) if (gpa.alloc(Reveal.Pixel, step.indices.len)) |drawn| {
-        for (drawn, step.indices, step.after) |*d, i, a| d.* = .{ .index = @intCast(i), .color = a };
-        file.editor.reveal = .begin(px, file.width(), layer.id, drawn, step.before, dvui.frameTimeNS());
+        const was = gpa.alloc([4]u8, step.indices.len) catch {
+            gpa.free(drawn);
+            return;
+        };
+        defer gpa.free(was);
+        var marks: []Reveal.Mark = &.{};
+        if (motion.len > 0) if (steps.decodeMotion(gpa, motion, step.indices.len)) |m| {
+            defer m.deinit(gpa);
+            if (gpa.alloc(Reveal.Mark, m.kinds.len)) |ms| {
+                for (ms, m.kinds, m.lens) |*mk, k, l| mk.* = .{ .kind = @enumFromInt(k), .len = l };
+                marks = ms;
+                for (m.positions, drawn, was) |p, *d, *w| {
+                    d.* = .{ .index = @intCast(step.indices[p]), .color = step.after[p] };
+                    w.* = step.before[p];
+                }
+            } else |_| {}
+        } else |_| {};
+        if (marks.len == 0) for (drawn, was, step.indices, step.before, step.after) |*d, *w, i, b, a| {
+            d.* = .{ .index = @intCast(i), .color = a };
+            w.* = b;
+        };
+        file.editor.reveal = .begin(px, file.width(), layer.id, drawn, marks, was, dvui.frameTimeNS());
     } else |_| {};
     layer.invalidate();
     file.editor.layer_composite_dirty = true;
