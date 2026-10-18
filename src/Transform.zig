@@ -26,7 +26,7 @@ ortho: bool = true,
 rendered_key: u64 = 0,
 
 pub fn point(self: *Transform, transform_point: TransformPoint) *dvui.Point {
-    return &self.data_points[@intFromEnum(transform_point)];
+    return &self.data_points[@backingInt(transform_point)];
 }
 
 /// Accepts the current transform and applies it to the currently selected layer

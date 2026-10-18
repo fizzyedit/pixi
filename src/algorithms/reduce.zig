@@ -46,7 +46,7 @@ pub fn anyOpaque(pixels: []const [4]u8) bool {
         const V = @Vector(vec_len, u32);
         // Alpha is byte 3 of each pixel: the high byte of the u32 on little-endian
         // targets, the low byte on big-endian.
-        const alpha_mask: V = @splat(switch (builtin.cpu.arch.endian()) {
+        const alpha_mask: V = @splat(switch (builtin.target.cpu.arch.endian()) {
             .little => 0xFF00_0000,
             .big => 0x0000_00FF,
         });

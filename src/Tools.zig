@@ -89,7 +89,7 @@ settings_popover: bool = false,
 settings_popover_tool: Tool = .pointer,
 settings_popover_from: dvui.Point.Natural = .{},
 
-stroke: Brush.Shape = .initEmpty(),
+stroke: Brush.Shape = .empty,
 /// `stroke` as offsets to stamp, rebuilt with it.
 brush: Brush = .{},
 gpa: std.mem.Allocator,

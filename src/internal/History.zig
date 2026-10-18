@@ -38,7 +38,7 @@ pub const Person = struct {
     edits: u32 = 0,
     undone: u32 = 0,
     redone: u32 = 0,
-    kinds: std.EnumSet(ChangeType) = .initEmpty(),
+    kinds: std.EnumSet(ChangeType) = .empty,
 
     pub fn any(p: Person) bool {
         return p.edits + p.undone + p.redone > 0;
@@ -212,7 +212,7 @@ pub const Change = union(ChangeType) {
                 .selected = 0,
             } },
             .layer_name => .{ .animation_name = .{
-                .name = [_:0]u8{0} ** pixi.max_name_len,
+                .name = &.{},
                 .index = 0,
             } },
             else => error.NotSupported,
@@ -1086,7 +1086,7 @@ fn motionOf(arena: std.mem.Allocator, history: *const History, indices: []const 
     const kinds = arena.alloc(u8, marks.len) catch return "";
     const lens = arena.alloc(u32, marks.len) catch return "";
     for (marks, kinds, lens) |m, *k, *l| {
-        k.* = @intFromEnum(m.kind);
+        k.* = @backingInt(m.kind);
         l.* = m.len;
     }
     var out: std.Io.Writer.Allocating = .init(arena);
