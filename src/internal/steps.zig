@@ -1,9 +1,10 @@
-//! A pixel change as a recorded step (`sdk.Step`, pixi's step format 1): what fizzy keeps of a
+//! A pixel change as a recorded step (`sdk.Step`, pixi's step format 2): what fizzy keeps of a
 //! stroke, a fill or a paste to replay it, exactly, anywhere (fizzy's `plans/RECORDING_PLAN.md`).
 //!
-//! The layer by id, then the pixels in index order. Every count and number LEB128:
+//! The layer by its position (0 the bottom), then the pixels in index order. Every count and
+//! number LEB128:
 //!
-//!   tag (1: pixels) · layer id · count · each index as its distance from the last (the first from
+//!   tag (1: pixels) · layer position · count · each index as its distance from the last (the first from
 //!   0) · the colours before, in runs · the colours after, in runs (a run: its length, then RGBA)
 //!
 //! Both sides are kept, so a step checks what it overwrites (`apply` refuses one whose "before"
@@ -13,20 +14,22 @@
 //! std-only, so it tests with `zig build test`.
 const std = @import("std");
 
-pub const format = 1;
+/// 2: the layer by its position. 1 named it by its id, which a sprite loaded from its file does
+/// not keep, so a tape's steps missed every layer but one; a format-1 step is refused, not misread.
+pub const format = 2;
 
 const Tag = enum(u8) { pixels = 1 };
 
 pub const Error = error{ BadStep, StepDoesNotApply } || std.mem.Allocator.Error;
 
-/// The pixels at `indices` of layer `layer_id`, going from `before` to `after` (all three the
+/// The pixels at `indices` of the layer at position `layer`, going from `before` to `after` (all three the
 /// same length, in any order), as a step. `gpa` orders them while it writes.
-pub fn encode(gpa: std.mem.Allocator, w: *std.Io.Writer, layer_id: u64, indices: []const usize, before: []const [4]u8, after: []const [4]u8) !void {
+pub fn encode(gpa: std.mem.Allocator, w: *std.Io.Writer, layer: u64, indices: []const usize, before: []const [4]u8, after: []const [4]u8) !void {
     const order = try indexOrder(gpa, indices);
     defer gpa.free(order);
 
     try w.writeByte(@intFromEnum(Tag.pixels));
-    try w.writeUleb128(layer_id);
+    try w.writeUleb128(layer);
     try w.writeUleb128(indices.len);
     var last: usize = 0;
     for (order) |o| {
@@ -96,9 +99,9 @@ fn runLen(order: []const u32, colors: []const [4]u8, at: usize) usize {
     return n;
 }
 
-/// A step read back: the layer, and its pixels as index, before, after.
+/// A step read back: the layer's position, and its pixels as index, before, after.
 pub const Pixels = struct {
-    layer_id: u64,
+    layer: u64,
     indices: []usize,
     before: [][4]u8,
     after: [][4]u8,
@@ -117,7 +120,7 @@ pub fn decode(gpa: std.mem.Allocator, bytes: []const u8) Error!Pixels {
     switch (tag) {
         .pixels => {},
     }
-    const layer_id = take(&r) catch return error.BadStep;
+    const layer = take(&r) catch return error.BadStep;
     const n = take(&r) catch return error.BadStep;
     // Each index takes a byte at least: a count past what is left is a lie, not a big step.
     if (n > bytes.len) return error.BadStep;
@@ -134,7 +137,7 @@ pub fn decode(gpa: std.mem.Allocator, bytes: []const u8) Error!Pixels {
     const after = try readRuns(gpa, &r, n);
     errdefer gpa.free(after);
     if (r.seek != bytes.len) return error.BadStep;
-    return .{ .layer_id = layer_id, .indices = indices, .before = before, .after = after };
+    return .{ .layer = layer, .indices = indices, .before = before, .after = after };
 }
 
 fn readRuns(gpa: std.mem.Allocator, r: *std.Io.Reader, n: usize) Error![][4]u8 {
@@ -170,10 +173,10 @@ pub fn apply(px: [][4]u8, step: Pixels) error{StepDoesNotApply}!void {
 
 const testing = std.testing;
 
-fn bytesOf(layer_id: u64, indices: []const usize, before: []const [4]u8, after: []const [4]u8) ![]u8 {
+fn bytesOf(layer: u64, indices: []const usize, before: []const [4]u8, after: []const [4]u8) ![]u8 {
     var out: std.Io.Writer.Allocating = .init(testing.allocator);
     defer out.deinit();
-    try encode(testing.allocator, &out.writer, layer_id, indices, before, after);
+    try encode(testing.allocator, &out.writer, layer, indices, before, after);
     return out.toOwnedSlice();
 }
 
@@ -191,7 +194,7 @@ test "a stroke is a few bytes a pixel, and lands as it was drawn" {
 
     const step = try decode(testing.allocator, bytes);
     defer step.deinit(testing.allocator);
-    try testing.expectEqual(@as(u64, 7), step.layer_id);
+    try testing.expectEqual(@as(u64, 7), step.layer);
     try apply(&px, step);
     for (indices) |i| try testing.expectEqualSlices(u8, &after[0], &px[i]);
     // Applied again, it finds the stroke where it expected nothing, and refuses.

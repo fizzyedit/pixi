@@ -1077,7 +1077,11 @@ fn record(file: *pixi.internal.File, kind: sdk.Step.Kind, id: u64, change: *cons
     encoded: {
         const after = arena.alloc([4]u8, pixels.indices.len) catch break :encoded;
         for (pixels.indices, after) |i, *a| a.* = px[i];
-        steps.encode(arena, &out.writer, pixels.layer_id, pixels.indices, pixels.values, after) catch break :encoded;
+        // By position, which a sprite loaded from its file keeps; its ids are new.
+        const position = for (file.layers.items(.id), 0..) |lid, i| {
+            if (lid == pixels.layer_id) break i;
+        } else break :encoded;
+        steps.encode(arena, &out.writer, position, pixels.indices, pixels.values, after) catch break :encoded;
         // An append that is drawn as it lands says how long it takes (`showing_ms`); an undo or a
         // redo lands at once.
         const ms = if (kind == .added) file.history.showing_ms else 0;

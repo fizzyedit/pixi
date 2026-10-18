@@ -1447,18 +1447,20 @@ pub fn applyStep(file: *File, effect: []const u8, show: bool) !void {
     const step = try steps.decode(gpa, effect);
     defer step.deinit(gpa);
     file.finishReveal();
-    var layer = file.getLayer(step.layer_id) orelse return error.StepDoesNotApply;
+    // By position: a sprite loaded from its file gives its layers new ids, but keeps their order.
+    if (step.layer >= file.layers.len) return error.StepDoesNotApply;
+    var layer = file.layers.get(@intCast(step.layer));
     const px = layer.pixels();
     try steps.apply(px, step);
     // A pixel change holds the colours before, as every one does: undo swaps them back. Kept out
     // of the history, the step would not undo: then it is taken back.
-    errdefer steps.apply(px, .{ .layer_id = step.layer_id, .indices = step.indices, .before = step.after, .after = step.before }) catch {};
+    errdefer steps.apply(px, .{ .layer = step.layer, .indices = step.indices, .before = step.after, .after = step.before }) catch {};
     const indices = try gpa.dupe(usize, step.indices);
     const values = gpa.dupe([4]u8, step.before) catch |err| {
         gpa.free(indices);
         return err;
     };
-    file.history.append(.{ .pixels = .{ .layer_id = step.layer_id, .indices = indices, .values = values } }) catch |err| {
+    file.history.append(.{ .pixels = .{ .layer_id = layer.id, .indices = indices, .values = values } }) catch |err| {
         gpa.free(indices);
         gpa.free(values);
         return err;
@@ -1466,7 +1468,7 @@ pub fn applyStep(file: *File, effect: []const u8, show: bool) !void {
     // In the history now, the step stays whatever else fails: drawn in, or at once without it.
     if (show and step.indices.len > 0) if (gpa.alloc(Reveal.Pixel, step.indices.len)) |drawn| {
         for (drawn, step.indices, step.after) |*d, i, a| d.* = .{ .index = @intCast(i), .color = a };
-        file.editor.reveal = .begin(px, file.width(), step.layer_id, drawn, step.before, dvui.frameTimeNS());
+        file.editor.reveal = .begin(px, file.width(), layer.id, drawn, step.before, dvui.frameTimeNS());
     } else |_| {};
     layer.invalidate();
     file.editor.layer_composite_dirty = true;
