@@ -303,6 +303,9 @@ pub const PixelEdit = struct {
             drawn[i] = .{ .index = @intCast(entry.key_ptr.*), .color = e.px[entry.key_ptr.*] };
             was[i] = entry.value_ptr.*;
         }
+        // Its recorded step says how long it shows being drawn, so a tape draws it too.
+        e.file.history.showing_ms = File.Reveal.writtenMs(n);
+        defer e.file.history.showing_ms = 0;
         try e.file.history.append(try e.before.toChange(layer.id));
         e.file.editor.reveal = .begin(e.px, e.w, layer.id, drawn, was, dvui.frameTimeNS());
         e.show(&layer);

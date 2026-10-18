@@ -28,6 +28,16 @@ duration_ns: i128,
 const rate = 600;
 /// The least a drawing takes, as written: a few pixels are still seen drawn.
 const min_ms = 120;
+/// The most, as written: a big drawing (a bucket filling the sky) still shows being drawn, without
+/// a hand's pace making it take half a minute. A fill is one click for a person.
+const max_ms = 2500;
+
+/// How long `n` pixels take to show being drawn, as written (before `core.motion`'s speed): at the
+/// hand's pace, within `min_ms` and `max_ms`. What a recorded step says it takes (`History`), so a
+/// tape draws it at the same pace.
+pub fn writtenMs(n: usize) u32 {
+    return @intCast(std.math.clamp(n * 1000 / rate, min_ms, max_ms));
+}
 /// Past this many, the order is row by row, back and forth, rather than nearest-next.
 const max_ordered = 4096;
 
@@ -37,7 +47,7 @@ const max_ordered = 4096;
 pub fn begin(px: [][4]u8, width: u32, layer_id: u64, pixels: []Pixel, before: []const [4]u8, now: i128) Reveal {
     for (pixels, before) |p, b| px[p.index] = b;
     order(pixels, width);
-    const written: u32 = @intCast(@max(min_ms, pixels.len * 1000 / rate));
+    const written = writtenMs(pixels.len);
     const ms = pixi.core.motion.durationMs(@floatFromInt(written));
     return .{
         .layer_id = layer_id,
@@ -114,4 +124,10 @@ fn order(pixels: []Pixel, width: u32) void {
         const ny = @divTrunc(@as(i64, pixels[i].index), w);
         dir = .{ nx - lx, ny - ly };
     }
+}
+
+test "a drawing shows at a hand's pace, a few pixels a beat, a big fill a few seconds" {
+    try std.testing.expectEqual(@as(u32, min_ms), writtenMs(3));
+    try std.testing.expectEqual(@as(u32, 1000), writtenMs(rate));
+    try std.testing.expectEqual(@as(u32, max_ms), writtenMs(128 * 128));
 }
