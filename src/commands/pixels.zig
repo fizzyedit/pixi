@@ -206,6 +206,12 @@ fn stampPixels(_: *anyopaque, args: Stamp.Args, call: *sdk.Command.Call) anyerro
 }
 
 fn apply(e: *PixelEdit, op: Op, call: *sdk.Command.Call) !void {
+    // Each op one mark, revealed the way its tool makes it.
+    e.mark(switch (op) {
+        .stroke, .line => .pen,
+        .fill => .bucket,
+        .rect, .ellipse, .clear => .shape,
+    });
     switch (op) {
         .fill => |f| {
             const c = try commands.color(f.color, call);

@@ -99,6 +99,111 @@ fn runLen(order: []const u32, colors: []const [4]u8, at: usize) usize {
     return n;
 }
 
+/// How a step was made (`sdk.Step.motion`): its marks in order, each a tool's kind and how many of
+/// its pixels it made, then every pixel as its position among the step's indices sorted (as the
+/// effect holds them). A pen mark's in the order it went; a bucket's and a shape's where it began
+/// and then the rest in index order, since the reveal orders those itself (`Reveal`).
+///
+///   version (1) · mark count · each: kind (a byte), length · positions (zigzag deltas for a pen,
+///   a first then ascending deltas for the others)
+pub const Motion = struct {
+    /// Kinds as `Reveal.Mark.Kind` numbers them.
+    kinds: []u8,
+    lens: []u32,
+    /// Positions into the step's sorted indices, in the marks' order.
+    positions: []u32,
+
+    pub fn deinit(self: Motion, gpa: std.mem.Allocator) void {
+        gpa.free(self.kinds);
+        gpa.free(self.lens);
+        gpa.free(self.positions);
+    }
+};
+
+const pen_kind = 0;
+
+/// Write `marks` (kind, length) over `positions` (into the step's sorted indices, mark by mark) as
+/// a step's motion.
+pub fn encodeMotion(gpa: std.mem.Allocator, w: *std.Io.Writer, kinds: []const u8, lens: []const u32, positions: []const u32) !void {
+    try w.writeByte(1);
+    try w.writeUleb128(kinds.len);
+    for (kinds, lens) |k, l| {
+        try w.writeByte(k);
+        try w.writeUleb128(l);
+    }
+    var at: usize = 0;
+    var prev: i64 = 0;
+    for (kinds, lens) |k, l| {
+        const part = positions[at..][0..l];
+        at += l;
+        if (l == 0) continue;
+        if (k == pen_kind) {
+            for (part) |p| {
+                const d = @as(i64, p) - prev;
+                try w.writeUleb128(@as(u64, @bitCast((d << 1) ^ (d >> 63))));
+                prev = p;
+            }
+        } else {
+            const d = @as(i64, part[0]) - prev;
+            try w.writeUleb128(@as(u64, @bitCast((d << 1) ^ (d >> 63))));
+            prev = part[0];
+            const rest = try gpa.dupe(u32, part[1..]);
+            defer gpa.free(rest);
+            std.mem.sort(u32, rest, {}, std.sort.asc(u32));
+            var last: u32 = 0;
+            for (rest) |p| {
+                try w.writeUleb128(p - last);
+                last = p;
+            }
+        }
+    }
+}
+
+/// Read a step's motion over its `n` pixels, checking it names each exactly once
+/// (`error.BadStep`). Owned by `gpa`.
+pub fn decodeMotion(gpa: std.mem.Allocator, bytes: []const u8, n: usize) Error!Motion {
+    var r: std.Io.Reader = .fixed(bytes);
+    if ((r.takeByte() catch return error.BadStep) != 1) return error.BadStep;
+    const count = take(&r) catch return error.BadStep;
+    if (count > bytes.len) return error.BadStep;
+    const kinds = try gpa.alloc(u8, count);
+    errdefer gpa.free(kinds);
+    const lens = try gpa.alloc(u32, count);
+    errdefer gpa.free(lens);
+    var total: usize = 0;
+    for (kinds, lens) |*k, *l| {
+        k.* = r.takeByte() catch return error.BadStep;
+        if (k.* > 2) return error.BadStep;
+        const len = take(&r) catch return error.BadStep;
+        if (len > n) return error.BadStep;
+        l.* = @intCast(len);
+        total += len;
+    }
+    if (total != n) return error.BadStep;
+    const positions = try gpa.alloc(u32, n);
+    errdefer gpa.free(positions);
+    const seen = try gpa.alloc(bool, n);
+    defer gpa.free(seen);
+    @memset(seen, false);
+    var at: usize = 0;
+    var prev: i64 = 0;
+    for (kinds, lens) |k, l| {
+        for (0..l) |j| {
+            const v = take(&r) catch return error.BadStep;
+            const p: i64 = if (k == pen_kind or j == 0) prev + (@as(i64, @intCast(v >> 1)) ^ -@as(i64, @intCast(v & 1))) else if (j == 1) @intCast(v) else @as(i64, positions[at - 1]) + @as(i64, @intCast(v));
+            if (p < 0 or p >= n) return error.BadStep;
+            const pu: u32 = @intCast(p);
+            if (seen[pu]) return error.BadStep;
+            seen[pu] = true;
+            positions[at] = pu;
+            at += 1;
+            if (k == pen_kind or j == 0) prev = p;
+        }
+    }
+    if (r.seek != bytes.len) return error.BadStep;
+    return .{ .kinds = kinds, .lens = lens, .positions = positions };
+}
+
 /// A step read back: the layer's position, and its pixels as index, before, after.
 pub const Pixels = struct {
     layer: u64,
@@ -273,4 +378,20 @@ test "a step out of the layer's bounds, or damaged, is an error, never a crash" 
         copy[r.uintLessThan(usize, copy.len)] ^= @as(u8, 1) << r.int(u3);
         if (decode(testing.allocator, copy)) |s| s.deinit(testing.allocator) else |_| {}
     }
+}
+
+test "a step's motion comes back as it went: a pen's path, a bucket's pour" {
+    var out: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer out.deinit();
+    const kinds = [_]u8{ 0, 1, 0 };
+    const lens = [_]u32{ 3, 4, 1 };
+    const positions = [_]u32{ 5, 4, 7, 2, 0, 6, 1, 3 };
+    try encodeMotion(testing.allocator, &out.writer, &kinds, &lens, &positions);
+    const m = try decodeMotion(testing.allocator, out.written(), 8);
+    defer m.deinit(testing.allocator);
+    try testing.expectEqualSlices(u8, &kinds, m.kinds);
+    try testing.expectEqualSlices(u32, &lens, m.lens);
+    // The pen's in order; the bucket's from where it began, then the rest in order.
+    try testing.expectEqualSlices(u32, &.{ 5, 4, 7, 2, 0, 1, 6, 3 }, m.positions);
+    try testing.expectError(error.BadStep, decodeMotion(testing.allocator, out.written(), 9));
 }

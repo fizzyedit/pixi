@@ -223,8 +223,8 @@ fn historyGoTo(_: *anyopaque, doc: DocHandle, id: u64) anyerror!void {
     try file.history.goTo(file, id);
 }
 
-fn applyStep(_: *anyopaque, doc: DocHandle, effect: []const u8, _: []const u8, ms: u32) anyerror!void {
-    try docFile(doc).applyStep(effect, ms > 0);
+fn applyStep(_: *anyopaque, doc: DocHandle, effect: []const u8, motion: []const u8, ms: u32) anyerror!void {
+    try docFile(doc).applyStep(effect, motion, ms > 0);
 }
 
 fn isDirty(_: *anyopaque, doc: DocHandle) bool {
