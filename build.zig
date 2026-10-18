@@ -80,4 +80,18 @@ pub fn build(b: *std.Build) void {
         }) });
         test_step.dependOn(&b.addRunArtifact(t).step);
     }
+    // The .pixi archive reader, with the vendored zip it reads through.
+    {
+        const module = b.createModule(.{
+            .root_source_file = b.path("src/fizzy_zip.zig"),
+            .target = b.graph.host,
+            .optimize = optimize,
+            .link_libc = true,
+        });
+        module.addImport("zip", b.createModule(.{ .root_source_file = b.path("src/deps/zip/zip.zig") }));
+        module.addIncludePath(b.path("src/deps/zip/src"));
+        module.addCSourceFile(.{ .file = b.path("src/deps/zip/src/zip.c"), .flags = &.{"-fno-sanitize=undefined"} });
+        module.addAnonymousImport("real.pixi", .{ .root_source_file = b.path("assets/src/misc.pixi") });
+        test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = module })).step);
+    }
 }

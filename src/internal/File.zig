@@ -16,6 +16,7 @@ const Animation = @import("Animation.zig");
 const pixi = @import("../pixi.zig");
 const plugin = @import("../../plugin.zig");
 const runtime = @import("../runtime.zig");
+const fizzy_zip = @import("../fizzy_zip.zig");
 
 const alpha_checkerboard_count: u32 = 8;
 
@@ -491,329 +492,122 @@ fn loadFizzyZip(path: []const u8, file_bytes: ?[]const u8) !?pixi.internal.File 
     if (!isFizzyExtension(std.fs.path.extension(path[0..path.len])))
         return error.InvalidExtension;
 
-    const null_terminated_path = if (file_bytes == null)
-        try runtime.allocator().dupeSentinel(u8, path, 0)
-    else
-        "";
-    defer if (file_bytes == null) runtime.allocator().free(null_terminated_path);
+    // Nothing in the archive is trusted: `fizzy_zip` turns every malformed one into an error.
+    const archive = if (file_bytes) |bytes| try fizzy_zip.Archive.openBytes(bytes) else open: {
+        const null_terminated_path = try runtime.allocator().dupeSentinel(u8, path, 0);
+        defer runtime.allocator().free(null_terminated_path);
+        break :open try fizzy_zip.Archive.openPath(null_terminated_path);
+    };
+    defer archive.close();
 
-    zip_open: {
-        const fizzy_file = if (file_bytes) |bytes|
-            zip.zip_stream_open(bytes.ptr, bytes.len, 0, 'r')
-        else
-            zip.zip_open(null_terminated_path.ptr, 0, 'r') orelse break :zip_open;
-        defer if (file_bytes != null) zip.zip_stream_close(fizzy_file) else zip.zip_close(fizzy_file);
+    const parsed = parsed: {
+        const content = archive.readData() orelse return error.FileLoadError;
+        defer fizzy_zip.freeEntry(content);
+        break :parsed try fizzy_zip.parseData(runtime.allocator(), content);
+    };
+    defer parsed.deinit();
+    const ext = parsed.value;
 
-        var buf: ?*anyopaque = null;
-        var size: usize = 0;
-        // Try the current entry name first, then fall back to the legacy `pixidata.json`
-        // so files saved by the pre-rename Pixi versions still load.
-        if (zip.zip_entry_open(fizzy_file, "fizzydata.json") != 0) {
-            _ = zip.zip_entry_open(fizzy_file, "pixidata.json");
-        }
-        _ = zip.zip_entry_read(fizzy_file, &buf, &size);
-        _ = zip.zip_entry_close(fizzy_file);
-        defer if (buf) |b| {
-            if (comptime @import("builtin").target.cpu.arch == .wasm32) {
-                zip.fizzy_zip_free(b);
-            } else {
-                std.c.free(b);
+    var internal: pixi.internal.File = .{
+        .id = runtime.state().host.allocDocId(),
+        .path = try runtime.allocator().dupe(u8, path),
+        .columns = ext.columns,
+        .rows = ext.rows,
+        .column_width = ext.column_width,
+        .row_height = ext.row_height,
+        .history = pixi.internal.File.History.init(runtime.allocator()),
+        .buffers = pixi.internal.File.Buffers.init(runtime.allocator()),
+    };
+
+    //Initialize editor layers and selected sprites
+    // .ptr: same as new-file init — GPU sync via invalidate / temp_gpu_dirty_rect + updateSubRect.
+    // .always would re-upload the full texture on every getTexture() (e.g. sprite panel reflection).
+    internal.editor.temporary_layer = try .init(internal.newLayerID(), "Temporary", internal.width(), internal.height(), .{ .r = 0, .g = 0, .b = 0, .a = 0 }, .ptr);
+    internal.editor.selection_layer = try .init(internal.newLayerID(), "Selection", internal.width(), internal.height(), .{ .r = 0, .g = 0, .b = 0, .a = 0 }, .ptr);
+    internal.editor.transform_layer = try .init(internal.newLayerID(), "Transform", internal.width(), internal.height(), .{ .r = 0, .g = 0, .b = 0, .a = 0 }, .ptr);
+    errdefer internal.deinit();
+    internal.editor.selected_sprites = try std.DynamicBitSet.initEmpty(runtime.allocator(), internal.spriteCount());
+
+    internal.editor.checkerboard = try std.DynamicBitSet.initEmpty(runtime.allocator(), internal.width() * internal.height());
+    // Create a layer-sized checkerboard pattern for selection tools
+    for (0..internal.width() * internal.height()) |i| {
+        const value = pixi.math.checker(.{ .w = @floatFromInt(internal.width()), .h = @floatFromInt(internal.height()) }, i);
+        internal.editor.checkerboard.setValue(i, value);
+    }
+
+    var set_layer_index: bool = false;
+    for (ext.layers) |l| {
+        const layer_image_name = try std.fmt.allocPrintSentinel(runtime.allocator(), "{s}.layer", .{l.name}, 0);
+        defer runtime.allocator().free(layer_image_name);
+        const png_image_name = try std.fmt.allocPrintSentinel(runtime.allocator(), "{s}.png", .{l.name}, 0);
+        defer runtime.allocator().free(png_image_name);
+
+        var new_layer: Layer = if (archive.readEntry(layer_image_name)) |data| layer: { // Read layer file as directly pixels
+            defer fizzy_zip.freeEntry(data);
+            const pixel_count = internal.width() * internal.height();
+            if (data.len != pixel_count * @sizeOf(dvui.Color.PMA)) return error.FileLoadError;
+            break :layer try .fromPixelsPMA(
+                internal.newLayerID(),
+                l.name,
+                @as([*]dvui.Color.PMA, @ptrCast(@alignCast(data.ptr)))[0..pixel_count],
+                internal.width(),
+                internal.height(),
+                .ptr,
+            );
+        } else if (archive.readEntry(png_image_name)) |data| layer: { // Read the layer file as PNG file
+            defer fizzy_zip.freeEntry(data);
+            var png_layer: Layer = try .fromImageFileBytes(internal.newLayerID(), l.name, data, .ptr);
+            const s = png_layer.size();
+            if (s.w != @as(f32, @floatFromInt(internal.width())) or s.h != @as(f32, @floatFromInt(internal.height()))) {
+                png_layer.deinit();
+                return error.FileLoadError;
             }
+            break :layer png_layer;
+        } else continue;
+
+        new_layer.visible = l.visible;
+        new_layer.collapse = l.collapse;
+
+        new_layer.setMaskFromTransparency(true);
+
+        internal.layers.append(runtime.allocator(), new_layer) catch {
+            new_layer.deinit();
+            return error.FileLoadError;
         };
 
-        const content: []const u8 = if (buf) |b| @as([*]const u8, @ptrCast(b))[0..size] else "";
-
-        const options = std.json.ParseOptions{
-            .duplicate_field_behavior = .use_first,
-            .ignore_unknown_fields = true,
-        };
-
-        var try_parse: ?std.json.Parsed(pixi.File) = null;
-        try_parse = std.json.parseFromSlice(pixi.File, runtime.allocator(), content, options) catch null;
-
-        var ext: pixi.File = if (try_parse) |parsed| parsed.value else undefined;
-
-        if (try_parse == null) {
-            // If we are here, we have tried to load the file but hit an issue because the old animation format
-            if (std.json.parseFromSlice(pixi.File.FileV3, runtime.allocator(), content, options) catch null) |old_file| {
-                std.log.info("Loading file v3: {s}", .{path});
-                const animations = try runtime.allocator().alloc(pixi.Animation, old_file.value.animations.len);
-                for (animations, old_file.value.animations) |*animation, old_animation| {
-                    animation.name = try runtime.allocator().dupe(u8, old_animation.name);
-                    animation.frames = try runtime.allocator().alloc(Animation.Frame, old_animation.frames.len);
-                    for (animation.frames, old_animation.frames) |*frame, old_frame| {
-                        frame.sprite_index = old_frame;
-                        frame.ms = @intFromFloat(1000 / old_animation.fps);
-                    }
-                }
-
-                ext = .{
-                    .version = old_file.value.version,
-                    .columns = old_file.value.columns,
-                    .rows = old_file.value.rows,
-                    .column_width = old_file.value.column_width,
-                    .row_height = old_file.value.row_height,
-                    .layers = old_file.value.layers,
-                    .sprites = old_file.value.sprites,
-                    .animations = animations,
-                };
-            } else if (std.json.parseFromSlice(pixi.File.FileV2, runtime.allocator(), content, options) catch null) |old_file| {
-                std.log.info("Loading file v2: {s}", .{path});
-                const animations = try runtime.allocator().alloc(pixi.Animation, old_file.value.animations.len);
-                for (animations, old_file.value.animations) |*animation, old_animation| {
-                    animation.name = try runtime.allocator().dupe(u8, old_animation.name);
-                    animation.frames = try runtime.allocator().alloc(Animation.Frame, old_animation.frames.len);
-                    for (animation.frames, old_animation.frames) |*frame, old_frame| {
-                        frame.sprite_index = old_frame;
-                        frame.ms = @intFromFloat(1000 / old_animation.fps);
-                    }
-                }
-
-                ext = .{
-                    .version = old_file.value.version,
-                    .columns = @divExact(old_file.value.width, old_file.value.tile_width),
-                    .rows = @divExact(old_file.value.height, old_file.value.tile_height),
-                    .column_width = old_file.value.tile_width,
-                    .row_height = old_file.value.tile_height,
-                    .layers = old_file.value.layers,
-                    .sprites = old_file.value.sprites,
-                    .animations = animations,
-                };
-            } else if (std.json.parseFromSlice(pixi.File.FileV1, runtime.allocator(), content, options) catch null) |old_file| {
-                std.log.info("Loading file v1: {s}", .{path});
-                const animations = try runtime.allocator().alloc(pixi.Animation, old_file.value.animations.len);
-                for (animations, 0..) |*animation, i| {
-                    animation.name = try runtime.allocator().dupe(u8, old_file.value.animations[i].name);
-                    animation.frames = try runtime.allocator().alloc(Animation.Frame, old_file.value.animations[i].length);
-                    for (animation.frames, 0..old_file.value.animations[i].length) |*frame, j| {
-                        frame.sprite_index = old_file.value.animations[i].start + j;
-                        frame.ms = @intFromFloat(1000 / old_file.value.animations[i].fps);
-                    }
-                }
-
-                ext = .{
-                    .version = old_file.value.version,
-                    .columns = @divExact(old_file.value.width, old_file.value.tile_width),
-                    .rows = @divExact(old_file.value.height, old_file.value.tile_height),
-                    .column_width = old_file.value.tile_width,
-                    .row_height = old_file.value.tile_height,
-                    .layers = old_file.value.layers,
-                    .sprites = old_file.value.sprites,
-                    .animations = animations,
-                };
-            }
+        // The index among the layers that loaded: a layer with no image entry is skipped.
+        if (l.visible and !set_layer_index) {
+            internal.selected_layer_index = internal.layers.len - 1;
+            set_layer_index = true;
         }
+    }
+    // A document with no layers has nothing to draw on.
+    if (internal.layers.len == 0) return error.FileLoadError;
 
-        defer if (try_parse) |parsed| parsed.deinit();
-
-        //defer parsed.deinit();
-
-        var internal: pixi.internal.File = .{
-            .id = runtime.state().host.allocDocId(),
-            .path = try runtime.allocator().dupe(u8, path),
-            .columns = ext.columns,
-            .rows = ext.rows,
-            .column_width = ext.column_width,
-            .row_height = ext.row_height,
-            .history = pixi.internal.File.History.init(runtime.allocator()),
-            .buffers = pixi.internal.File.Buffers.init(runtime.allocator()),
-        };
-
-        //Initialize editor layers and selected sprites
-        // .ptr: same as new-file init — GPU sync via invalidate / temp_gpu_dirty_rect + updateSubRect.
-        // .always would re-upload the full texture on every getTexture() (e.g. sprite panel reflection).
-        internal.editor.temporary_layer = try .init(internal.newLayerID(), "Temporary", internal.width(), internal.height(), .{ .r = 0, .g = 0, .b = 0, .a = 0 }, .ptr);
-        internal.editor.selection_layer = try .init(internal.newLayerID(), "Selection", internal.width(), internal.height(), .{ .r = 0, .g = 0, .b = 0, .a = 0 }, .ptr);
-        internal.editor.transform_layer = try .init(internal.newLayerID(), "Transform", internal.width(), internal.height(), .{ .r = 0, .g = 0, .b = 0, .a = 0 }, .ptr);
-        internal.editor.selected_sprites = try std.DynamicBitSet.initEmpty(runtime.allocator(), internal.spriteCount());
-
-        internal.editor.checkerboard = try std.DynamicBitSet.initEmpty(runtime.allocator(), internal.width() * internal.height());
-        // Create a layer-sized checkerboard pattern for selection tools
-        for (0..internal.width() * internal.height()) |i| {
-            const value = pixi.math.checker(.{ .w = @floatFromInt(internal.width()), .h = @floatFromInt(internal.height()) }, i);
-            internal.editor.checkerboard.setValue(i, value);
-        }
-
-        var set_layer_index: bool = false;
-        for (ext.layers, 0..) |l, i| {
-            const layer_image_name = std.fmt.allocPrintSentinel(runtime.allocator(), "{s}.layer", .{l.name}, 0) catch "Memory Allocation Failed";
-            defer runtime.allocator().free(layer_image_name);
-            const png_image_name = std.fmt.allocPrintSentinel(runtime.allocator(), "{s}.png", .{l.name}, 0) catch "Memory Allocation Failed";
-            defer runtime.allocator().free(png_image_name);
-
-            var img_buf: ?*anyopaque = null;
-            var img_len: usize = 0;
-
-            if (zip.zip_entry_open(fizzy_file, layer_image_name.ptr) == 0) { // Read layer file as directly pixels
-                _ = zip.zip_entry_read(fizzy_file, &img_buf, &img_len);
-                const data = img_buf orelse continue;
-
-                var new_layer: Layer = try .fromPixelsPMA(
-                    internal.newLayerID(),
-                    l.name,
-                    @as([*]dvui.Color.PMA, @ptrCast(@constCast(data)))[0..(internal.width() * internal.height())],
-                    internal.width(),
-                    internal.height(),
-                    .ptr,
-                );
-
-                new_layer.visible = l.visible;
-                new_layer.collapse = l.collapse;
-
-                new_layer.setMaskFromTransparency(true);
-
-                internal.layers.append(runtime.allocator(), new_layer) catch return error.FileLoadError;
-
-                if (l.visible and !set_layer_index) {
-                    internal.selected_layer_index = i;
-                    set_layer_index = true;
-                }
-            } else if (zip.zip_entry_open(fizzy_file, png_image_name.ptr) == 0) { // Read the layer file as PNG file
-                _ = zip.zip_entry_read(fizzy_file, &img_buf, &img_len);
-                const data = img_buf orelse continue;
-
-                var new_layer: Layer = try .fromImageFileBytes(
-                    internal.newLayerID(),
-                    l.name,
-                    @as([*]u8, @ptrCast(data))[0..img_len],
-                    .ptr,
-                );
-
-                new_layer.visible = l.visible;
-                new_layer.collapse = l.collapse;
-
-                new_layer.setMaskFromTransparency(true);
-
-                internal.layers.append(runtime.allocator(), new_layer) catch return error.FileLoadError;
-
-                if (l.visible and !set_layer_index) {
-                    internal.selected_layer_index = i;
-                    set_layer_index = true;
-                }
-            }
-
-            _ = zip.zip_entry_close(fizzy_file);
-        }
-        _ = zip.zip_entry_close(fizzy_file);
-
-        for (0..internal.spriteCount()) |sprite_index| {
-            if (sprite_index >= ext.sprites.len) {
-                internal.sprites.append(runtime.allocator(), .{
-                    .origin = .{ 0, 0 },
-                }) catch return error.FileLoadError;
-            } else {
-                internal.sprites.append(runtime.allocator(), .{
-                    .origin = .{ ext.sprites[sprite_index].origin[0], ext.sprites[sprite_index].origin[1] },
-                }) catch return error.FileLoadError;
-            }
-        }
-
-        for (ext.animations) |animation| {
-            internal.animations.append(runtime.allocator(), .{
-                .id = internal.newAnimationID(),
-                .name = try runtime.allocator().dupe(u8, animation.name),
-                .frames = try runtime.allocator().dupe(Animation.Frame, animation.frames),
+    for (0..internal.spriteCount()) |sprite_index| {
+        if (sprite_index >= ext.sprites.len) {
+            internal.sprites.append(runtime.allocator(), .{
+                .origin = .{ 0, 0 },
+            }) catch return error.FileLoadError;
+        } else {
+            internal.sprites.append(runtime.allocator(), .{
+                .origin = .{ ext.sprites[sprite_index].origin[0], ext.sprites[sprite_index].origin[1] },
             }) catch return error.FileLoadError;
         }
-        return internal;
     }
-    // { // Loading TAR experiment
-    //     var file_name_buffer: [std.fs.max_path_bytes]u8 = undefined;
-    //     var link_name_buffer: [std.fs.max_path_bytes]u8 = undefined;
 
-    //     if (pixi.fs.read(runtime.allocator(), path) catch null) |file_bytes| {
-    //         std.log.debug("Read file bytes!", .{});
-    //         var input = std.io.fixedBufferStream(file_bytes);
-    //         var iter = std.tar.iterator(input.reader(), .{
-    //             .file_name_buffer = &file_name_buffer,
-    //             .link_name_buffer = &link_name_buffer,
-    //         });
-
-    //         var json_content = std.array_list.Managed(u8).init(runtime.allocator());
-    //         defer json_content.deinit();
-
-    //         while (try iter.next()) |entry| {
-    //             const ext = std.fs.path.extension(entry.name);
-    //             if (std.ascii.eqlIgnoreCase(ext, ".json")) {
-    //                 entry.writeAll(json_content.writer()) catch return error.FileLoadError;
-    //             }
-    //         }
-
-    //         const options = std.json.ParseOptions{
-    //             .duplicate_field_behavior = .use_first,
-    //             .ignore_unknown_fields = true,
-    //         };
-
-    //         if (std.json.parseFromSlice(pixi.File, runtime.allocator(), json_content.items, options) catch null) |parsed| {
-    //             defer parsed.deinit();
-
-    //             std.log.debug("Parsed fizzydata.json!", .{});
-
-    //             const ext = parsed.value;
-
-    //             var internal: pixi.internal.File = .{
-    //                 .id = runtime.state().host.allocDocId(),
-    //                 .path = try runtime.allocator().dupe(u8, path),
-    //                 .width = ext.width,
-    //                 .height = ext.height,
-    //                 .tile_width = ext.tile_width,
-    //                 .tile_height = ext.tile_height,
-    //                 .history = pixi.internal.File.History.init(runtime.allocator()),
-    //                 .buffers = pixi.internal.File.Buffers.init(runtime.allocator()),
-    //                 .checkerboard = pixi.image.init(
-    //                     ext.tile_width * 2,
-    //                     ext.tile_height * 2,
-    //                     .{ .r = 0, .g = 0, .b = 0, .a = 0 },
-    //                     .ptr,
-    //                 ) catch return error.LayerCreateError,
-    //                 .temporary_layer = undefined,
-    //                 .selection_layer = undefined,
-    //                 .selected_sprites = try std.DynamicBitSet.initEmpty(
-    //                     runtime.allocator(),
-    //                     @divExact(ext.width, ext.tile_width) * @divExact(ext.height, ext.tile_height),
-    //                 ),
-    //             };
-
-    //             internal.temporary_layer = try .init(internal.newID(), "Temporary", internal.width, internal.height, .{ .r = 0, .g = 0, .b = 0, .a = 0 }, .always);
-
-    //             for (ext.layers, 0..) |ext_layer, i| {
-    //                 const layer_image_name = std.fmt.allocPrintZ(dvui.currentWindow().arena(), "{s}.layer", .{ext_layer.name}) catch "Memory Allocation Failed";
-
-    //                 if (ext_layer.visible) {
-    //                     internal.selected_layer_index = i;
-    //                 }
-
-    //                 iter = std.tar.iterator(input.reader(), .{
-    //                     .file_name_buffer = &file_name_buffer,
-    //                     .link_name_buffer = &link_name_buffer,
-    //                 });
-
-    //                 while (iter.next() catch null) |entry| {
-    //                     std.log.debug("Entry name: {s}", .{entry.name});
-
-    //                     if (std.mem.eql(u8, entry.name, layer_image_name)) {
-    //                         var layer_content = std.array_list.Managed(u8).init(runtime.allocator());
-    //                         try entry.writeAll(layer_content.writer());
-
-    //                         var cond: ?pixi.Layer = pixi.Layer.fromPixels(internal.newID(), runtime.allocator().dupe(u8, ext_layer.name) catch ext_layer.name, layer_content.items, ext.width, ext.height, .ptr) catch null;
-
-    //                         if (cond) |*new_layer| {
-    //                             new_layer.visible = ext_layer.visible;
-    //                             new_layer.collapse = ext_layer.collapse;
-    //                             internal.layers.append(runtime.allocator(), new_layer.*) catch return error.FileLoadError;
-    //                         } else {
-    //                             std.log.err("Failed to create layer from pixels", .{});
-    //                         }
-    //                     }
-    //                 }
-    //             }
-
-    //             return internal;
-    //         }
-    //     }
-    // }
-
-    return error.FileLoadError;
+    for (ext.animations) |animation| {
+        const name = try runtime.allocator().dupe(u8, animation.name);
+        errdefer runtime.allocator().free(name);
+        const frames = try runtime.allocator().dupe(Animation.Frame, animation.frames);
+        errdefer runtime.allocator().free(frames);
+        internal.animations.append(runtime.allocator(), .{
+            .id = internal.newAnimationID(),
+            .name = name,
+            .frames = frames,
+        }) catch return error.FileLoadError;
+    }
+    return internal;
 }
 
 pub fn isFlatImageExtension(ext: []const u8) bool {
