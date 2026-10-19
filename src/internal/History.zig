@@ -289,6 +289,14 @@ showing_marks: []const pixi.internal.File.Reveal.Mark = &.{},
 version: u64 = 0,
 /// Going to a step (`goTo`): each undo and redo on the way is not announced by a toast of its own.
 quiet: bool = false,
+/// Who last went back (`undoRedo`'s undo): the steps an edit after it adds for the jump are theirs
+/// (`keepGoneBack`).
+went_back_by: sdk.Host.Acting = .{},
+/// While `keepGoneBack` puts steps back on the line: its undos and redos are not the person's.
+keeping: bool = false,
+/// A step that takes another back, added by an edit after going back (`keepGoneBack`): its id, and
+/// the step the jump went back to (0 before the first). How the timeline titles it.
+back_to: std.AutoHashMapUnmanaged(u64, u64) = .empty,
 
 pub fn init(allocator: std.mem.Allocator) History {
     return .{
@@ -406,9 +414,10 @@ pub fn append(self: *History, change: Change) !void {
             self.person.edits += 1;
             self.person.note(std.meta.activeTag(change));
         }
-        self.clearRedo();
+        var landing = change;
+        self.keepGoneBack(file, &landing);
         try self.undo_ids.ensureUnusedCapacity(runtime.allocator(), 1);
-        try self.undo_stack.append(change);
+        try self.undo_stack.append(landing);
         self.undo_ids.appendAssumeCapacity(self.next_id);
         self.next_id += 1;
         self.version += 1;
@@ -502,7 +511,8 @@ pub fn undoRedo(self: *History, file: *pixi.internal.File, action: Action) !void
 
     if (active_stack.items.len == 0) return;
     defer runtime.state().host.documentEdited(file.id);
-    if (commands.running == 0) {
+    if (action == .undo and !self.keeping) self.went_back_by = runtime.state().host.acted();
+    if (commands.running == 0 and !self.keeping) {
         switch (action) {
             .undo => self.person.undone += 1,
             .redo => self.person.redone += 1,
@@ -657,7 +667,21 @@ pub fn undoRedo(self: *History, file: *pixi.internal.File, action: Action) !void
         id_mutex.mutex.unlock(dvui.io);
     };
 
-    switch (change) {
+    try self.applyChange(file, &change, action);
+    try other_ids.ensureUnusedCapacity(runtime.allocator(), 1);
+    try other_stack.append(change);
+    other_ids.appendAssumeCapacity(entry_id);
+    record(file, switch (action) {
+        .undo => .undone,
+        .redo => .redone,
+    }, entry_id, &other_stack.items[other_stack.items.len - 1]);
+}
+
+/// Apply `change` to `file` in place, as an undo or a redo of it: what `undoRedo` does between
+/// taking a change off one stack and putting it on the other. Most kinds swap their values with
+/// the sprite's, so the change comes out holding what it took back (`symmetric`).
+fn applyChange(self: *History, file: *pixi.internal.File, change: *Change, action: Action) !void {
+    switch (change.*) {
         .pixels => |*pixels| {
             const layer_index = for (file.layers.slice().items(.id), 0..) |layer_id, i| {
                 if (layer_id == pixels.layer_id) break i;
@@ -969,14 +993,6 @@ pub fn undoRedo(self: *History, file: *pixi.internal.File, action: Action) !void
             gl.* = fresh;
         },
     }
-
-    try other_ids.ensureUnusedCapacity(runtime.allocator(), 1);
-    try other_stack.append(change);
-    other_ids.appendAssumeCapacity(entry_id);
-    record(file, switch (action) {
-        .undo => .undone,
-        .redo => .redone,
-    }, entry_id, &other_stack.items[other_stack.items.len - 1]);
 }
 
 /// One step of the history as `line` gives it: its id and what it did, as a person reads it.
@@ -992,6 +1008,14 @@ pub fn line(self: *const History, arena: std.mem.Allocator) ![]Step {
     const out = try arena.alloc(Step, n_undo + n_redo);
     for (self.undo_ids.items[0..n_undo], self.undo_stack.items[0..n_undo], 0..) |id, c, i| out[i] = .{ .id = id, .title = title(c) };
     for (self.redo_ids.items[0..n_redo], self.redo_stack.items[0..n_redo], 0..) |id, c, i| out[out.len - 1 - i] = .{ .id = id, .title = title(c) };
+    // A step of a jump back reads as the move it is part of: "Back to Draw".
+    if (self.back_to.count() > 0) for (out) |*st| {
+        const to = self.back_to.get(st.id) orelse continue;
+        const what = if (to == 0) "the Start" else for (self.undo_ids.items[0..n_undo], self.undo_stack.items[0..n_undo]) |id, c| {
+            if (id == to) break title(c);
+        } else "an Earlier Step";
+        st.title = try std.fmt.allocPrint(arena, "Back to {s}", .{what});
+    };
     return out;
 }
 
@@ -1016,18 +1040,11 @@ pub fn goTo(self: *History, file: *pixi.internal.File, id: u64) !void {
     const n = self.stepsTo(id) orelse return error.NoSuchStep;
     if (n == 0) return;
     if (@import("../commands.zig").personBusy(file)) return error.PersonBusy;
-    const host = runtime.state().host;
-    const layer = file.selected_layer_index;
-    var sidebar_buf: [128]u8 = undefined;
-    const sidebar: ?[]const u8 = if (host.selectionFor(sdk.keywords.ide.sidebar)) |v| if (v.len <= sidebar_buf.len) blk: {
-        @memcpy(sidebar_buf[0..v.len], v);
-        break :blk sidebar_buf[0..v.len];
-    } else null else null;
+    var held: Held = .take(file);
     self.quiet = true;
     defer {
         self.quiet = false;
-        if (layer < file.layers.len) file.selected_layer_index = layer;
-        if (sidebar) |v| host.setSelectionFor(sdk.keywords.ide.sidebar, v);
+        held.put(file);
     }
     const back: Action = if (n < 0) .redo else .undo;
     for (0..@abs(n)) |done| {
@@ -1037,6 +1054,118 @@ pub fn goTo(self: *History, file: *pixi.internal.File, id: u64) !void {
             return err;
         };
     }
+}
+
+/// The person's layer and sidebar, kept across steps taken on their behalf (`goTo`,
+/// `keepGoneBack`): the sprite's view stays where they left it, not wherever each step on the way
+/// would put it.
+const Held = struct {
+    layer: usize,
+    sidebar_buf: [128]u8 = undefined,
+    sidebar_len: ?usize = null,
+
+    fn take(file: *const pixi.internal.File) Held {
+        var held: Held = .{ .layer = file.selected_layer_index };
+        if (runtime.state().host.selectionFor(sdk.keywords.ide.sidebar)) |v| if (v.len <= held.sidebar_buf.len) {
+            @memcpy(held.sidebar_buf[0..v.len], v);
+            held.sidebar_len = v.len;
+        };
+        return held;
+    }
+
+    fn put(self: *const Held, file: *pixi.internal.File) void {
+        if (self.layer < file.layers.len) file.selected_layer_index = self.layer;
+        if (self.sidebar_len) |n| runtime.state().host.setSelectionFor(sdk.keywords.ide.sidebar, self.sidebar_buf[0..n]);
+    }
+};
+
+/// Going back is a step (`plans/HISTORY_TIMELINE_PLAN.md`): before `edit`, an edit landing after
+/// going back, goes on the line, the steps gone back over (the redo stack) go back on it as they
+/// were, then each one's reverse, newest first, made by whoever went back. The sprite is where it
+/// was gone back to, under `edit`, and nothing on the line is lost.
+///
+/// `edit` is already on the sprite, and the steps gone back over were made without it, so it comes
+/// off for the while (its swap undone) and goes back on after. Only kinds that swap their values
+/// the same way either way can come off and be reversed like this (`cloneChange`); with any other
+/// in play, the steps gone back over are dropped as they always were. A resize, a deleted or
+/// restored layer or animation, a merge, a cell reorder and a grid change each pair with stacks
+/// beside the history or act by direction: `cloneChange` is where they would join.
+fn keepGoneBack(self: *History, file: *pixi.internal.File, edit: *Change) void {
+    const n = self.redo_stack.items.len;
+    if (n == 0) return;
+    const takeable = symmetric(edit.*) and for (self.redo_stack.items) |c| {
+        if (!symmetric(c)) break false;
+    } else true;
+    if (!takeable) return self.clearRedo();
+
+    const host = runtime.state().host;
+    const back_to = self.top();
+    var held: Held = .take(file);
+    self.keeping = true;
+    self.quiet = true;
+    const outer = host.actAgain(self.went_back_by);
+    defer {
+        host.endAct(outer);
+        self.keeping = false;
+        self.quiet = false;
+        held.put(file);
+    }
+    self.applyChange(file, edit, .undo) catch |err| {
+        std.log.err("pixi: the steps gone back over were dropped: {t}", .{err});
+        return self.clearRedo();
+    };
+    defer self.applyChange(file, edit, .redo) catch |err| std.log.err("pixi: an edit after going back did not land again: {t}", .{err});
+
+    const base = self.undo_stack.items.len;
+    for (0..n) |_| self.undoRedo(file, .redo) catch |err| {
+        std.log.err("pixi: a step gone back over did not come back: {t}", .{err});
+        break;
+    };
+    // Each step brought back, newest first, taken back again as a step of its own: a copy of it
+    // undone, which leaves the copy holding what undoing it would put back.
+    var j = self.undo_stack.items.len;
+    while (j > base) {
+        j -= 1;
+        var reverse = (cloneChange(self.undo_stack.items[j]) catch null) orelse break;
+        self.applyChange(file, &reverse, .undo) catch |err| {
+            std.log.err("pixi: a step gone back over was not taken back: {t}", .{err});
+            Change.deinit(&reverse);
+            break;
+        };
+        self.undo_ids.ensureUnusedCapacity(runtime.allocator(), 1) catch break;
+        self.undo_stack.append(reverse) catch break;
+        const id = self.next_id;
+        self.undo_ids.appendAssumeCapacity(id);
+        self.next_id += 1;
+        self.back_to.put(runtime.allocator(), id, back_to) catch {};
+        self.version += 1;
+        record(file, .added, id, &self.undo_stack.items[self.undo_stack.items.len - 1]);
+    }
+}
+
+/// Whether `c` swaps its values with the sprite's the same way for an undo as for a redo, so a copy
+/// of it can be taken back on its own (`keepGoneBack`).
+fn symmetric(c: Change) bool {
+    return switch (c) {
+        .pixels, .origins, .animation_name, .animation_frames, .animation_settings, .animation_order, .layers_order, .layer_name, .layer_settings, .reorder_col_row => true,
+        .animation_restore_delete, .layer_restore_delete, .resize, .reorder_cell, .layer_merge, .grid_layout => false,
+    };
+}
+
+/// A copy of `c` with memory of its own, for the kinds `symmetric` takes; null for the others.
+fn cloneChange(c: Change) !?Change {
+    const gpa = runtime.allocator();
+    return switch (c) {
+        .pixels => |p| .{ .pixels = .{ .layer_id = p.layer_id, .indices = try gpa.dupe(usize, p.indices), .values = try gpa.dupe([4]u8, p.values) } },
+        .origins => |o| .{ .origins = .{ .indices = try gpa.dupe(usize, o.indices), .values = try gpa.dupe([2]f32, o.values) } },
+        .animation_name => |a| .{ .animation_name = .{ .index = a.index, .name = try gpa.dupe(u8, a.name) } },
+        .layer_name => |a| .{ .layer_name = .{ .index = a.index, .name = try gpa.dupe(u8, a.name) } },
+        .animation_frames => |a| .{ .animation_frames = .{ .index = a.index, .frames = try gpa.dupe(pixi.Animation.Frame, a.frames) } },
+        .animation_order => |a| .{ .animation_order = .{ .order = try gpa.dupe(u64, a.order), .selected = a.selected } },
+        .layers_order => |a| .{ .layers_order = .{ .order = try gpa.dupe(u64, a.order), .selected = a.selected } },
+        .animation_settings, .layer_settings, .reorder_col_row => c,
+        .animation_restore_delete, .layer_restore_delete, .resize, .reorder_cell, .layer_merge, .grid_layout => null,
+    };
 }
 
 /// What a change did, as the timeline names it.
@@ -1185,6 +1314,7 @@ pub fn clearAndFree(self: *History) void {
     self.version += 1;
     self.undo_ids.clearAndFree(runtime.allocator());
     self.redo_ids.clearAndFree(runtime.allocator());
+    self.back_to.clearAndFree(runtime.allocator());
 }
 
 pub fn clearRetainingCapacity(self: *History) void {
@@ -1201,6 +1331,7 @@ pub fn clearRetainingCapacity(self: *History) void {
     self.version += 1;
     self.undo_ids.clearRetainingCapacity();
     self.redo_ids.clearRetainingCapacity();
+    self.back_to.clearRetainingCapacity();
 }
 
 pub fn deinit(self: *History) void {
