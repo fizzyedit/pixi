@@ -1387,6 +1387,42 @@ pub fn reorderRows(file: *File, removed_row_index: usize, insert_before_row_inde
     }
 }
 
+/// A hash of what the sprite is (`Plugin.VTable.documentFingerprint`): its grid, each layer by
+/// position (its name, whether it shows and folds, and its pixels, a drawing still being shown
+/// drawn as it will end), the sprites' origins, and each animation's name and frames. Not its ids, which a sprite loaded from its file does not keep, so the
+/// same sprite closed and opened again hashes the same: how fizzy knows a kept track ends where it
+/// stands (`restoreHistory`).
+pub fn fingerprint(file: *const File) u64 {
+    var h: std.hash.Wyhash = .init(0);
+    h.update(std.mem.asBytes(&[_]u32{ file.column_width, file.row_height, file.columns, file.rows, @intCast(file.layers.len) }));
+    for (0..file.layers.len) |i| {
+        const layer = file.layers.get(i);
+        h.update(std.mem.asBytes(&@as(u64, layer.name.len)));
+        h.update(layer.name);
+        h.update(&.{ @intFromBool(layer.visible), @intFromBool(layer.collapse) });
+        const px = layer.pixels();
+        if (file.editor.reveal) |*r| if (r.layer_id == layer.id) {
+            // Whole, as `captureState` takes it; out of memory, as it stands.
+            const gpa = runtime.allocator();
+            if (gpa.dupe([4]u8, px)) |whole| {
+                defer gpa.free(whole);
+                r.complete(whole);
+                h.update(std.mem.sliceAsBytes(whole));
+                continue;
+            } else |_| {}
+        };
+        h.update(std.mem.sliceAsBytes(px));
+    }
+    h.update(std.mem.sliceAsBytes(file.sprites.items(.origin)));
+    h.update(std.mem.asBytes(&@as(u64, file.animations.len)));
+    for (file.animations.items(.name), file.animations.items(.frames)) |name, frames| {
+        h.update(std.mem.asBytes(&[_]u64{ name.len, frames.len }));
+        h.update(name);
+        for (frames) |f| h.update(std.mem.asBytes(&[_]u64{ f.sprite_index, f.ms }));
+    }
+    return h.final();
+}
+
 /// The layers' pixels, by layer id, as a demo's snapshot holds them (`Plugin.captureDocumentState`),
 /// and whether the sprite was saved: a drawing still being shown drawn is in them whole.
 pub fn captureState(file: *File, allocator: std.mem.Allocator) ![]u8 {

@@ -292,8 +292,6 @@ showing_order: []const u32 = &.{},
 showing_marks: []const pixi.internal.File.Reveal.Mark = &.{},
 /// Moves whenever the line does: an entry added, undone or redone (`line`).
 version: u64 = 0,
-/// Going to a step (`goTo`): each undo and redo on the way is not announced by a toast of its own.
-quiet: bool = false,
 /// Who last went back (`undoRedo`'s undo): the steps an edit after it adds for the jump are theirs
 /// (`keepGoneBack`).
 went_back_by: sdk.Host.Acting = .{},
@@ -533,144 +531,6 @@ pub fn undoRedo(self: *History, file: *pixi.internal.File, action: Action) !void
     };
     const entry_id = active_ids.pop() orelse 0;
     self.version += 1;
-
-    defer if (!self.quiet) {
-        // Microseconds-since-epoch (~1.7e15) overflows a 32-bit `usize` on wasm32, so a
-        // direct `@intCast` to `usize` crashes the safe-mode build with an "integer cast
-        // truncates value" panic every time the user undoes/redoes. `id_extra` only needs
-        // to be a salt that varies between toasts, so truncate via u128 → low bits of usize.
-        const ts_us: u128 = @intCast(@divTrunc(pixi.perf.nanoTimestamp(), 1000));
-        const id_mutex = dvui.toastAdd(dvui.currentWindow(), @src(), @truncate(ts_us), file.editor.canvas.id, pixi.core.dialogs.toastDisplay, 2_000_000);
-        const id = id_mutex.id;
-        const action_text = switch (action) {
-            .undo => "Undo:",
-            .redo => "Redo:",
-        };
-        var message = std.fmt.allocPrint(dvui.currentWindow().arena(), "{s}", .{action_text}) catch "Invalid change";
-
-        switch (change) {
-            .pixels => |*pixels| {
-                for (file.layers.items(.name), file.layers.items(.id)) |name, layer_id| {
-                    if (layer_id == pixels.layer_id) {
-                        message = std.fmt.allocPrint(dvui.currentWindow().arena(), "{s} Layer {s} pixels modified", .{ action_text, name }) catch "Invalid change";
-                        break;
-                    }
-                }
-            },
-            .origins => {
-                message = std.fmt.allocPrint(dvui.currentWindow().arena(), "{s} Sprite origins modified", .{action_text}) catch "Invalid change";
-            },
-            .animation_name => |*animation_name| {
-                message = std.fmt.allocPrint(dvui.currentWindow().arena(), "{s} Animation name {s} -> {s}", .{
-                    action_text,
-                    animation_name.name,
-                    file.animations.items(.name)[animation_name.index],
-                }) catch "Invalid change";
-            },
-            .animation_frames => |*animation_frames| {
-                message = std.fmt.allocPrint(dvui.currentWindow().arena(), "{s} Animation {s} frames modified", .{
-                    action_text,
-                    file.animations.items(.name)[animation_frames.index],
-                }) catch "Invalid change";
-            },
-            .animation_settings => |*animation_settings| {
-                message = std.fmt.allocPrint(dvui.currentWindow().arena(), "{s} Animation {s} settings modified", .{
-                    action_text,
-                    file.animations.items(.name)[animation_settings.index],
-                }) catch "Invalid change";
-            },
-            .animation_order => {
-                message = std.fmt.allocPrint(dvui.currentWindow().arena(), "{s} Animations order modified", .{action_text}) catch "Invalid change";
-            },
-            .animation_restore_delete => |*animation_restore_delete| {
-                switch (animation_restore_delete.action) {
-                    .restore => {
-                        message = std.fmt.allocPrint(dvui.currentWindow().arena(), "{s} Animation {s} deleted", .{
-                            action_text,
-                            file.deleted_animations.items(.name)[file.deleted_animations.len - 1],
-                        }) catch "Invalid change";
-                    },
-                    .delete => {
-                        message = std.fmt.allocPrint(dvui.currentWindow().arena(), "{s} Animation {s} created", .{
-                            action_text,
-                            file.animations.items(.name)[animation_restore_delete.index],
-                        }) catch "Invalid change";
-                    },
-                }
-            },
-            .layers_order => {
-                message = std.fmt.allocPrint(dvui.currentWindow().arena(), "{s} Layers order modified", .{action_text}) catch "Invalid change";
-            },
-            .layer_restore_delete => |*layer_restore_delete| {
-                switch (layer_restore_delete.action) {
-                    .restore => {
-                        message = std.fmt.allocPrint(dvui.currentWindow().arena(), "{s} Layer {s} deleted", .{
-                            action_text,
-                            file.deleted_layers.items(.name)[file.deleted_layers.len - 1],
-                        }) catch "Invalid change";
-                    },
-                    .delete => {
-                        message = std.fmt.allocPrint(dvui.currentWindow().arena(), "{s} Layer {s} created", .{
-                            action_text,
-                            file.layers.items(.name)[layer_restore_delete.index],
-                        }) catch "Invalid change";
-                    },
-                }
-            },
-            .layer_name => |*layer_name| {
-                message = std.fmt.allocPrint(dvui.currentWindow().arena(), "{s} Layer name {s} -> {s}", .{
-                    action_text,
-                    layer_name.name,
-                    file.layers.items(.name)[layer_name.index],
-                }) catch "Invalid change";
-            },
-            .layer_settings => |*layer_settings| {
-                message = std.fmt.allocPrint(dvui.currentWindow().arena(), "{s} Layer {s} settings modified", .{
-                    action_text,
-                    file.layers.items(.name)[layer_settings.index],
-                }) catch "Invalid change";
-            },
-            .resize => {
-                message = std.fmt.allocPrint(dvui.currentWindow().arena(), "{s} File resized to {d}x{d}", .{
-                    action_text,
-                    file.width(),
-                    file.height(),
-                }) catch "Invalid change";
-            },
-            .reorder_col_row => |*reorder| {
-                const removed = reorder.removed_index;
-                const insert_before = reorder.insert_before_index;
-                switch (reorder.mode) {
-                    .columns => {
-                        const removed_column_name = file.fmtColumn(dvui.currentWindow().arena(), removed) catch "Invalid change";
-                        const insert_before_column_name = file.fmtColumn(dvui.currentWindow().arena(), insert_before - 1) catch "Invalid change";
-                        message = std.fmt.allocPrint(dvui.currentWindow().arena(), "{s} Column {s} moved to {s}", .{ action_text, insert_before_column_name, removed_column_name }) catch "Invalid change";
-                    },
-                    .rows => {
-                        message = std.fmt.allocPrint(dvui.currentWindow().arena(), "{s} Row {d} moved to {d}", .{ action_text, insert_before, removed }) catch "Invalid change";
-                    },
-                }
-            },
-            .reorder_cell => {
-                message = std.fmt.allocPrint(dvui.currentWindow().arena(), "{s} Cells reordered", .{action_text}) catch "Invalid change";
-            },
-            .layer_merge => {
-                message = std.fmt.allocPrint(dvui.currentWindow().arena(), "{s} Layer merge", .{action_text}) catch "Invalid change";
-            },
-            .grid_layout => {
-                message = std.fmt.allocPrint(dvui.currentWindow().arena(), "{s} Grid layout {d}×{d} cells of {d}×{d}", .{
-                    action_text,
-                    file.columns,
-                    file.rows,
-                    file.column_width,
-                    file.row_height,
-                }) catch "Invalid change";
-            },
-        }
-
-        dvui.dataSetSlice(dvui.currentWindow(), id, "_message", message);
-        id_mutex.mutex.unlock(dvui.io);
-    };
 
     try self.applyChange(file, &change, action);
     try other_ids.ensureUnusedCapacity(runtime.allocator(), 1);
@@ -1035,8 +895,8 @@ pub fn stepsTo(self: *const History, id: u64) ?isize {
     return null;
 }
 
-/// Undo or redo until step `id` is the last applied (0: before the first), quietly: one move along
-/// the line, not a toast per step, and the person's layer and sidebar as they were rather than
+/// Undo or redo until step `id` is the last applied (0: before the first), as one move along
+/// the line: the person's layer and sidebar as they were rather than
 /// wherever each step on the way would put them. `error.NoSuchStep` when `id` is not on it, and
 /// `error.PersonBusy` while the person has a stroke or a transform open (undo under an open stroke
 /// would leave its record of what it drew over wrong); nothing moves for either. A step on the way
@@ -1046,11 +906,7 @@ pub fn goTo(self: *History, file: *pixi.internal.File, id: u64) !void {
     if (n == 0) return;
     if (@import("../commands.zig").personBusy(file)) return error.PersonBusy;
     var held: Held = .take(file);
-    self.quiet = true;
-    defer {
-        self.quiet = false;
-        held.put(file);
-    }
+    defer held.put(file);
     const back: Action = if (n < 0) .redo else .undo;
     for (0..@abs(n)) |done| {
         self.undoRedo(file, if (n < 0) .undo else .redo) catch |err| {
@@ -1109,12 +965,10 @@ fn keepGoneBack(self: *History, file: *pixi.internal.File, edit: *Change) void {
     const back_to = self.top();
     var held: Held = .take(file);
     self.keeping = true;
-    self.quiet = true;
     const outer = host.actAgain(self.went_back_by);
     defer {
         host.endAct(outer);
         self.keeping = false;
-        self.quiet = false;
         held.put(file);
     }
     self.applyChange(file, edit, .undo) catch |err| {
@@ -1263,9 +1117,9 @@ fn record(file: *pixi.internal.File, kind: sdk.Step.Kind, id: u64, change: *cons
     if (!host.recording(file.id)) return host.recordStep(file.id, .{ .kind = kind, .id = id, .top = on_top });
     const pixels = switch (change.*) {
         .pixels => |p| p,
-        else => return host.recordStep(file.id, .{ .kind = .restarted, .id = 0 }),
+        else => return unencoded(file, kind, id, on_top),
     };
-    const layer = file.getLayer(pixels.layer_id) orelse return host.recordStep(file.id, .{ .kind = .restarted, .id = 0 });
+    const layer = file.getLayer(pixels.layer_id) orelse return unencoded(file, kind, id, on_top);
     // The frame's arena: the recorder copies what it keeps.
     const arena = host.arena();
     const px = layer.pixels();
@@ -1287,7 +1141,19 @@ fn record(file: *pixi.internal.File, kind: sdk.Step.Kind, id: u64, change: *cons
     // A step not kept would leave the track behind the sprite, every later step written against
     // a sprite its replay never reaches: it starts again from the sprite instead.
     std.log.err("pixi: a step of {d} was not recorded (out of memory); its track starts again", .{file.id});
+    unencoded(file, kind, id, on_top);
+}
+
+/// A step `record` cannot encode (a kind of change it does not yet, or one that failed): the
+/// recorder starts again from the sprite as it is after it (`restarted`), which also clears who
+/// fizzy knows made each step before. A step added is then reported itself, with no effect, so
+/// fizzy keeps who made it and the top (Undo's label, "Go back to before Claude's change"); the
+/// recorder's new track drops it with whatever came before its start. An undo or redo is not:
+/// fizzy would read the step it names as the person's, the authors being gone.
+fn unencoded(file: *pixi.internal.File, kind: sdk.Step.Kind, id: u64, on_top: u64) void {
+    const host = runtime.state().host;
     host.recordStep(file.id, .{ .kind = .restarted, .id = 0 });
+    if (kind == .added) host.recordStep(file.id, .{ .kind = kind, .id = id, .top = on_top });
 }
 
 /// The history started over as far as a recorder can follow: `file` was put back in place to a
@@ -1295,6 +1161,78 @@ fn record(file: *pixi.internal.File, kind: sdk.Step.Kind, id: u64, change: *cons
 pub fn restarted(file: *pixi.internal.File) void {
     const host = runtime.state().host;
     host.recordStep(file.id, .{ .kind = .restarted, .id = 0 });
+}
+
+/// Put the history back as fizzy's track of the sprite recorded it
+/// (`sdk.Plugin.VTable.restoreHistory`), in place of what it holds: a sprite opened again picks up
+/// its undo. Each entry is one pixel step (`steps`; pixi never joins one to another), kept with
+/// its id, the first `applied` of them applied. The sprite already stands where they leave it, so
+/// nothing in it changes: they are checked against it first (`steps.fits`), and one that does not
+/// fit is `error.StepDoesNotApply`, the history as it was. A saved sprite stays saved. An empty
+/// history clears it ("Forget this document's history").
+pub fn restore(self: *History, file: *pixi.internal.File, history: sdk.Plugin.RestoredHistory) !void {
+    if (history.applied > history.entries.len) return error.BadStep;
+    // Put back where one is being made (fizzy's track starting again after a step pixi does not
+    // encode), it would take the steps made since: only a sprite with none takes one.
+    if (history.entries.len > 0 and (self.undo_stack.items.len > 0 or self.redo_stack.items.len > 0)) return error.HistoryInUse;
+    const gpa = runtime.allocator();
+    {
+        // Ids name entries for good: never 0, never the unsaved mark (`saved`), never twice.
+        var ids: std.AutoHashMapUnmanaged(u64, void) = .empty;
+        defer ids.deinit(gpa);
+        for (history.entries) |e| {
+            if (e.id == 0 or e.id == std.math.maxInt(u64) or e.parts.len != 1) return error.BadStep;
+            if ((try ids.getOrPut(gpa, e.id)).found_existing) return error.BadStep;
+        }
+    }
+    file.finishReveal();
+    const decoded = try gpa.alloc(steps.Pixels, history.entries.len);
+    var made: usize = 0;
+    defer {
+        for (decoded[0..made]) |d| d.deinit(gpa);
+        gpa.free(decoded);
+    }
+    for (history.entries, decoded) |e, *d| {
+        d.* = try steps.decode(gpa, e.parts[0]);
+        made += 1;
+    }
+    {
+        const layers = try gpa.alloc([]const [4]u8, file.layers.len);
+        defer gpa.free(layers);
+        for (layers, 0..) |*l, i| l.* = file.layers.get(i).pixels();
+        try steps.fits(gpa, layers, decoded, history.applied);
+    }
+    const n_redo = decoded.len - history.applied;
+    try self.undo_stack.ensureTotalCapacity(history.applied);
+    try self.redo_stack.ensureTotalCapacity(n_redo);
+    try self.undo_ids.ensureTotalCapacity(gpa, history.applied);
+    try self.redo_ids.ensureTotalCapacity(gpa, n_redo);
+
+    const was_saved = self.top() == self.saved;
+    self.clearRetainingCapacity();
+    // Each entry as a change, holding what undoing (applied) or redoing it writes, its colours
+    // before or after: the decoded buffers move over, and the other side is freed.
+    const layer_ids = file.layers.items(.id);
+    for (decoded, history.entries, 0..) |*d, e, i| {
+        const applied = i < history.applied;
+        const change: Change = .{ .pixels = .{ .layer_id = layer_ids[@intCast(d.layer)], .indices = d.indices, .values = if (applied) d.before else d.after } };
+        gpa.free(if (applied) d.after else d.before);
+        d.* = .{ .layer = d.layer, .indices = d.indices[0..0], .before = d.before[0..0], .after = d.after[0..0] };
+        if (applied) {
+            self.undo_stack.appendAssumeCapacity(change);
+            self.undo_ids.appendAssumeCapacity(e.id);
+        } else {
+            // The redo stack's top is the next to redo: the first entry past `applied`, put in
+            // its place below.
+            self.redo_stack.appendAssumeCapacity(change);
+            self.redo_ids.appendAssumeCapacity(e.id);
+        }
+        self.next_id = @max(self.next_id, e.id + 1);
+    }
+    std.mem.reverse(Change, self.redo_stack.items);
+    std.mem.reverse(u64, self.redo_ids.items);
+    // Saved on the step now on top, or unsaved naming a step that is gone (ids are never reused).
+    self.saved = if (was_saved) self.top() else std.math.maxInt(u64);
 }
 
 /// The id of the step on top, the last one applied; 0 when none is.

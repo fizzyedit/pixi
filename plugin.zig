@@ -75,6 +75,8 @@ const vtable: sdk.Plugin.VTable = .{
     .applyStep = applyStep,
     .historyLine = historyLine,
     .historyGoTo = historyGoTo,
+    .restoreHistory = restoreHistory,
+    .documentFingerprint = documentFingerprint,
     .documentSnapshot = documentSnapshot,
     .encodeSnapshot = encodeSnapshot,
     .releaseSnapshot = releaseSnapshot,
@@ -222,6 +224,15 @@ fn historyGoTo(_: *anyopaque, doc: DocHandle, id: u64) anyerror!void {
     const file = docFile(doc);
     try commands.refuseWhilePersonBusy(file);
     try file.history.goTo(file, id);
+}
+
+fn documentFingerprint(_: *anyopaque, doc: DocHandle) u64 {
+    return docFile(doc).fingerprint();
+}
+
+fn restoreHistory(_: *anyopaque, doc: DocHandle, history: sdk.Plugin.RestoredHistory) anyerror!void {
+    const file = docFile(doc);
+    try file.history.restore(file, history);
 }
 
 fn applyStep(_: *anyopaque, doc: DocHandle, effect: []const u8, motion: []const u8, ms: u32) anyerror!void {

@@ -274,9 +274,77 @@ pub fn apply(px: [][4]u8, step: Pixels) error{StepDoesNotApply}!void {
     for (step.indices, step.after) |i, a| px[i] = a;
 }
 
+/// Whether a history of steps fits a sprite whose layers are `layers` (by position): with the
+/// first `applied` of `history` applied, undoing each of them, newest first, must find its "after"
+/// colours and leave its "before", and redoing each of the rest, oldest first, must find its
+/// "before" from where the sprite stands. `error.StepDoesNotApply` when one does not; `layers` are
+/// not written. The walk is on a copy of each layer a step touches, made once.
+pub fn fits(gpa: std.mem.Allocator, layers: []const []const [4]u8, history: []const Pixels, applied: usize) Error!void {
+    if (applied > history.len) return error.StepDoesNotApply;
+    const copies = try gpa.alloc(?[][4]u8, layers.len);
+    @memset(copies, null);
+    defer {
+        for (copies) |c| if (c) |px| gpa.free(px);
+        gpa.free(copies);
+    }
+    var i = applied;
+    while (i > 0) {
+        i -= 1;
+        try walk(gpa, copies, layers, history[i], history[i].after, history[i].before);
+    }
+    // Forward from where the sprite stands: the copies made so far, back as they are.
+    for (copies, 0..) |c, l| if (c) |px| @memcpy(px, layers[l]);
+    for (history[applied..]) |s| try walk(gpa, copies, layers, s, s.before, s.after);
+}
+
+/// One step of `fits`'s walk: each pixel of `s` must hold `from` in its layer's copy (made from
+/// `layers` the first time), and then holds `to`.
+fn walk(gpa: std.mem.Allocator, copies: []?[][4]u8, layers: []const []const [4]u8, s: Pixels, from: []const [4]u8, to: []const [4]u8) Error!void {
+    if (s.layer >= layers.len) return error.StepDoesNotApply;
+    const l: usize = @intCast(s.layer);
+    const px = copies[l] orelse made: {
+        const c = try gpa.dupe([4]u8, layers[l]);
+        copies[l] = c;
+        break :made c;
+    };
+    for (s.indices, from) |idx, f| {
+        if (idx >= px.len or !std.mem.eql(u8, &px[idx], &f)) return error.StepDoesNotApply;
+    }
+    for (s.indices, to) |idx, t| px[idx] = t;
+}
+
 // ---- tests ---------------------------------------------------------------------------------
 
 const testing = std.testing;
+
+test "a history fits the sprite it leads to, and not another" {
+    const clear: [4]u8 = .{ 0, 0, 0, 0 };
+    const red: [4]u8 = .{ 255, 0, 0, 255 };
+    const blue: [4]u8 = .{ 0, 0, 255, 255 };
+    var idx = [_]usize{ 2, 3 };
+    var none = [_][4]u8{ clear, clear };
+    var reds = [_][4]u8{ red, red };
+    var blues = [_][4]u8{ blue, blue };
+    // Red over clear at 2 and 3, then blue over red there, on the second layer; the blue undone.
+    const history = [_]Pixels{
+        .{ .layer = 1, .indices = &idx, .before = &none, .after = &reds },
+        .{ .layer = 1, .indices = &idx, .before = &reds, .after = &blues },
+    };
+    const bottom: [8][4]u8 = @splat(clear);
+    var top: [8][4]u8 = @splat(clear);
+    top[2] = red;
+    top[3] = red;
+    const layers = [_][]const [4]u8{ &bottom, &top };
+    try fits(testing.allocator, &layers, &history, 1);
+    // Not with both applied: the sprite does not hold the blue.
+    try testing.expectError(error.StepDoesNotApply, fits(testing.allocator, &layers, &history, 2));
+    // Nor with none: the red would be over the clear it found.
+    try testing.expectError(error.StepDoesNotApply, fits(testing.allocator, &layers, &history, 0));
+    // Nor on a sprite with one layer.
+    try testing.expectError(error.StepDoesNotApply, fits(testing.allocator, layers[0..1], &history, 1));
+    // An empty history fits anything.
+    try fits(testing.allocator, &layers, &.{}, 0);
+}
 
 fn bytesOf(layer: u64, indices: []const usize, before: []const [4]u8, after: []const [4]u8) ![]u8 {
     var out: std.Io.Writer.Allocating = .init(testing.allocator);
