@@ -1094,9 +1094,12 @@ fn motionOf(arena: std.mem.Allocator, history: *const History, indices: []const 
     return out.written();
 }
 
+/// Tell fizzy of a step: every one, so fizzy knows who made it (`Host.stepAuthor`, the step on
+/// top); its effect only while something records the sprite, which is when one is read.
 fn record(file: *pixi.internal.File, kind: sdk.Step.Kind, id: u64, change: *const Change) void {
     const host = runtime.state().host;
-    if (!host.recording(file.id)) return;
+    const on_top = file.history.top();
+    if (!host.recording(file.id)) return host.recordStep(file.id, .{ .kind = kind, .id = id, .top = on_top });
     const pixels = switch (change.*) {
         .pixels => |p| p,
         else => return host.recordStep(file.id, .{ .kind = .restarted, .id = 0 }),
@@ -1118,7 +1121,7 @@ fn record(file: *pixi.internal.File, kind: sdk.Step.Kind, id: u64, change: *cons
         // redo lands at once.
         const ms = if (kind == .added) file.history.showing_ms else 0;
         const motion = if (kind == .added) motionOf(arena, &file.history, pixels.indices) else "";
-        return host.recordStep(file.id, .{ .kind = kind, .id = id, .effect = out.written(), .motion = motion, .ms = ms });
+        return host.recordStep(file.id, .{ .kind = kind, .id = id, .top = on_top, .effect = out.written(), .motion = motion, .ms = ms });
     }
     // A step not kept would leave the track behind the sprite, every later step written against
     // a sprite its replay never reaches: it starts again from the sprite instead.
@@ -1130,7 +1133,7 @@ fn record(file: *pixi.internal.File, kind: sdk.Step.Kind, id: u64, change: *cons
 /// state none of its steps lead to (`File.restoreState`).
 pub fn restarted(file: *pixi.internal.File) void {
     const host = runtime.state().host;
-    if (host.recording(file.id)) host.recordStep(file.id, .{ .kind = .restarted, .id = 0 });
+    host.recordStep(file.id, .{ .kind = .restarted, .id = 0 });
 }
 
 /// The id of the step on top, the last one applied; 0 when none is.
