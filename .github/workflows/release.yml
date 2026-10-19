@@ -10,8 +10,10 @@ on:
 
 jobs:
   build:
-    uses: fizzyedit/plugin-build-action/.github/workflows/build.yml@v5
+    uses: fizzyedit/plugin-build-action/.github/workflows/build.yml@v8
     permissions:
       contents: write
     with:
       zig-version: "0.17.0"
+    secrets:
+      store_dispatch_token: ${{ secrets.STORE_DISPATCH_TOKEN }}
