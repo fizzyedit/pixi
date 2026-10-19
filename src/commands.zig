@@ -71,7 +71,8 @@ pub fn targetFile(path: []const u8, call: *sdk.Command.Call) !*File {
     return file;
 }
 
-/// Commands running now: an edit made with none running is the person's (`History.person`).
+/// Pixi's commands running now: the person's activity is told with the answer of the one that acts
+/// on a sprite (`bind`, `targetFile`). Whose an edit is, is the host's (`Host.author`).
 pub var running: u32 = 0;
 /// The person's activity on the sprite the running command acts on, taken by `targetFile` and
 /// told with the command's answer (`bind`).
