@@ -200,7 +200,7 @@ window: *dvui.Window,
 
 started_at_ns: i128,
 
-phase: std.atomic.Value(u8) = .init(@intFromEnum(Phase.queued)),
+phase: std.atomic.Value(u8) = .init(@backingInt(Phase.queued)),
 
 /// Worker reports `(done_inputs, total_inputs)` while in the `loading` / `appending` phases.
 progress_num: std.atomic.Value(u32) = .init(0),
@@ -300,7 +300,7 @@ pub fn workerMain(job: *PackJob) void {
     // `.path`-loaded `PackFile`s, collapse carry-overs) lives in `ws` and is freed below.
     const work = WorkerState.init(runtime.allocator()) catch |e| {
         job.err = e;
-        job.phase.store(@intFromEnum(Phase.failed), .release);
+        job.phase.store(@backingInt(Phase.failed), .release);
         return;
     };
     var ws = work;
@@ -311,21 +311,21 @@ pub fn workerMain(job: *PackJob) void {
     // buffers and `buildAtlas` blits straight from those pointers. `.open` inputs are owned
     // by `job.inputs` for the job's full lifetime; `.path`-loaded files are parked in
     // `ws.loaded_files` (freed with `ws.deinit`).
-    job.phase.store(@intFromEnum(Phase.loading), .release);
+    job.phase.store(@backingInt(Phase.loading), .release);
     job.progress_den.store(@intCast(job.inputs.len), .monotonic);
 
     for (job.inputs, 0..) |*input, idx| {
         if (job.cancelled.load(.monotonic)) {
-            job.phase.store(@intFromEnum(Phase.cancelled), .release);
+            job.phase.store(@backingInt(Phase.cancelled), .release);
             return;
         }
 
         switch (input.*) {
             .open => |*pf| {
-                job.phase.store(@intFromEnum(Phase.appending), .release);
+                job.phase.store(@backingInt(Phase.appending), .release);
                 ws.appendPackFile(pf) catch |e| {
                     job.err = e;
-                    job.phase.store(@intFromEnum(Phase.failed), .release);
+                    job.phase.store(@backingInt(Phase.failed), .release);
                     return;
                 };
             },
@@ -338,13 +338,13 @@ pub fn workerMain(job: *PackJob) void {
                 // reachability graph.
                 if (comptime @import("builtin").target.cpu.arch == .wasm32) {
                     job.err = error.PathInputsNotSupportedOnWasm;
-                    job.phase.store(@intFromEnum(Phase.failed), .release);
+                    job.phase.store(@backingInt(Phase.failed), .release);
                     return;
                 }
-                job.phase.store(@intFromEnum(Phase.loading), .release);
+                job.phase.store(@backingInt(Phase.loading), .release);
                 const maybe_pf = PackFile.fromPath(runtime.allocator(), path) catch |e| {
                     job.err = e;
-                    job.phase.store(@intFromEnum(Phase.failed), .release);
+                    job.phase.store(@backingInt(Phase.failed), .release);
                     return;
                 };
                 if (maybe_pf) |pf_val| {
@@ -352,14 +352,14 @@ pub fn workerMain(job: *PackJob) void {
                         var tmp = pf_val;
                         tmp.deinit();
                         job.err = e;
-                        job.phase.store(@intFromEnum(Phase.failed), .release);
+                        job.phase.store(@backingInt(Phase.failed), .release);
                         return;
                     };
-                    job.phase.store(@intFromEnum(Phase.appending), .release);
+                    job.phase.store(@backingInt(Phase.appending), .release);
                     const ref = &ws.loaded_files.items[ws.loaded_files.items.len - 1];
                     ws.appendPackFile(ref) catch |e| {
                         job.err = e;
-                        job.phase.store(@intFromEnum(Phase.failed), .release);
+                        job.phase.store(@backingInt(Phase.failed), .release);
                         return;
                     };
                 }
@@ -372,33 +372,33 @@ pub fn workerMain(job: *PackJob) void {
         // Nothing to pack — keep `result_atlas == null`, surface as `ready`. The main thread
         // treats null-result the same as the old `packAndClear` early-out: leave the existing
         // atlas in place.
-        job.phase.store(@intFromEnum(Phase.ready), .release);
+        job.phase.store(@backingInt(Phase.ready), .release);
         return;
     }
 
     // Try increasing texture sizes until everything fits.
-    job.phase.store(@intFromEnum(Phase.packing), .release);
+    job.phase.store(@backingInt(Phase.packing), .release);
     const tex_size = ws.packRects() catch |e| {
         job.err = e;
-        job.phase.store(@intFromEnum(Phase.failed), .release);
+        job.phase.store(@backingInt(Phase.failed), .release);
         return;
     } orelse {
         job.err = error.PackFailed;
-        job.phase.store(@intFromEnum(Phase.failed), .release);
+        job.phase.store(@backingInt(Phase.failed), .release);
         return;
     };
 
     if (job.cancelled.load(.monotonic)) {
-        job.phase.store(@intFromEnum(Phase.cancelled), .release);
+        job.phase.store(@backingInt(Phase.cancelled), .release);
         return;
     }
 
     // Blit each emitted sprite into a fresh atlas pixel buffer at the location chosen by
     // `packRects`, then assemble the `Internal.Atlas` value that the main thread will install.
-    job.phase.store(@intFromEnum(Phase.blitting), .release);
+    job.phase.store(@backingInt(Phase.blitting), .release);
     const atlas = ws.buildAtlas(tex_size) catch |e| {
         job.err = e;
-        job.phase.store(@intFromEnum(Phase.failed), .release);
+        job.phase.store(@backingInt(Phase.failed), .release);
         return;
     };
 
@@ -408,12 +408,12 @@ pub fn workerMain(job: *PackJob) void {
         for (atlas.data.animations) |*anim| runtime.allocator().free(anim.name);
         runtime.allocator().free(atlas.data.animations);
         runtime.allocator().free(atlas.data.sprites);
-        job.phase.store(@intFromEnum(Phase.cancelled), .release);
+        job.phase.store(@backingInt(Phase.cancelled), .release);
         return;
     }
 
     job.result_atlas = atlas;
-    job.phase.store(@intFromEnum(Phase.ready), .release);
+    job.phase.store(@backingInt(Phase.ready), .release);
 }
 
 // ----------------------------------------------------------------------------

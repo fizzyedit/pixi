@@ -155,8 +155,8 @@ pub fn drawTools() !void {
         .padding = .{ .h = 10.0, .w = 4.0, .x = 4.0, .y = 4.0 },
     });
     defer toolbox.deinit();
-    for (0..std.meta.fields(pixi.Tools.Tool).len) |i| {
-        const tool: pixi.Tools.Tool = @enumFromInt(i);
+    for (0..std.meta.fieldNames(pixi.Tools.Tool).len) |i| {
+        const tool: pixi.Tools.Tool = @fromBackingInt(@intCast(i));
         const id_extra = i;
 
         const selected = runtime.state().tools.current == tool;

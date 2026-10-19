@@ -340,7 +340,7 @@ pub fn checkerboardTileBlurredTexture(file: *File, sigma_px: f32, screen_scale: 
                 const b: f32 = @floatFromInt(even[ch]);
                 px[ch] = @intFromFloat(std.math.clamp(@round(a + (b - a) * f), 0, 255));
             }
-            buf[y * w + x] = @bitCast(px);
+            buf[y * w + x] = std.mem.bytesToValue(dvui.Color.PMA, &px);
         }
     }
 
@@ -492,7 +492,7 @@ fn loadFizzyZip(path: []const u8, file_bytes: ?[]const u8) !?pixi.internal.File 
         return error.InvalidExtension;
 
     const null_terminated_path = if (file_bytes == null)
-        try runtime.allocator().dupeZ(u8, path)
+        try runtime.allocator().dupeSentinel(u8, path, 0)
     else
         "";
     defer if (file_bytes == null) runtime.allocator().free(null_terminated_path);
@@ -1442,31 +1442,54 @@ const state_version: u8 = 2;
 /// checked against the layer and written, an undo away like any edit. `show` draws it in as a
 /// hand would (`Reveal`), a replay at pace; otherwise it lands at once (a seek). A step that does
 /// not fit the sprite (another layer, other colours under it) is refused, the sprite as it was.
-pub fn applyStep(file: *File, effect: []const u8, show: bool) !void {
+pub fn applyStep(file: *File, effect: []const u8, motion: []const u8, show: bool) !void {
     const gpa = runtime.allocator();
     const step = try steps.decode(gpa, effect);
     defer step.deinit(gpa);
     file.finishReveal();
-    var layer = file.getLayer(step.layer_id) orelse return error.StepDoesNotApply;
+    // By position: a sprite loaded from its file gives its layers new ids, but keeps their order.
+    if (step.layer >= file.layers.len) return error.StepDoesNotApply;
+    var layer = file.layers.get(@intCast(step.layer));
     const px = layer.pixels();
     try steps.apply(px, step);
     // A pixel change holds the colours before, as every one does: undo swaps them back. Kept out
     // of the history, the step would not undo: then it is taken back.
-    errdefer steps.apply(px, .{ .layer_id = step.layer_id, .indices = step.indices, .before = step.after, .after = step.before }) catch {};
+    errdefer steps.apply(px, .{ .layer = step.layer, .indices = step.indices, .before = step.after, .after = step.before }) catch {};
     const indices = try gpa.dupe(usize, step.indices);
     const values = gpa.dupe([4]u8, step.before) catch |err| {
         gpa.free(indices);
         return err;
     };
-    file.history.append(.{ .pixels = .{ .layer_id = step.layer_id, .indices = indices, .values = values } }) catch |err| {
+    file.history.append(.{ .pixels = .{ .layer_id = layer.id, .indices = indices, .values = values } }) catch |err| {
         gpa.free(indices);
         gpa.free(values);
         return err;
     };
     // In the history now, the step stays whatever else fails: drawn in, or at once without it.
+    // Drawn as it was made when the step says how (`steps.Motion`): mark by mark, each its tool's way.
     if (show and step.indices.len > 0) if (gpa.alloc(Reveal.Pixel, step.indices.len)) |drawn| {
-        for (drawn, step.indices, step.after) |*d, i, a| d.* = .{ .index = @intCast(i), .color = a };
-        file.editor.reveal = .begin(px, file.width(), step.layer_id, drawn, step.before, dvui.frameTimeNS());
+        const was = gpa.alloc([4]u8, step.indices.len) catch {
+            gpa.free(drawn);
+            return;
+        };
+        defer gpa.free(was);
+        var marks: []Reveal.Mark = &.{};
+        if (motion.len > 0) if (steps.decodeMotion(gpa, motion, step.indices.len)) |m| {
+            defer m.deinit(gpa);
+            if (gpa.alloc(Reveal.Mark, m.kinds.len)) |ms| {
+                for (ms, m.kinds, m.lens) |*mk, k, l| mk.* = .{ .kind = @fromBackingInt(@intCast(k)), .len = l };
+                marks = ms;
+                for (m.positions, drawn, was) |p, *d, *w| {
+                    d.* = .{ .index = @intCast(step.indices[p]), .color = step.after[p] };
+                    w.* = step.before[p];
+                }
+            } else |_| {}
+        } else |_| {};
+        if (marks.len == 0) for (drawn, was, step.indices, step.before, step.after) |*d, *w, i, b, a| {
+            d.* = .{ .index = @intCast(i), .color = a };
+            w.* = b;
+        };
+        file.editor.reveal = .begin(px, file.width(), layer.id, drawn, marks, was, dvui.frameTimeNS());
     } else |_| {};
     layer.invalidate();
     file.editor.layer_composite_dirty = true;

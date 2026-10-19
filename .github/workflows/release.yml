@@ -14,4 +14,4 @@ jobs:
     permissions:
       contents: write
     with:
-      zig-version: "0.16.0"
+      zig-version: "0.17.0"

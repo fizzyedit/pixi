@@ -53,7 +53,7 @@ pub fn packRects(context: *Context, rects: []Rect) usize {
 }
 
 pub fn setupHeuristic(context: *Context, heuristic: Heuristic) void {
-    stbrp_setup_heuristic(context, @as(u32, @intCast(@intFromEnum(heuristic))));
+    stbrp_setup_heuristic(context, @as(u32, @intCast(@backingInt(heuristic))));
 }
 
 pub extern fn stbrp_init_target(context: [*c]Context, width: u32, height: u32, nodes: [*c]Node, num_nodes: usize) void;

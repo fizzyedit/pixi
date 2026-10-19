@@ -76,7 +76,7 @@ pub fn draw() !void {
     dvui.clipSet(pixi.core.screens.pixelsFor(screen));
 
     const center = fw.data().rectScale().pointFromPhysical(runtime.state().tools.radial_menu.center);
-    const tool_count: usize = std.meta.fields(Tools.Tool).len;
+    const tool_count: usize = std.meta.fieldNames(Tools.Tool).len;
     const radius: f32 = 50.0;
     const width: f32 = radius * 2.0;
     const height: f32 = radius * 2.0;
@@ -149,7 +149,7 @@ pub fn draw() !void {
         rect.x -= rect.w / 2.0;
         rect.y -= rect.h / 2.0;
 
-        const tool = @as(Tools.Tool, @enumFromInt(i));
+        const tool = @as(Tools.Tool, @fromBackingInt(@intCast(i)));
 
         var button: dvui.ButtonWidget = undefined;
         button.init(@src(), .{}, .{

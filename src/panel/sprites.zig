@@ -200,9 +200,9 @@ water: wsurf.WaterSurface = .{},
 /// Focused slot index last frame — re-anchors the water field as the shelf scrolls.
 prev_center_i: i64 = 0,
 /// Per-slot previous fly offset for velocity estimation (indexed by `d + field_center`).
-prev_fly_offset: [max_refl_ripple_slots]f32 = .{0} ** max_refl_ripple_slots,
+prev_fly_offset: [max_refl_ripple_slots]f32 = @splat(0),
 /// Per-slot: card dipped below the waterline (fly-in inBack overshoot), awaiting a splash.
-was_dipping: [max_refl_ripple_slots]bool = .{false} ** max_refl_ripple_slots,
+was_dipping: [max_refl_ripple_slots]bool = @splat(false),
 /// Previous `scroll_pos` — the per-frame delta drives the inertial slosh.
 prev_scroll_pos: f32 = 0.0,
 /// Smoothed shelf velocity (slots/s); its per-frame change tilts the water.

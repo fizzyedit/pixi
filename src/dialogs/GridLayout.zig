@@ -810,8 +810,8 @@ fn gridLayoutDrawModePill(dlg_id: dvui.Id) void {
             .margin = .{ .y = 2, .h = 4 },
             .padding = .{ .x = 12, .y = 6, .w = 12, .h = 6 },
             .expand = .horizontal,
-            .color_fill = .{ .color = if (mode == @as(@TypeOf(mode), @enumFromInt(i))) dvui.themeGet().color(.window, .fill).lighten(-4) else dvui.themeGet().color(.control, .fill) },
-            .box_shadow = if (i != @intFromEnum(mode)) .{
+            .color_fill = .{ .color = if (mode == @as(@TypeOf(mode), @fromBackingInt(@intCast(i)))) dvui.themeGet().color(.window, .fill).lighten(-4) else dvui.themeGet().color(.control, .fill) },
+            .box_shadow = if (i != @backingInt(mode)) .{
                 .color = .black,
                 .offset = .{ .x = 0.0, .y = 2 },
                 .fade = 7.0,
@@ -821,7 +821,7 @@ fn gridLayoutDrawModePill(dlg_id: dvui.Id) void {
             } else null,
         });
         defer button.deinit();
-        if (i != @intFromEnum(mode)) {
+        if (i != @backingInt(mode)) {
             button.processEvents();
         }
 
@@ -846,13 +846,13 @@ fn gridLayoutDrawModePill(dlg_id: dvui.Id) void {
         dvui.labelNoFmt(@src(), name, .{}, .{
             .gravity_x = 0.5,
             .gravity_y = 0.5,
-            .color_text = .{ .color = if (mode == @as(@TypeOf(mode), @enumFromInt(i))) dvui.themeGet().color(.window, .text) else dvui.themeGet().color(.control, .text) },
+            .color_text = .{ .color = if (mode == @as(@TypeOf(mode), @fromBackingInt(@intCast(i)))) dvui.themeGet().color(.window, .text) else dvui.themeGet().color(.control, .text) },
             .margin = .all(0),
             .padding = .all(0),
         });
 
         if (button.clicked()) {
-            const new_mode: Mode = @enumFromInt(i);
+            const new_mode: Mode = @fromBackingInt(@intCast(i));
             if (new_mode == .slice and mode != .slice) {
                 if (file_id_for_dialog) |fid| if (runtime.state().docs.fileById(fid)) |tf|
                     harmonizeSliceStateWithLayer(tf);
@@ -1595,10 +1595,10 @@ pub fn windowFn(id: dvui.Id) anyerror!void {
     defer shell.deinit();
 
     const header_kind: pixi.core.dialogs.DialogHeaderKind = switch (dvui.dataGet(null, id, "_header_kind", u8) orelse 0) {
-        @intFromEnum(pixi.core.dialogs.DialogHeaderKind.none) => .none,
-        @intFromEnum(pixi.core.dialogs.DialogHeaderKind.info) => .info,
-        @intFromEnum(pixi.core.dialogs.DialogHeaderKind.warning) => .warning,
-        @intFromEnum(pixi.core.dialogs.DialogHeaderKind.err) => .err,
+        @backingInt(pixi.core.dialogs.DialogHeaderKind.none) => .none,
+        @backingInt(pixi.core.dialogs.DialogHeaderKind.info) => .info,
+        @backingInt(pixi.core.dialogs.DialogHeaderKind.warning) => .warning,
+        @backingInt(pixi.core.dialogs.DialogHeaderKind.err) => .err,
         else => .none,
     };
 
