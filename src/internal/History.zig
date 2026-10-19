@@ -106,6 +106,9 @@ pub const Change = union(ChangeType) {
         source_layer_id: u64,
         dest_pixels_before: [][4]u8,
         dest_mask_before: std.DynamicBitSet,
+        /// A merge taken back as a step of its own (`keepGoneBack`): its undo merges again and
+        /// its redo takes the merge back.
+        inverted: bool = false,
     };
     pub const LayerName = struct {
         index: usize,
@@ -136,6 +139,8 @@ pub const Change = union(ChangeType) {
     pub const CellReorder = struct {
         removed_sprite_indices: []usize,
         insert_before_sprite_indices: []usize,
+        /// A reorder taken back as a step of its own (`keepGoneBack`): undoing it reorders again.
+        inverted: bool = false,
     };
 
     /// Snapshot of all state that `File.applyGridLayout` mutates. Stored on the undo/redo stacks
@@ -967,15 +972,15 @@ fn applyChange(self: *History, file: *pixi.internal.File, change: *Change, actio
         },
 
         .reorder_cell => |*reorder| {
-            const reverse = (action == .undo);
+            const reverse = (action == .undo) != reorder.inverted;
             file.reorderCells(reorder.removed_sprite_indices, reorder.insert_before_sprite_indices, .replace, reverse) catch return error.ReorderError;
             file.invalidateActiveLayerTransparencyMaskCache();
         },
         .layer_merge => |*layer_merge| {
-            switch (action) {
-                .undo => try layerMergeUndo(file, layer_merge),
-                .redo => try layerMergeRedo(file, layer_merge),
-            }
+            if ((action == .undo) != layer_merge.inverted)
+                try layerMergeUndo(file, layer_merge)
+            else
+                try layerMergeRedo(file, layer_merge);
         },
         .grid_layout => |*gl| {
             // Symmetric swap: capture live state into a fresh snapshot, restore the popped one
@@ -1085,16 +1090,18 @@ const Held = struct {
 /// was gone back to, under `edit`, and nothing on the line is lost.
 ///
 /// `edit` is already on the sprite, and the steps gone back over were made without it, so it comes
-/// off for the while (its swap undone) and goes back on after. Only kinds that swap their values
-/// the same way either way can come off and be reversed like this (`cloneChange`); with any other
-/// in play, the steps gone back over are dropped as they always were. A resize, a deleted or
-/// restored layer or animation, a merge, a cell reorder and a grid change each pair with stacks
-/// beside the history or act by direction: `cloneChange` is where they would join.
+/// off for the while (its swap undone) and goes back on after. A copy of each step gone back over,
+/// undone, is its reverse (`cloneChange`): most kinds swap their values with the sprite's, and a
+/// merge or a cell reorder, which act by direction, are marked `inverted`. The file's deleted
+/// layers and animations stay in order because the line is only ever walked one step at a time.
+/// A resize is the one kind left out (`reversible`): its sprite data rides stacks beside the
+/// history, one set per resize, and its reverse would need a second set in the middle of them. With
+/// a resize in play, the steps gone back over are dropped as they always were.
 fn keepGoneBack(self: *History, file: *pixi.internal.File, edit: *Change) void {
     const n = self.redo_stack.items.len;
     if (n == 0) return;
-    const takeable = symmetric(edit.*) and for (self.redo_stack.items) |c| {
-        if (!symmetric(c)) break false;
+    const takeable = reversible(edit.*) and for (self.redo_stack.items) |c| {
+        if (!reversible(c)) break false;
     } else true;
     if (!takeable) return self.clearRedo();
 
@@ -1132,6 +1139,12 @@ fn keepGoneBack(self: *History, file: *pixi.internal.File, edit: *Change) void {
             Change.deinit(&reverse);
             break;
         };
+        // A kind that acts by direction now reads the other way round.
+        switch (reverse) {
+            .reorder_cell => |*r| r.inverted = !r.inverted,
+            .layer_merge => |*m| m.inverted = !m.inverted,
+            else => {},
+        }
         self.undo_ids.ensureUnusedCapacity(runtime.allocator(), 1) catch break;
         self.undo_stack.append(reverse) catch break;
         const id = self.next_id;
@@ -1143,16 +1156,13 @@ fn keepGoneBack(self: *History, file: *pixi.internal.File, edit: *Change) void {
     }
 }
 
-/// Whether `c` swaps its values with the sprite's the same way for an undo as for a redo, so a copy
-/// of it can be taken back on its own (`keepGoneBack`).
-fn symmetric(c: Change) bool {
-    return switch (c) {
-        .pixels, .origins, .animation_name, .animation_frames, .animation_settings, .animation_order, .layers_order, .layer_name, .layer_settings, .reorder_col_row => true,
-        .animation_restore_delete, .layer_restore_delete, .resize, .reorder_cell, .layer_merge, .grid_layout => false,
-    };
+/// Whether a copy of `c` can be taken back as a step of its own (`keepGoneBack`): every kind but a
+/// resize.
+fn reversible(c: Change) bool {
+    return c != .resize;
 }
 
-/// A copy of `c` with memory of its own, for the kinds `symmetric` takes; null for the others.
+/// A copy of `c` with memory of its own, for the kinds `reversible` takes; null for a resize.
 fn cloneChange(c: Change) !?Change {
     const gpa = runtime.allocator();
     return switch (c) {
@@ -1163,8 +1173,30 @@ fn cloneChange(c: Change) !?Change {
         .animation_frames => |a| .{ .animation_frames = .{ .index = a.index, .frames = try gpa.dupe(pixi.Animation.Frame, a.frames) } },
         .animation_order => |a| .{ .animation_order = .{ .order = try gpa.dupe(u64, a.order), .selected = a.selected } },
         .layers_order => |a| .{ .layers_order = .{ .order = try gpa.dupe(u64, a.order), .selected = a.selected } },
-        .animation_settings, .layer_settings, .reorder_col_row => c,
-        .animation_restore_delete, .layer_restore_delete, .resize, .reorder_cell, .layer_merge, .grid_layout => null,
+        .animation_settings, .layer_settings, .reorder_col_row, .animation_restore_delete, .layer_restore_delete => c,
+        .reorder_cell => |r| .{ .reorder_cell = .{
+            .removed_sprite_indices = try gpa.dupe(usize, r.removed_sprite_indices),
+            .insert_before_sprite_indices = try gpa.dupe(usize, r.insert_before_sprite_indices),
+            .inverted = r.inverted,
+        } },
+        .layer_merge => |m| blk: {
+            var copy = m;
+            copy.dest_pixels_before = try gpa.dupe([4]u8, m.dest_pixels_before);
+            copy.dest_mask_before = try m.dest_mask_before.clone(gpa);
+            break :blk .{ .layer_merge = copy };
+        },
+        .grid_layout => |g| blk: {
+            var copy = g;
+            copy.layer_ids = try gpa.dupe(u64, g.layer_ids);
+            copy.layer_pixels = try gpa.alloc([][4]u8, g.layer_pixels.len);
+            for (g.layer_pixels, copy.layer_pixels) |from, *to| to.* = try gpa.dupe([4]u8, from);
+            copy.sprite_origins = try gpa.dupe([2]f32, g.sprite_origins);
+            copy.animation_ids = try gpa.dupe(u64, g.animation_ids);
+            copy.animation_frames = try gpa.alloc([]pixi.Animation.Frame, g.animation_frames.len);
+            for (g.animation_frames, copy.animation_frames) |from, *to| to.* = try gpa.dupe(pixi.Animation.Frame, from);
+            break :blk .{ .grid_layout = copy };
+        },
+        .resize => null,
     };
 }
 
