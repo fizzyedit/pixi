@@ -410,7 +410,7 @@ pub fn append(self: *History, change: Change) !void {
         // fizzy hears of every edit, to show the command that made it.
         file.finishReveal();
         runtime.state().host.documentEdited(file.id);
-        if (commands.running == 0) {
+        if (runtime.state().host.author().kind == .person) {
             self.person.edits += 1;
             self.person.note(std.meta.activeTag(change));
         }
@@ -512,7 +512,7 @@ pub fn undoRedo(self: *History, file: *pixi.internal.File, action: Action) !void
     if (active_stack.items.len == 0) return;
     defer runtime.state().host.documentEdited(file.id);
     if (action == .undo and !self.keeping) self.went_back_by = runtime.state().host.acted();
-    if (commands.running == 0 and !self.keeping) {
+    if (runtime.state().host.author().kind == .person and !self.keeping) {
         switch (action) {
             .undo => self.person.undone += 1,
             .redo => self.person.redone += 1,
