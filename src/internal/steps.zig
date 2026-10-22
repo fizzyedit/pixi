@@ -122,6 +122,23 @@ pub const Motion = struct {
 
 const pen_kind = 0;
 
+/// Each pixel of `order` (indices, in the order drawn) as its position among `indices` sorted, the
+/// way a step's motion names them. Null when it is not as long as `indices` or names a pixel they lack.
+pub fn positionsOf(arena: std.mem.Allocator, order: []const u32, indices: []const usize) ?[]u32 {
+    if (order.len != indices.len) return null;
+    const sorted = arena.dupe(usize, indices) catch return null;
+    std.mem.sort(usize, sorted, {}, std.sort.asc(usize));
+    const positions = arena.alloc(u32, order.len) catch return null;
+    for (order, positions) |idx, *p| {
+        p.* = @intCast(std.sort.binarySearch(usize, sorted, @as(usize, idx), struct {
+            fn cmp(key: usize, item: usize) std.math.Order {
+                return std.math.order(key, item);
+            }
+        }.cmp) orelse return null);
+    }
+    return positions;
+}
+
 /// Write `marks` (kind, length) over `positions` (into the step's sorted indices, mark by mark) as
 /// a step's motion.
 pub fn encodeMotion(gpa: std.mem.Allocator, w: *std.Io.Writer, kinds: []const u8, lens: []const u32, positions: []const u32) !void {
@@ -462,4 +479,49 @@ test "a step's motion comes back as it went: a pen's path, a bucket's pour" {
     // The pen's in order; the bucket's from where it began, then the rest in order.
     try testing.expectEqualSlices(u32, &.{ 5, 4, 7, 2, 0, 1, 6, 3 }, m.positions);
     try testing.expectError(error.BadStep, decodeMotion(testing.allocator, out.written(), 9));
+}
+
+test "a hand stroke keeps the order its pixels were first touched" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    // Touched out of index order; the pixel at 70 was drawn over twice but is listed once, at its first touch.
+    const touched = [_]u32{ 70, 5, 66, 3, 130 };
+    const indices = [_]usize{ 70, 5, 66, 3, 130 };
+    const before: [5][4]u8 = @splat(.{ 0, 0, 0, 0 });
+    const after: [5][4]u8 = @splat(.{ 9, 9, 9, 255 });
+    const bytes = try bytesOf(0, &indices, &before, &after);
+    defer testing.allocator.free(bytes);
+    const step = try decode(testing.allocator, bytes);
+    defer step.deinit(testing.allocator);
+
+    const positions = positionsOf(arena, &touched, step.indices).?;
+    var out: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer out.deinit();
+    try encodeMotion(testing.allocator, &out.writer, &.{0}, &.{5}, positions);
+    const m = try decodeMotion(testing.allocator, out.written(), step.indices.len);
+    defer m.deinit(testing.allocator);
+    // Exported in drawn order, not index order.
+    for (m.positions, touched) |p, t| try testing.expectEqual(@as(usize, t), step.indices[p]);
+    // And it names each pixel once: a repeat is refused, as `Motion` has no overdraw.
+    const repeated = positionsOf(arena, &.{ 70, 70, 66, 3, 130 }, &indices).?;
+    var bad: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer bad.deinit();
+    try encodeMotion(testing.allocator, &bad.writer, &.{0}, &.{5}, repeated);
+    try testing.expectError(error.BadStep, decodeMotion(testing.allocator, bad.written(), 5));
+    try testing.expectEqual(@as(?[]u32, null), positionsOf(arena, &.{ 70, 71, 66, 3, 130 }, &indices));
+    try testing.expectError(error.BadStep, decodeMotion(testing.allocator, out.written(), 6));
+}
+
+test "a step recorded without motion still decodes and applies" {
+    var px: [16][4]u8 = @splat(.{ 0, 0, 0, 0 });
+    const indices = [_]usize{ 9, 2, 4 };
+    const before: [3][4]u8 = @splat(.{ 0, 0, 0, 0 });
+    const after: [3][4]u8 = @splat(.{ 1, 2, 3, 255 });
+    const bytes = try bytesOf(0, &indices, &before, &after);
+    defer testing.allocator.free(bytes);
+    const step = try decode(testing.allocator, bytes);
+    defer step.deinit(testing.allocator);
+    try apply(&px, step);
+    for (indices) |i| try testing.expectEqualSlices(u8, &after[0], &px[i]);
 }

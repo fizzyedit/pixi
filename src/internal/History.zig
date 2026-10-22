@@ -1088,16 +1088,7 @@ fn motionOf(arena: std.mem.Allocator, history: *const History, indices: []const 
     const order = history.showing_order;
     const marks = history.showing_marks;
     if (order.len != indices.len or marks.len == 0) return "";
-    const sorted = arena.dupe(usize, indices) catch return "";
-    std.mem.sort(usize, sorted, {}, std.sort.asc(usize));
-    const positions = arena.alloc(u32, order.len) catch return "";
-    for (order, positions) |idx, *p| {
-        p.* = @intCast(std.sort.binarySearch(usize, sorted, @as(usize, idx), struct {
-            fn cmp(key: usize, item: usize) std.math.Order {
-                return std.math.order(key, item);
-            }
-        }.cmp) orelse return "");
-    }
+    const positions = steps.positionsOf(arena, order, indices) orelse return "";
     const kinds = arena.alloc(u8, marks.len) catch return "";
     const lens = arena.alloc(u32, marks.len) catch return "";
     for (marks, kinds, lens) |m, *k, *l| {

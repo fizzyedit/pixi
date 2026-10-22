@@ -13,11 +13,16 @@ pub const Stroke = struct {
     //values: std.ArrayList([4]u8),
 
     pixels: std.AutoHashMap(usize, [4]u8),
+    /// The pixel indices in the order each was first touched (once each, like `pixels`): the path
+    /// a hand-drawn stroke took, which the hash map alone loses. Cleared with `pixels`.
+    order: std.ArrayListUnmanaged(usize) = .empty,
+    allocator: std.mem.Allocator,
     //canvas: pixi.file.gui.canvas = .primary,
 
     pub fn init(allocator: std.mem.Allocator) Stroke {
         return .{
             .pixels = .init(allocator),
+            .allocator = allocator,
             // .indices = std.ArrayList(usize).init(allocator),
             // .values = std.ArrayList([4]u8).init(allocator),
         };
@@ -29,8 +34,10 @@ pub const Stroke = struct {
             pixi.perf.stroke_append_calls += 1;
             if (!ptr.found_existing) pixi.perf.stroke_append_new_keys += 1;
         }
-        if (!ptr.found_existing)
+        if (!ptr.found_existing) {
             ptr.value_ptr.* = value;
+            try stroke.order.append(stroke.allocator, index);
+        }
 
         // try stroke.indices.append(index);
 
@@ -53,8 +60,10 @@ pub const Stroke = struct {
             pixi.perf.stroke_append_calls += 1;
             if (!gop.found_existing) pixi.perf.stroke_append_new_keys += 1;
         }
-        if (!gop.found_existing)
+        if (!gop.found_existing) {
             gop.value_ptr.* = value;
+            stroke.order.append(stroke.allocator, index) catch {};
+        }
     }
 
     pub fn appendSlice(stroke: *Stroke, indices: []usize, values: [][4]u8) !void {
@@ -87,6 +96,7 @@ pub const Stroke = struct {
         }
 
         stroke.pixels.clearAndFree();
+        stroke.order.clearAndFree(stroke.allocator);
 
         if (pixi.perf.record) {
             pixi.perf.stroke_to_change_ns +%= @intCast(pixi.perf.nanoTimestamp() - t0);
@@ -103,6 +113,7 @@ pub const Stroke = struct {
 
     pub fn clearAndFree(stroke: *Stroke) void {
         stroke.pixels.clearAndFree();
+        stroke.order.clearAndFree(stroke.allocator);
         // stroke.indices.clearAndFree();
         // stroke.values.clearAndFree();
     }
