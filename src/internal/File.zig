@@ -2339,9 +2339,8 @@ pub fn strokeUndoCommit(file: *File) void {
     // snapshot above was found by scanning rows, so it has no path to keep.
     const gpa = runtime.allocator();
     const live = !flushed and file.buffers.stroke.order.items.len == file.buffers.stroke.pixels.count();
-    const drawn: []u32 = if (live) gpa.alloc(u32, file.buffers.stroke.order.items.len) catch &.{} else &.{};
+    const drawn: []u32 = if (live) (steps.orderOf(gpa, file.buffers.stroke.order.items) catch &.{}) else &.{};
     defer if (drawn.len > 0) gpa.free(drawn);
-    for (drawn, file.buffers.stroke.order.items) |*d, i| d.* = @intCast(i);
     const marks = [_]Reveal.Mark{.{ .kind = .pen, .len = @intCast(drawn.len) }};
     if (drawn.len > 0) {
         file.history.showing_ms = Reveal.writtenMs(&marks);

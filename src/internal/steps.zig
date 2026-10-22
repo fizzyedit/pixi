@@ -122,6 +122,14 @@ pub const Motion = struct {
 
 const pen_kind = 0;
 
+/// `order` (a stroke's pixel indices, first touch first) as the u32s a step's motion is made from,
+/// owned by `gpa`. Its own length: nothing here zips it with anything else.
+pub fn orderOf(gpa: std.mem.Allocator, order: []const usize) std.mem.Allocator.Error![]u32 {
+    const out = try gpa.alloc(u32, order.len);
+    for (out, 0..) |*o, i| o.* = @intCast(order[i]);
+    return out;
+}
+
 /// Each pixel of `order` (indices, in the order drawn) as its position among `indices` sorted, the
 /// way a step's motion names them. Null when it is not as long as `indices` or names a pixel they lack.
 pub fn positionsOf(arena: std.mem.Allocator, order: []const u32, indices: []const usize) ?[]u32 {
@@ -524,4 +532,17 @@ test "a step recorded without motion still decodes and applies" {
     defer step.deinit(testing.allocator);
     try apply(&px, step);
     for (indices) |i| try testing.expectEqualSlices(u8, &after[0], &px[i]);
+}
+
+test "a stroke's order converts whatever its length, and mismatches never reach a zip" {
+    const none = try orderOf(testing.allocator, &.{});
+    defer testing.allocator.free(none);
+    try testing.expectEqual(@as(usize, 0), none.len);
+    const one = try orderOf(testing.allocator, &.{42});
+    defer testing.allocator.free(one);
+    try testing.expectEqualSlices(u32, &.{42}, one);
+    // A stroke whose order is longer than the pixels it changed yields no motion, not a panic.
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    try testing.expectEqual(@as(?[]u32, null), positionsOf(arena_state.allocator(), &.{ 1, 2, 3 }, &.{ 1, 2 }));
 }
