@@ -2296,6 +2296,8 @@ pub fn strokeUndoExpandToCoverRect(file: *File, cover: dvui.Rect) !void {
 /// Used when the snapshot can no longer grow (size cap) so later pixels still get undo entries.
 fn strokeUndoFlushSnapshotToStrokeBuffer(file: *File) void {
     if (!file.editor.stroke_undo_deferred) return;
+    const prof = pixi.profile.section("pen-up diff");
+    defer prof.end();
     const snap = file.editor.stroke_undo_pixels orelse {
         file.editor.stroke_undo_deferred = false;
         return;
@@ -2338,6 +2340,8 @@ fn strokeUndoFlushSnapshotToStrokeBuffer(file: *File) void {
 }
 
 pub fn strokeUndoCommit(file: *File) void {
+    const prof = pixi.profile.section("pen-up");
+    defer prof.end();
     strokeUndoFlushSnapshotToStrokeBuffer(file);
     file.appendStroke(file.layers.get(file.selected_layer_index).id);
 }
@@ -2363,8 +2367,12 @@ fn appendStroke(file: *File, layer_id: u64) void {
         file.history.showing_marks = &.{};
     }
 
+    const prof_change = pixi.profile.section("pen-up change");
     const change_opt = stroke.toChange(layer_id) catch null;
+    prof_change.end();
     if (change_opt) |change| {
+        const prof_history = pixi.profile.section("pen-up history");
+        defer prof_history.end();
         file.history.append(change) catch {
             dvui.log.err("Failed to append to history", .{});
         };
