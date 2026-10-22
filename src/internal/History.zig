@@ -1122,11 +1122,18 @@ fn record(file: *pixi.internal.File, kind: sdk.Step.Kind, id: u64, change: *cons
         const position = for (file.layers.items(.id), 0..) |lid, i| {
             if (lid == pixels.layer_id) break i;
         } else break :encoded;
-        steps.encode(arena, &out.writer, position, pixels.indices, pixels.values, after) catch break :encoded;
+        const prof_encode = pixi.profile.section("step encode");
+        steps.encode(arena, &out.writer, position, pixels.indices, pixels.values, after) catch {
+            prof_encode.end();
+            break :encoded;
+        };
         // An append that is drawn as it lands says how long it takes (`showing_ms`); an undo or a
         // redo lands at once.
         const ms = if (kind == .added) file.history.showing_ms else 0;
         const motion = if (kind == .added) motionOf(arena, &file.history, pixels.indices) else "";
+        prof_encode.end();
+        const prof_record = pixi.profile.section("recordStep");
+        defer prof_record.end();
         return host.recordStep(file.id, .{ .kind = kind, .id = id, .top = on_top, .effect = out.written(), .motion = motion, .ms = ms });
     }
     // A step not kept would leave the track behind the sprite, every later step written against

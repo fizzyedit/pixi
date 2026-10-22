@@ -204,6 +204,7 @@ pub const EditorData = struct {
 pub const History = @import("History.zig");
 pub const Reveal = @import("Reveal.zig");
 const steps = @import("steps.zig");
+const stroke_diff = @import("stroke_diff.zig");
 pub const Buffers = @import("Buffers.zig");
 
 pub const InitOptions = struct {
@@ -2176,6 +2177,7 @@ pub fn brushStampRect(file: *const File, point: dvui.Point, stroke_size: usize) 
 }
 
 fn strokeUndoFreeSnapshot(file: *File) void {
+    file.buffers.touch.clear();
     if (file.editor.stroke_undo_pixels) |p| {
         runtime.allocator().free(p);
         file.editor.stroke_undo_pixels = null;
@@ -2224,6 +2226,7 @@ pub fn strokeUndoBegin(file: *File, cover: dvui.Rect) !void {
     file.editor.stroke_undo_w = b.w;
     file.editor.stroke_undo_h = b.h;
     file.editor.stroke_undo_deferred = true;
+    file.buffers.touch.reset(runtime.allocator(), @as(usize, iw) * @as(usize, ih));
 }
 
 /// Grows the snapshot so it includes `cover` (copying newly exposed pixels from the layer before paint).
@@ -2293,6 +2296,8 @@ pub fn strokeUndoExpandToCoverRect(file: *File, cover: dvui.Rect) !void {
 /// Used when the snapshot can no longer grow (size cap) so later pixels still get undo entries.
 fn strokeUndoFlushSnapshotToStrokeBuffer(file: *File) void {
     if (!file.editor.stroke_undo_deferred) return;
+    const prof = pixi.profile.section("pen-up diff");
+    defer prof.end();
     const snap = file.editor.stroke_undo_pixels orelse {
         file.editor.stroke_undo_deferred = false;
         return;
@@ -2302,44 +2307,53 @@ fn strokeUndoFlushSnapshotToStrokeBuffer(file: *File) void {
     const pixels = layer.pixels();
     const iw: usize = @intCast(file.width());
 
-    const sx = file.editor.stroke_undo_x;
-    const sy = file.editor.stroke_undo_y;
-    const sw = file.editor.stroke_undo_w;
-    const sh = file.editor.stroke_undo_h;
-
-    var row: u32 = 0;
-    while (row < sh) : (row += 1) {
-        var col: u32 = 0;
-        while (col < sw) : (col += 1) {
-            const gx: usize = @as(usize, sx + col);
-            const gyy: usize = @as(usize, sy + row);
-            const idx: usize = gyy * iw + gx;
-            const off: usize = (@as(usize, row) * @as(usize, sw) + @as(usize, col)) * 4;
-            const old_px: [4]u8 = .{ snap[off], snap[off + 1], snap[off + 2], snap[off + 3] };
-            const cur = pixels[idx];
-            if (!std.mem.eql(u8, &old_px, &cur)) {
-                file.buffers.stroke.append(idx, old_px) catch {
-                    dvui.log.err("Failed to append to stroke buffer (flush snapshot)", .{});
-                };
-            }
-        }
+    const gpa = runtime.allocator();
+    const view: stroke_diff.Snapshot = .{
+        .bytes = snap,
+        .x = file.editor.stroke_undo_x,
+        .y = file.editor.stroke_undo_y,
+        .w = file.editor.stroke_undo_w,
+        .h = file.editor.stroke_undo_h,
+    };
+    var diff: stroke_diff.Diff = .{};
+    defer diff.deinit(gpa);
+    // The pixels the brush painted, in the order it did: the stroke at its own size. Without them
+    // (a stroke not painted by the brush, or one that outgrew the notes) the whole box is compared.
+    const touched = file.buffers.touch.usable() and !std.meta.isError(
+        stroke_diff.diffTouched(gpa, view, iw, pixels, file.buffers.touch.order.items, &diff),
+    );
+    if (!touched) {
+        diff.indices.clearRetainingCapacity();
+        diff.before.clearRetainingCapacity();
+        stroke_diff.diffScan(gpa, view, iw, pixels, &diff) catch {
+            dvui.log.err("Failed to diff stroke snapshot", .{});
+        };
+        file.buffers.stroke.ordered = false;
+    }
+    for (diff.indices.items, diff.before.items) |idx, old_px| {
+        file.buffers.stroke.append(idx, old_px) catch {
+            dvui.log.err("Failed to append to stroke buffer (flush snapshot)", .{});
+        };
     }
 
     strokeUndoFreeSnapshot(file);
 }
 
 pub fn strokeUndoCommit(file: *File) void {
-    const flushed = file.editor.stroke_undo_deferred;
-    if (flushed) {
-        strokeUndoFlushSnapshotToStrokeBuffer(file);
-    }
+    const prof = pixi.profile.section("pen-up");
+    defer prof.end();
+    strokeUndoFlushSnapshotToStrokeBuffer(file);
+    file.appendStroke(file.layers.get(file.selected_layer_index).id);
+}
 
-    // A stroke filled as it was drawn keeps the order its pixels were first touched, so its step
-    // carries it (`History.motionOf`) and a tape draws it that way. One that was flushed from a
-    // snapshot above was found by scanning rows, so it has no path to keep.
+/// The stroke buffer becomes one undo step. A stroke filled as it was drawn keeps the order its
+/// pixels were first touched, so its step carries it (`History.motionOf`) and a tape draws it that
+/// way. One found by scanning rows (`Stroke.ordered`) has no path to keep.
+fn appendStroke(file: *File, layer_id: u64) void {
     const gpa = runtime.allocator();
-    const live = !flushed and file.buffers.stroke.order.items.len == file.buffers.stroke.pixels.count();
-    const drawn: []u32 = if (live) (steps.orderOf(gpa, file.buffers.stroke.order.items) catch &.{}) else &.{};
+    const stroke = &file.buffers.stroke;
+    const live = stroke.ordered and stroke.order.items.len == stroke.pixels.count();
+    const drawn: []u32 = if (live) (steps.orderOf(gpa, stroke.order.items) catch &.{}) else &.{};
     defer if (drawn.len > 0) gpa.free(drawn);
     const marks = [_]Reveal.Mark{.{ .kind = .pen, .len = @intCast(drawn.len) }};
     if (drawn.len > 0) {
@@ -2353,8 +2367,12 @@ pub fn strokeUndoCommit(file: *File) void {
         file.history.showing_marks = &.{};
     }
 
-    const change_opt = file.buffers.stroke.toChange(file.layers.get(file.selected_layer_index).id) catch null;
+    const prof_change = pixi.profile.section("pen-up change");
+    const change_opt = stroke.toChange(layer_id) catch null;
+    prof_change.end();
     if (change_opt) |change| {
+        const prof_history = pixi.profile.section("pen-up history");
+        defer prof_history.end();
         file.history.append(change) catch {
             dvui.log.err("Failed to append to history", .{});
         };
@@ -2642,7 +2660,9 @@ fn drawOffsets(file: *File, active_layer: *Layer, layer: DrawLayer, offsets: []c
         if (active_layer.pixelIndex(new_point)) |index| {
             active_layer.mask.setValue(index, mask_value);
             if (draw_options.mask_only) continue;
-            if (layer == .selected and !file.editor.stroke_undo_deferred) {
+            if (layer == .selected and file.editor.stroke_undo_deferred) {
+                file.buffers.touch.mark(runtime.allocator(), index);
+            } else if (layer == .selected) {
                 file.buffers.stroke.append(index, active_layer.pixels()[index]) catch {
                     dvui.log.err("Failed to append to stroke buffer", .{});
                 };
@@ -2657,12 +2677,7 @@ fn commitStroke(file: *File, layer_id: u64) void {
     if (file.editor.stroke_undo_deferred) {
         file.strokeUndoCommit();
     } else {
-        const change_opt = file.buffers.stroke.toChange(layer_id) catch null;
-        if (change_opt) |change| {
-            file.history.append(change) catch {
-                dvui.log.err("Failed to append to history", .{});
-            };
-        }
+        file.appendStroke(layer_id);
     }
 }
 

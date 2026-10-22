@@ -72,7 +72,7 @@ pub fn build(b: *std.Build) void {
     // `zig build test`: pixi's std-only rules, on the host. (CI runs a build's `test` step when it
     // has one.) Each file here tests without fizzy or a window.
     const test_step = b.step("test", "Run pixi's std-only unit tests");
-    for ([_][]const u8{"src/internal/steps.zig"}) |file| {
+    for ([_][]const u8{ "src/internal/steps.zig", "src/internal/stroke_diff.zig" }) |file| {
         const t = b.addTest(.{ .root_module = b.createModule(.{
             .root_source_file = b.path(file),
             .target = b.graph.host,
