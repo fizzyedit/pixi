@@ -36,6 +36,10 @@ pub const Diff = struct {
     }
 };
 
+/// The most pixels `Touch` keeps in order for one stroke (16 MiB of indices). A stroke that touches
+/// more keeps its change whole but not its order: see `Touch.mark`.
+pub const max_order: usize = 4 * 1024 * 1024;
+
 /// Pixels a brush has painted since `reset`: a bit each for "already noted", and the list in the
 /// order first noted. `valid` goes false if a pixel could not be noted, and the stroke is then
 /// compared by `diffScan`.
@@ -44,6 +48,8 @@ pub const Touch = struct {
     order: std.ArrayListUnmanaged(u32) = .empty,
     pixels: usize = 0,
     valid: bool = true,
+    /// Past this many noted pixels the notes are dropped (a test sets it small).
+    limit: usize = max_order,
 
     pub fn deinit(t: *Touch, gpa: std.mem.Allocator) void {
         t.bits.deinit(gpa);
@@ -70,6 +76,10 @@ pub const Touch = struct {
         t.order.clearRetainingCapacity();
     }
 
+    /// Note that the brush paints `index`. A stroke past `limit` pixels, or one the notes cannot
+    /// grow for, drops its notes and goes `valid = false` for the rest of the stroke: pen-up then
+    /// compares the box (`diffScan`), so the change is still exactly the pixels that changed, only
+    /// the order they were drawn in is not kept (`usable` is false, the step carries no motion).
     pub fn mark(t: *Touch, gpa: std.mem.Allocator, index: usize) void {
         if (!t.valid) return;
         if (index >= t.pixels or index > std.math.maxInt(u32)) {
@@ -79,11 +89,15 @@ pub const Touch = struct {
         const bit = @as(u64, 1) << @intCast(index % 64);
         const word = &t.bits.items[index / 64];
         if (word.* & bit != 0) return;
-        t.order.append(gpa, @intCast(index)) catch {
-            t.valid = false;
-            return;
-        };
+        if (t.order.items.len >= t.limit) return t.drop(gpa);
+        t.order.append(gpa, @intCast(index)) catch return t.drop(gpa);
         word.* |= bit;
+    }
+
+    fn drop(t: *Touch, gpa: std.mem.Allocator) void {
+        t.clear();
+        t.order.clearAndFree(gpa);
+        t.valid = false;
     }
 
     /// Whether `diffTouched` can stand for the whole-box compare.
@@ -216,4 +230,33 @@ test "reset leaves nothing noted, and costs what was noted" {
     touch.mark(gpa, 3);
     try testing.expectEqualSlices(u32, &.{3}, touch.order.items);
     try testing.expect(touch.usable());
+}
+
+test "a stroke past the budget keeps its change, not its order, and frees the notes" {
+    const gpa = testing.allocator;
+    var touch: Touch = .{ .limit = 4 };
+    defer touch.deinit(gpa);
+    touch.reset(gpa, 100);
+    for (0..4) |i| touch.mark(gpa, i);
+    try testing.expect(touch.usable());
+    touch.mark(gpa, 50);
+    try testing.expect(!touch.usable());
+    try testing.expectEqual(@as(usize, 0), touch.order.items.len);
+    touch.mark(gpa, 60);
+
+    // Pen-up falls back to the box: every changed pixel is still found.
+    var px: [10 * 10][4]u8 = @splat(.{ 0, 0, 0, 0 });
+    const snap = try snapshotOf(gpa, &px, 10, 0, 0, 10, 10);
+    defer gpa.free(snap.bytes);
+    for ([_]usize{ 0, 1, 2, 3, 50, 60 }) |i| px[i] = .{ 1, 1, 1, 255 };
+    var out: Diff = .{};
+    defer out.deinit(gpa);
+    try diffScan(gpa, snap, 10, &px, &out);
+    try testing.expectEqual(@as(usize, 6), out.indices.items.len);
+
+    // The next stroke starts clean.
+    touch.reset(gpa, 100);
+    touch.mark(gpa, 7);
+    try testing.expect(touch.usable());
+    try testing.expectEqualSlices(u32, &.{7}, touch.order.items);
 }
