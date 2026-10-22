@@ -2329,8 +2329,28 @@ fn strokeUndoFlushSnapshotToStrokeBuffer(file: *File) void {
 }
 
 pub fn strokeUndoCommit(file: *File) void {
-    if (file.editor.stroke_undo_deferred) {
+    const flushed = file.editor.stroke_undo_deferred;
+    if (flushed) {
         strokeUndoFlushSnapshotToStrokeBuffer(file);
+    }
+
+    // A stroke filled as it was drawn keeps the order its pixels were first touched, so its step
+    // carries it (`History.motionOf`) and a tape draws it that way. One that was flushed from a
+    // snapshot above was found by scanning rows, so it has no path to keep.
+    const gpa = runtime.allocator();
+    const live = !flushed and file.buffers.stroke.order.items.len == file.buffers.stroke.pixels.count();
+    const drawn: []u32 = if (live) (steps.orderOf(gpa, file.buffers.stroke.order.items) catch &.{}) else &.{};
+    defer if (drawn.len > 0) gpa.free(drawn);
+    const marks = [_]Reveal.Mark{.{ .kind = .pen, .len = @intCast(drawn.len) }};
+    if (drawn.len > 0) {
+        file.history.showing_ms = Reveal.writtenMs(&marks);
+        file.history.showing_order = drawn;
+        file.history.showing_marks = &marks;
+    }
+    defer {
+        file.history.showing_ms = 0;
+        file.history.showing_order = &.{};
+        file.history.showing_marks = &.{};
     }
 
     const change_opt = file.buffers.stroke.toChange(file.layers.get(file.selected_layer_index).id) catch null;
