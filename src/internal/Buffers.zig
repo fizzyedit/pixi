@@ -3,10 +3,13 @@ const std = @import("std");
 const History = @import("History.zig");
 const pixi = @import("../pixi.zig");
 const runtime = @import("../runtime.zig");
+const stroke_diff = @import("stroke_diff.zig");
 const Buffers = @This();
 
 stroke: Stroke,
 temporary_stroke: Stroke,
+/// The pixels a deferred-undo stroke has painted so far, in order (`File.strokeUndoBegin`).
+touch: stroke_diff.Touch = .{},
 
 pub const Stroke = struct {
     //indices: std.ArrayList(usize),
@@ -17,6 +20,9 @@ pub const Stroke = struct {
     /// a hand-drawn stroke took, which the hash map alone loses. Cleared with `pixels`.
     order: std.ArrayListUnmanaged(usize) = .empty,
     allocator: std.mem.Allocator,
+    /// False once `order` holds pixels found by scanning rows rather than as they were painted:
+    /// then it is not a path, and a step does not carry it.
+    ordered: bool = true,
     //canvas: pixi.file.gui.canvas = .primary,
 
     pub fn init(allocator: std.mem.Allocator) Stroke {
@@ -97,6 +103,7 @@ pub const Stroke = struct {
 
         stroke.pixels.clearAndFree();
         stroke.order.clearAndFree(stroke.allocator);
+        stroke.ordered = true;
 
         if (pixi.perf.record) {
             pixi.perf.stroke_to_change_ns +%= @intCast(pixi.perf.nanoTimestamp() - t0);
@@ -114,6 +121,7 @@ pub const Stroke = struct {
     pub fn clearAndFree(stroke: *Stroke) void {
         stroke.pixels.clearAndFree();
         stroke.order.clearAndFree(stroke.allocator);
+        stroke.ordered = true;
         // stroke.indices.clearAndFree();
         // stroke.values.clearAndFree();
     }
@@ -141,4 +149,5 @@ pub fn deinit(buffers: *Buffers) void {
     buffers.clearAndFree();
     buffers.stroke.deinit();
     buffers.temporary_stroke.deinit();
+    buffers.touch.deinit(buffers.stroke.allocator);
 }
