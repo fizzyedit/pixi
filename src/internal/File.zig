@@ -2524,6 +2524,9 @@ pub fn drawPoint(file: *File, point: dvui.Point, layer: DrawLayer, draw_options:
     defer active_layer.dirty = true;
 
     if (point.x < 0 or point.x >= @as(f32, @floatFromInt(file.width())) or point.y < 0 or point.y >= @as(f32, @floatFromInt(file.height()))) {
+        // A pen lifted off the canvas still ends its stroke: the pixels drawn on the way in are
+        // in the buffer, and the next press would discard them with no undo step to take them back.
+        if (draw_options.to_change and layer == .selected and !draw_options.mask_only and file.strokeInProgress()) file.commitStroke(active_layer.id);
         return;
     }
 
@@ -2561,11 +2564,11 @@ pub fn drawLine(file: *File, point1: dvui.Point, point2: dvui.Point, layer: Draw
 
     defer active_layer.dirty = true;
 
-    if (point1.x < 0 or point1.x >= @as(f32, @floatFromInt(file.width())) or point1.y < 0 or point1.y >= @as(f32, @floatFromInt(file.height()))) {
-        return;
-    }
-
-    if (point2.x < 0 or point2.x >= @as(f32, @floatFromInt(file.width())) or point2.y < 0 or point2.y >= @as(f32, @floatFromInt(file.height()))) {
+    const off_canvas = point1.x < 0 or point1.x >= @as(f32, @floatFromInt(file.width())) or point1.y < 0 or point1.y >= @as(f32, @floatFromInt(file.height())) or
+        point2.x < 0 or point2.x >= @as(f32, @floatFromInt(file.width())) or point2.y < 0 or point2.y >= @as(f32, @floatFromInt(file.height()));
+    if (off_canvas) {
+        // As in `drawPoint`: nothing to draw, but a stroke ending here still has to be committed.
+        if (draw_options.to_change and layer == .selected and !draw_options.mask_only and file.strokeInProgress()) file.commitStroke(active_layer.id);
         return;
     }
 
@@ -2630,6 +2633,11 @@ fn drawOffsets(file: *File, active_layer: *Layer, layer: DrawLayer, offsets: []c
             active_layer.pixels()[index] = color;
         }
     }
+}
+
+/// A pen is down with something to commit: a snapshot waiting to be diffed, or pixels noted.
+fn strokeInProgress(file: *const File) bool {
+    return file.editor.stroke_undo_deferred or file.buffers.stroke.pixels.count() > 0;
 }
 
 /// The stroke so far becomes one undo step.
